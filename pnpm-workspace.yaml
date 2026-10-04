@@ -6,3 +6,4 @@ allowBuilds:
   prisma: true
   esbuild: false
   workerd: false
+  msgpackr-extract: false
