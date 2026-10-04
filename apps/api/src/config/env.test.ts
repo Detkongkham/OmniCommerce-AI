@@ -38,4 +38,24 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ ...dev, NODE_ENV: "development" })).not.toThrow();
     expect(() => parseEnv(test)).not.toThrow();
   });
+
+  it("parses TRUST_PROXY: default false, hop count, rejects everything else", () => {
+    expect(parseEnv(base).TRUST_PROXY).toBe(false);
+    expect(parseEnv({ ...base, TRUST_PROXY: "false" }).TRUST_PROXY).toBe(false);
+    expect(parseEnv({ ...base, TRUST_PROXY: "0" }).TRUST_PROXY).toBe(0);
+    expect(parseEnv({ ...base, TRUST_PROXY: "2" }).TRUST_PROXY).toBe(2);
+    for (const bad of ["true", "-1", "1.5", "loopback", "", "1 "]) {
+      expect(() => parseEnv({ ...base, TRUST_PROXY: bad })).toThrow(/TRUST_PROXY/);
+    }
+  });
+
+  it("has per-email login lockout defaults and parses overrides", () => {
+    const env = parseEnv(base);
+    expect(env.LOGIN_EMAIL_MAX_FAILURES).toBe(10);
+    expect(env.LOGIN_EMAIL_WINDOW_MINUTES).toBe(15);
+    expect(parseEnv({ ...base, LOGIN_EMAIL_MAX_FAILURES: "3", LOGIN_EMAIL_WINDOW_MINUTES: "5" })).toMatchObject({
+      LOGIN_EMAIL_MAX_FAILURES: 3,
+      LOGIN_EMAIL_WINDOW_MINUTES: 5,
+    });
+  });
 });

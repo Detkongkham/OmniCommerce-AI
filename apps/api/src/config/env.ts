@@ -2,6 +2,23 @@ import { z } from "zod";
 
 const PLACEHOLDER_SECRET_PREFIXES = ["dev-only", "test-secret"];
 
+/**
+ * "false" -> false; a non-negative integer -> number of trusted proxy hops.
+ * "true" (trust everything) is deliberately rejected: it allows X-Forwarded-For spoofing.
+ */
+const trustProxySchema = z
+  .string()
+  .default("false")
+  .transform((value, ctx): false | number => {
+    if (value === "false") return false;
+    if (/^\d+$/.test(value)) return Number(value);
+    ctx.addIssue({
+      code: "custom",
+      message: 'TRUST_PROXY must be "false" or a non-negative integer number of proxy hops (never "true")',
+    });
+    return z.NEVER;
+  });
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -12,6 +29,9 @@ const envSchema = z
     ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
     LOGIN_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+    LOGIN_EMAIL_MAX_FAILURES: z.coerce.number().int().positive().default(10),
+    LOGIN_EMAIL_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+    TRUST_PROXY: trustProxySchema,
     CORS_ORIGIN: z.string().default("http://localhost:3000"),
   })
   .superRefine((env, ctx) => {

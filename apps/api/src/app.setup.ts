@@ -10,6 +10,8 @@ export function parseCorsOrigins(value: string): string[] {
 }
 
 export function configureApp(app: INestApplication, env: Env): void {
+  const httpAdapter = app.getHttpAdapter().getInstance() as { set(setting: string, value: unknown): void };
+  httpAdapter.set("trust proxy", env.TRUST_PROXY);
   app.use(cookieParser());
   app.enableCors({ origin: parseCorsOrigins(env.CORS_ORIGIN), credentials: true });
   app.enableShutdownHooks();

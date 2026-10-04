@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { createHash, randomUUID } from "node:crypto";
+import { HttpException, Inject, Injectable, UnauthorizedException } from "@nestjs/common";
 import type { Prisma, PrismaClient } from "@oca/database";
 import { type LoginInput, isPermission } from "@oca/shared";
 import { AuditService } from "../audit/audit.service";
 import type { AuthUser } from "../common/auth-types";
+import { ENV, type Env } from "../config/env";
 import { PRISMA } from "../prisma/prisma.module";
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
@@ -41,21 +42,24 @@ export class AuthService {
     @Inject(PasswordService) private readonly passwords: PasswordService,
     @Inject(TokenService) private readonly tokens: TokenService,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   async login(input: LoginInput, ctx: RequestContext): Promise<SessionResult> {
+    const emailKey = createHash("sha256").update(input.email.trim().toLowerCase()).digest("hex");
+    await this.assertNotLocked(emailKey);
     const user = await this.prisma.user.findUnique({
       where: { email: input.email },
       include: userInclude,
     });
     if (!user) {
       await this.passwords.verifyDummy(input.password);
-      await this.failLogin(input.email, ctx);
+      await this.failLogin(emailKey, ctx);
       throw new UnauthorizedException("Invalid credentials");
     }
     const passwordOk = await this.passwords.verify(user.passwordHash, input.password);
     if (!passwordOk || !user.isActive) {
-      await this.failLogin(input.email, ctx);
+      await this.failLogin(emailKey, ctx);
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -185,11 +189,27 @@ export class AuthService {
     });
   }
 
-  private async failLogin(email: string, ctx: RequestContext): Promise<void> {
+  /**
+   * Per-email lockout, independent of the per-IP throttle (which a distributed attacker bypasses).
+   * Tradeoff: an attacker who knows an email can deliberately lock that account for the window (DoS);
+   * we accept this over allowing unlimited password guessing. Tune via LOGIN_EMAIL_* env vars.
+   * Only a hash of the email is stored: the typed value may be a password or other secret.
+   */
+  private async assertNotLocked(emailKey: string): Promise<void> {
+    const since = new Date(Date.now() - this.env.LOGIN_EMAIL_WINDOW_MINUTES * 60_000);
+    const failures = await this.prisma.auditLog.count({
+      where: { entity: "LoginAttempt", entityId: emailKey, action: "auth.login_failed", createdAt: { gte: since } },
+    });
+    if (failures >= this.env.LOGIN_EMAIL_MAX_FAILURES) {
+      throw new HttpException("Too many failed attempts, try again later", 429);
+    }
+  }
+
+  private async failLogin(emailKey: string, ctx: RequestContext): Promise<void> {
     await this.audit.record({
       action: "auth.login_failed",
-      entity: "User",
-      after: { email },
+      entity: "LoginAttempt",
+      entityId: emailKey,
       ip: ctx.ip,
     });
   }

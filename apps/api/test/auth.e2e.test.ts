@@ -170,4 +170,51 @@ describe("auth (e2e)", () => {
       await limited.app.close();
     }
   });
+
+  it("ignores X-Forwarded-For by default (TRUST_PROXY=false)", async () => {
+    await request(server())
+      .post("/auth/login")
+      .set("X-Forwarded-For", "203.0.113.9")
+      .send({ email: "owner@test.local", password: TEST_PASSWORD })
+      .expect(200);
+    const log = await db.auditLog.findFirstOrThrow({ where: { action: "auth.login" } });
+    expect(log.ip).not.toContain("203.0.113.9");
+  });
+
+  it("uses X-Forwarded-For for the audit ip when TRUST_PROXY=1", async () => {
+    const proxied = await createTestApp({ TRUST_PROXY: "1" });
+    try {
+      await request(proxied.app.getHttpServer())
+        .post("/auth/login")
+        .set("X-Forwarded-For", "203.0.113.9")
+        .send({ email: "owner@test.local", password: TEST_PASSWORD })
+        .expect(200);
+      const log = await db.auditLog.findFirstOrThrow({ where: { action: "auth.login" } });
+      expect(log.ip).toBe("203.0.113.9");
+    } finally {
+      await proxied.app.close();
+    }
+  });
+
+  it("locks an email after LOGIN_EMAIL_MAX_FAILURES failures, even for the correct password", async () => {
+    const locked = await createTestApp({ LOGIN_EMAIL_MAX_FAILURES: "3" });
+    const s = () => locked.app.getHttpServer();
+    try {
+      for (let i = 0; i < 3; i++) {
+        await request(s()).post("/auth/login").send({ email: "Owner@test.local", password: "wrong-password" }).expect(401);
+      }
+      const res = await request(s())
+        .post("/auth/login")
+        .send({ email: "owner@test.local", password: TEST_PASSWORD })
+        .expect(429);
+      expect(res.body.message).toBe("Too many failed attempts, try again later");
+      await request(s()).post("/auth/login").send({ email: "viewer@test.local", password: TEST_PASSWORD }).expect(200);
+
+      const rows = await db.auditLog.findMany();
+      expect(JSON.stringify(rows)).not.toMatch(/owner@test\.local/i);
+      expect(rows.filter((r) => r.action === "auth.login_failed")).toHaveLength(3);
+    } finally {
+      await locked.app.close();
+    }
+  });
 });
