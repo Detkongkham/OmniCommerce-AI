@@ -48,7 +48,8 @@ describe("roles and permissions (e2e)", () => {
     const res = await post({ name: "Sales", permissions: ["inbox:read", "inbox:read", "inbox:write"] }).expect(201);
     expect(res.body).toMatchObject({ name: "Sales", isSystem: false, permissions: ["inbox:read", "inbox:write"] });
 
-    await post({ name: "Sales", permissions: [] }).expect(409);
+    const dup = await post({ name: "Sales", permissions: [] }).expect(409);
+    expect(dup.body.message).toBe("Role name already in use");
     await post({ name: "Bad", permissions: ["staff:delete"] }).expect(400);
     expect(await db.auditLog.count({ where: { action: "role.create" } })).toBe(1);
   });
@@ -76,6 +77,7 @@ describe("roles and permissions (e2e)", () => {
     await del(spare.id).expect(204);
     expect(await db.role.count({ where: { id: spare.id } })).toBe(0);
     expect(await db.auditLog.count({ where: { action: "role.delete" } })).toBe(1);
+    await del(spare.id).expect(404);
   });
 
   describe("privilege escalation", () => {

@@ -5,7 +5,7 @@ import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { PRISMA } from "../../prisma/prisma.module";
 import { type RoleDto, roleInclude, roleSnapshot, toRoleDto } from "./staff.mapper";
-import { isOwner, isUniqueViolation } from "./staff.service";
+import { isOwner, prismaErrorCode, uniqueViolationFields } from "./staff.service";
 
 @Injectable()
 export class RolesService {
@@ -47,8 +47,7 @@ export class RolesService {
       });
       return dto;
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException("Role name already in use");
-      throw error;
+      throw this.mapWriteError(error);
     }
   }
 
@@ -59,6 +58,8 @@ export class RolesService {
 
     try {
       const role = await this.prisma.$transaction(async (tx) => {
+        // Serialise concurrent updates of the same role.
+        await tx.$queryRaw`SELECT "id" FROM "Role" WHERE "id" = ${id} FOR UPDATE`;
         await tx.rolePermission.deleteMany({ where: { roleId: id } });
         return tx.role.update({
           where: { id },
@@ -82,8 +83,7 @@ export class RolesService {
       });
       return dto;
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException("Role name already in use");
-      throw error;
+      throw this.mapWriteError(error);
     }
   }
 
@@ -92,7 +92,14 @@ export class RolesService {
     if (role.isSystem) throw new ConflictException("System role cannot be deleted");
     if (role.userCount > 0) throw new ConflictException("Role is assigned to users");
 
-    await this.prisma.role.delete({ where: { id } });
+    try {
+      await this.prisma.role.delete({ where: { id } });
+    } catch (error) {
+      const code = prismaErrorCode(error);
+      if (code === "P2025") throw new NotFoundException("Role not found");
+      if (code === "P2003") throw new ConflictException("Role is assigned to users");
+      throw error;
+    }
     await this.audit.record({
       userId: actor.id,
       action: "role.delete",
@@ -101,6 +108,17 @@ export class RolesService {
       before: roleSnapshot(role),
       ip,
     });
+  }
+
+  private mapWriteError(error: unknown): unknown {
+    const fields = uniqueViolationFields(error);
+    if (fields) {
+      return fields.some((f) => f.includes("name"))
+        ? new ConflictException("Role name already in use")
+        : new ConflictException("Conflict");
+    }
+    if (prismaErrorCode(error) === "P2025") return new NotFoundException("Role not found");
+    return error;
   }
 
   private assertCanGrant(input: RoleInput, actor: AuthUser): void {

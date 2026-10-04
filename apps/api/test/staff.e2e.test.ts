@@ -202,4 +202,55 @@ describe("staff (e2e)", () => {
       .expect(200);
     expect(promoted.body.roleName).toBe("OWNER");
   });
+
+  it("two concurrent PATCHes cannot leave zero active OWNERs", async () => {
+    const owner2 = await db.user.create({
+      data: {
+        email: "owner2@test.local",
+        name: "Owner2",
+        passwordHash: ids.ownerUser.passwordHash,
+        roleId: ids.owner.id,
+      },
+    });
+    const t1 = (await loginAs(app, "owner@test.local")).accessToken;
+    const t2 = (await loginAs(app, "owner2@test.local")).accessToken;
+
+    // Deterministic interleaving: hold a lock on both OWNER rows from a separate transaction,
+    // fire both requests, wait until both are blocked on that lock, then release.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const holder = db.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT "id" FROM "User" WHERE "roleId" = ${ids.owner.id} FOR UPDATE`;
+        locked();
+        await gate;
+      },
+      { timeout: 15_000 },
+    );
+    await lockTaken;
+
+    const requests = Promise.all([
+      request(server()).patch(`/staff/${owner2.id}`).set(bearer(t1)).send({ isActive: false }),
+      request(server()).patch(`/staff/${ids.ownerUser.id}`).set(bearer(t2)).send({ roleId: ids.viewer.id }),
+    ]);
+    for (let i = 0; i < 200; i++) {
+      const [{ n }] = await db.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      if (n >= 2) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    release();
+    await holder;
+    const [a, b] = await requests;
+
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect(await db.user.count({ where: { isActive: true, role: { name: "OWNER" } } })).toBeGreaterThanOrEqual(1);
+  });
 });

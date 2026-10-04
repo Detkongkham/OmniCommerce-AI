@@ -14,8 +14,35 @@ import type { AuthUser } from "../../common/auth-types";
 import { PRISMA } from "../../prisma/prisma.module";
 import { type StaffDto, staffInclude, staffSnapshot, toStaffDto } from "./staff.mapper";
 
+export function prismaErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002";
+  return prismaErrorCode(error) === "P2002";
+}
+
+interface UniqueMeta {
+  target?: unknown;
+  driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } };
+}
+
+/**
+ * Fields/constraint named by a P2002 error: `meta.target`, or (driver adapters) the constraint
+ * in `meta.driverAdapterError.cause.constraint`. [] when unknown; undefined when not a P2002.
+ */
+export function uniqueViolationFields(error: unknown): string[] | undefined {
+  if (!isUniqueViolation(error)) return undefined;
+  const meta = (error as { meta?: UniqueMeta }).meta;
+  const target = meta?.target;
+  if (Array.isArray(target)) return target.map(String);
+  if (typeof target === "string") return [target];
+  const constraint = meta?.driverAdapterError?.cause?.constraint;
+  if (typeof constraint?.index === "string") return [constraint.index];
+  if (Array.isArray(constraint?.fields)) return constraint.fields.map(String);
+  return [];
 }
 
 export function isOwner(actor: AuthUser): boolean {
@@ -94,16 +121,18 @@ export class StaffService {
       before.isActive &&
       before.role.name === SYSTEM_ROLE_OWNER &&
       (input.isActive === false || (input.roleId !== undefined && input.roleId !== before.roleId));
-    if (leavesOwner) {
-      const otherOwners = await this.prisma.user.count({
-        where: { id: { not: id }, isActive: true, role: { name: SYSTEM_ROLE_OWNER } },
-      });
-      if (otherOwners === 0) throw new ConflictException("Cannot remove the last active OWNER");
-    }
     const passwordHash = input.password === undefined ? undefined : await this.passwords.hash(input.password);
     const revokeSessions = input.password !== undefined || input.isActive === false;
 
     const after = await this.prisma.$transaction(async (tx) => {
+      if (leavesOwner) {
+        // Serialise concurrent OWNER demotions: lock every OWNER row, then re-check inside the tx.
+        await tx.$queryRaw`SELECT u."id" FROM "User" u JOIN "Role" r ON r."id" = u."roleId" WHERE r."name" = ${SYSTEM_ROLE_OWNER} FOR UPDATE OF u`;
+        const otherOwners = await tx.user.count({
+          where: { id: { not: id }, isActive: true, role: { name: SYSTEM_ROLE_OWNER } },
+        });
+        if (otherOwners === 0) throw new ConflictException("Cannot remove the last active OWNER");
+      }
       const updated = await tx.user.update({
         where: { id },
         data: {
