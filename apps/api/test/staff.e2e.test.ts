@@ -28,6 +28,7 @@ describe("staff (e2e)", () => {
 
     const list = await request(server()).get("/staff").set(bearer(accessToken)).expect(200);
     expect(list.body).toHaveLength(2);
+    expect(JSON.stringify(list.body)).not.toMatch(/passwordHash|tokenHash/);
     expect(list.body[0]).not.toHaveProperty("passwordHash");
 
     await request(server())
@@ -73,6 +74,7 @@ describe("staff (e2e)", () => {
     const res = await patch(ids.viewerUser.id, { name: "Renamed" }).expect(200);
     expect(res.body.name).toBe("Renamed");
     await patch(ids.viewerUser.id, {}).expect(400);
+    await patch(ids.viewerUser.id, { name: "X", unknownKey: 1 }).expect(400);
     await patch("missing-id", { name: "X" }).expect(404);
     expect(await db.auditLog.count({ where: { action: "staff.update" } })).toBe(1);
   });

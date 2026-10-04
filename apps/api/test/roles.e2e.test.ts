@@ -1,5 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
+import { PERMISSIONS } from "@oca/shared";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestApp, loginAs, resetDb, seedBasics, seedHr } from "./helpers";
@@ -22,10 +23,10 @@ describe("roles and permissions (e2e)", () => {
     ids = await seedBasics(db);
   });
 
-  it("GET /permissions ຄືນລາຍການທັງ 24; GET /roles ມີ permission ແລະ userCount", async () => {
+  it("GET /permissions ຄືນລາຍການທັງໝົດ; GET /roles ມີ permission ແລະ userCount", async () => {
     const { accessToken } = await loginAs(app, "viewer@test.local");
     const perms = await request(server()).get("/permissions").set(bearer(accessToken)).expect(200);
-    expect(perms.body.permissions).toHaveLength(24);
+    expect(perms.body.permissions).toHaveLength(PERMISSIONS.length);
 
     const roles = await request(server()).get("/roles").set(bearer(accessToken)).expect(200);
     const viewer = roles.body.find((r: { name: string }) => r.name === "VIEWER");

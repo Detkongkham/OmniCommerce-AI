@@ -1,5 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
+import { JwtService } from "@nestjs/jwt";
+import { PERMISSIONS } from "@oca/shared";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { TokenService } from "../src/auth/token.service";
@@ -30,8 +32,9 @@ describe("auth (e2e)", () => {
     expect(res.body.accessToken).toEqual(expect.any(String));
     expect(res.body.refreshToken).toBeUndefined();
     expect(res.body.user).toMatchObject({ email: "owner@test.local", roleName: "OWNER" });
-    expect(res.body.user.permissions).toHaveLength(24);
+    expect(res.body.user.permissions).toHaveLength(PERMISSIONS.length);
     expect(res.body.user.passwordHash).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|tokenHash/);
 
     const cookies = (res.headers["set-cookie"] as unknown as string[]).join(";");
     expect(cookies).toContain("oca_rt=");
@@ -216,5 +219,34 @@ describe("auth (e2e)", () => {
     } finally {
       await locked.app.close();
     }
+  });
+
+  it("a validly signed token for a non-existent user id is rejected with 401", async () => {
+    const token = await app
+      .get(JwtService)
+      .signAsync({}, { subject: "no-such-user", secret: process.env.JWT_ACCESS_SECRET, algorithm: "HS256", expiresIn: 60 });
+    await request(server()).get("/auth/me").set("Authorization", `Bearer ${token}`).expect(401);
+  });
+
+  it("an already-expired access token is rejected with 401", async () => {
+    const user = await db.user.findUniqueOrThrow({ where: { email: "owner@test.local" } });
+    const past = Math.floor(Date.now() / 1000) - 3600;
+    const token = await app
+      .get(JwtService)
+      .signAsync(
+        { iat: past - 60, exp: past },
+        { subject: user.id, secret: process.env.JWT_ACCESS_SECRET, algorithm: "HS256" },
+      );
+    await request(server()).get("/auth/me").set("Authorization", `Bearer ${token}`).expect(401);
+  });
+
+  it("answers a CORS preflight for the configured origin with credentials allowed", async () => {
+    const origin = process.env.CORS_ORIGIN?.split(",")[0]?.trim() ?? "http://localhost:3000";
+    const res = await request(server())
+      .options("/auth/login")
+      .set("Origin", origin)
+      .set("Access-Control-Request-Method", "POST");
+    expect(res.headers["access-control-allow-origin"]).toBe(origin);
+    expect(res.headers["access-control-allow-credentials"]).toBe("true");
   });
 });
