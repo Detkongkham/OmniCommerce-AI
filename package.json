@@ -10,7 +10,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "db:seed": "pnpm --filter @oca/database db:seed"
   },
   "devDependencies": {
     "turbo": "^2.0.0"
