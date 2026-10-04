@@ -1181,7 +1181,9 @@ export class OrdersService {
       }
 
       // 5) ເລກບິນ + ບັນທຶກ
-      const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('"Order_number_seq"') AS n`;
+      const [sequenceRow] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('"Order_number_seq"') AS n`;
+      if (!sequenceRow) throw new Error("Order_number_seq returned no row");
+      const n = sequenceRow.n;
       const minutes = input.reservationMinutes ?? settings.reservationMinutes;
       const order = await tx.order.create({
         data: {
