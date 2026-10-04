@@ -1,10 +1,12 @@
 import { Module } from "@nestjs/common";
 import { AppConfigModule } from "./config/config.module";
+import { MaintenanceWorker } from "./processors/maintenance.worker";
 import { SystemWorker } from "./processors/system.worker";
+import { PrismaModule } from "./prisma/prisma.module";
 import { RedisModule } from "./redis/redis.module";
 
 @Module({
-  imports: [AppConfigModule, RedisModule],
-  providers: [SystemWorker],
+  imports: [AppConfigModule, RedisModule, PrismaModule],
+  providers: [SystemWorker, MaintenanceWorker],
 })
 export class WorkerModule {}
