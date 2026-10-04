@@ -1,0 +1,6 @@
+{
+  "name": "@oca/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "BullMQ workers: webhooks, scheduler, live CF, slip OCR"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@oca/channels",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Social channel adapters: Facebook, Instagram, TikTok, LINE"
+}

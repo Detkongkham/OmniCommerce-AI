@@ -1,0 +1,6 @@
+{
+  "name": "@oca/storefront",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Next.js public storefront (SSR/SEO)"
+}

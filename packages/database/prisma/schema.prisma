@@ -1,0 +1,325 @@
+// OmniCommerce AI - ໂມດູນ 7: ສິນຄ້າ, variants, ສະຕ໋ອກສູນກາງ, ຄຳສັ່ງຊື້
+// ຂອບເຂດ: ຮ້ານດຽວ (ບໍ່ມີ tenantId) - ເບິ່ງ docs/adr/0001-single-store-first.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Currency {
+  LAK
+  THB
+  USD
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+// ແພລັດຟອມທີ່ຄຳສັ່ງຊື້ເຂົ້າມາ (ໃຊ້ປຽບທຽບຍອດຂາຍແຕ່ລະຊ່ອງທາງ)
+enum SalesChannel {
+  STOREFRONT
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  LINE
+  OFFLINE
+}
+
+// ວິທີທີ່ຄຳສັ່ງຊື້ຖືກສ້າງພາຍໃນຊ່ອງທາງນັ້ນ
+enum OrderSource {
+  WEB_CHECKOUT
+  CHAT
+  LIVE_CF
+  POST_CF
+  MANUAL
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT // ຈອງສະຕ໋ອກແລ້ວ ລໍຖ້າຊຳລະ (ມີ reservedUntil)
+  PAID
+  PACKING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+  EXPIRED // ໝົດເວລາຈອງ ຄືນສະຕ໋ອກແລ້ວ
+}
+
+enum StockMovementType {
+  RECEIVE // ຮັບສິນຄ້າເຂົ້າສາງ        onHand +
+  ADJUST // ປັບຍອດ (ນັບສະຕ໋ອກ/ເສຍຫາຍ)  onHand +/-
+  RESERVE // ຈອງໃຫ້ຄຳສັ່ງຊື້           reserved +
+  RELEASE // ຍົກເລີກ/ໝົດເວລາຈອງ        reserved -
+  SHIP // ສົ່ງອອກ                     onHand -, reserved -
+  RETURN // ລູກຄ້າສົ່ງຄືນ              onHand +
+  TRANSFER_IN // ຍ້າຍເຂົ້າຈາກສາງອື່ນ    onHand +
+  TRANSFER_OUT // ຍ້າຍອອກໄປສາງອື່ນ      onHand -
+}
+
+// ---------------------------------------------------------------------------
+// ການຕັ້ງຄ່າຮ້ານ (ແຖວດຽວ, id = 1)
+// ---------------------------------------------------------------------------
+
+model StoreSetting {
+  id               Int      @id @default(1)
+  name             String
+  baseCurrency     Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
+  vatRate          Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
+  pricesIncludeVat Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
+}
+
+model ExchangeRate {
+  id          String   @id @default(cuid())
+  currency    Currency // ສະກຸນທີ່ບໍ່ແມ່ນ baseCurrency
+  rateToBase  Decimal  @db.Decimal(18, 6) // 1 ໜ່ວຍຂອງ currency = ? baseCurrency
+  effectiveAt DateTime @default(now())
+
+  @@index([currency, effectiveAt])
+}
+
+// ---------------------------------------------------------------------------
+// ສິນຄ້າ & Variants
+// ---------------------------------------------------------------------------
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  position  Int        @default(0)
+  parentId  String?
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Category[] @relation("CategoryTree")
+  products  Product[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([parentId])
+}
+
+model Product {
+  id          String           @id @default(cuid())
+  name        String
+  slug        String           @unique
+  description String?
+  status      ProductStatus    @default(DRAFT)
+  categoryId  String?
+  category    Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  options     ProductOption[]
+  variants    ProductVariant[]
+  images      ProductImage[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([status])
+  @@index([categoryId])
+}
+
+// ຕົວເລືອກຂອງສິນຄ້າ ເຊັ່ນ "ສີ", "ໄຊສ໌"
+model ProductOption {
+  id        String               @id @default(cuid())
+  productId String
+  product   Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  position  Int                  @default(0)
+  values    ProductOptionValue[]
+
+  @@unique([productId, name])
+}
+
+// ຄ່າຂອງຕົວເລືອກ ເຊັ່ນ "ດຳ", "M"
+model ProductOptionValue {
+  id       String           @id @default(cuid())
+  optionId String
+  option   ProductOption    @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  value    String
+  position Int              @default(0)
+  variants ProductVariant[]
+
+  @@unique([optionId, value])
+}
+
+// ໜ່ວຍທີ່ຂາຍ ແລະ ນັບສະຕ໋ອກຕົວຈິງ. ສິນຄ້າທີ່ບໍ່ມີຕົວເລືອກກໍມີ 1 variant
+model ProductVariant {
+  id             String               @id @default(cuid())
+  productId      String
+  product        Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku            String               @unique
+  barcode        String?              @unique
+  name           String? // ເຊັ່ນ "ດຳ / M"; null ຖ້າສິນຄ້າບໍ່ມີຕົວເລືອກ
+  optionValues   ProductOptionValue[]
+  price          Decimal              @db.Decimal(18, 2) // baseCurrency
+  compareAtPrice Decimal?             @db.Decimal(18, 2) // ລາຄາກ່ອນຫຼຸດ
+  costPrice      Decimal              @default(0) @db.Decimal(18, 2) // ຕົ້ນທຶນ (COGS)
+  weightGrams    Int?
+  isActive       Boolean              @default(true)
+  images         ProductImage[]
+  stockLevels    StockLevel[]
+  stockMovements StockMovement[]
+  orderItems     OrderItem[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([productId])
+}
+
+model ProductImage {
+  id        String          @id @default(cuid())
+  productId String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String? // null = ຮູບຂອງສິນຄ້າລວມ
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  url       String
+  alt       String?
+  position  Int             @default(0)
+  createdAt DateTime        @default(now())
+
+  @@index([productId])
+  @@index([variantId])
+}
+
+// ---------------------------------------------------------------------------
+// ສະຕ໋ອກສູນກາງ
+// ---------------------------------------------------------------------------
+
+model Warehouse {
+  id             String          @id @default(cuid())
+  code           String          @unique
+  name           String
+  address        String?
+  isDefault      Boolean         @default(false)
+  isActive       Boolean         @default(true)
+  stockLevels    StockLevel[]
+  stockMovements StockMovement[]
+  orderItems     OrderItem[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+// ຍອດສະຕ໋ອກປັດຈຸບັນຂອງ variant ໃນແຕ່ລະສາງ. ຂາຍໄດ້ = onHand - reserved
+// CHECK constraint ໃນ migration ບັງຄັບ 0 <= reserved <= onHand (ປ້ອງກັນຂາຍເກີນ)
+model StockLevel {
+  id                String         @id @default(cuid())
+  variantId         String
+  variant           ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  warehouseId       String
+  warehouse         Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  onHand            Int            @default(0)
+  reserved          Int            @default(0)
+  lowStockThreshold Int? // ໃຊ້ແຈ້ງເຕືອນສະຕ໋ອກໃກ້ໝົດ (ໂມດູນ 9)
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([variantId, warehouseId])
+  @@index([warehouseId])
+}
+
+// ບັນຊີການເຄື່ອນໄຫວສະຕ໋ອກ (ເພີ່ມຢ່າງດຽວ ບໍ່ແກ້ ບໍ່ລຶບ) ສຳລັບ Audit Trail
+model StockMovement {
+  id          String            @id @default(cuid())
+  variantId   String
+  variant     ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  warehouseId String
+  warehouse   Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  type        StockMovementType
+  quantity    Int // ຈຳນວນບວກສະເໝີ, ທິດທາງກຳນົດໂດຍ type; ຍົກເວັ້ນ ADJUST ທີ່ຕິດລົບໄດ້
+  orderId     String?
+  order       Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  note        String?
+  actorId     String? // ພະນັກງານທີ່ເຮັດລາຍການ (ເຊື່ອມກັບໂມດູນ 12 ພາຍຫຼັງ)
+  createdAt   DateTime          @default(now())
+
+  @@index([variantId, warehouseId, createdAt])
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// ລູກຄ້າ (ຂັ້ນຕ່ຳສຳລັບຄຳສັ່ງຊື້; ໂມດູນ 11 CRM ຈະຂະຫຍາຍຕໍ່)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?  @unique
+  email     String?
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// ຄຳສັ່ງຊື້
+// ---------------------------------------------------------------------------
+
+model Order {
+  id          String       @id @default(cuid())
+  orderNumber String       @unique
+  customerId  String?
+  customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  channel     SalesChannel
+  source      OrderSource
+  status      OrderStatus  @default(PENDING_PAYMENT)
+
+  // ຍອດເງິນເປັນ baseCurrency. currency + exchangeRate ບັນທຶກສະກຸນທີ່ລູກຄ້າຈ່າຍ ນະ ເວລາສັ່ງຊື້
+  currency      Currency
+  exchangeRate  Decimal  @default(1) @db.Decimal(18, 6)
+  subtotal      Decimal  @db.Decimal(18, 2)
+  discountTotal Decimal  @default(0) @db.Decimal(18, 2)
+  shippingFee   Decimal  @default(0) @db.Decimal(18, 2)
+  vatRate       Decimal  @db.Decimal(5, 2)
+  vatAmount     Decimal  @db.Decimal(18, 2)
+  total         Decimal  @db.Decimal(18, 2)
+
+  shippingName    String?
+  shippingPhone   String?
+  shippingAddress String?
+  note            String?
+
+  reservedUntil DateTime? // ໝົດເວລາຈອງສະຕ໋ອກ (ໂມງນັບຖອຍຫຼັງໃນໃບບິນ)
+  paidAt        DateTime?
+  shippedAt     DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  items          OrderItem[]
+  stockMovements StockMovement[]
+
+  @@index([status, reservedUntil])
+  @@index([customerId])
+  @@index([channel, createdAt])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String         @id @default(cuid())
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  warehouseId String // ສາງທີ່ຈອງສະຕ໋ອກໃຫ້ລາຍການນີ້
+  warehouse   Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  // Snapshot ນະ ເວລາສັ່ງຊື້ (ບໍ່ປ່ຽນຕາມການແກ້ໄຂສິນຄ້າພາຍຫຼັງ)
+  productName String
+  variantName String?
+  sku         String
+  unitPrice   Decimal @db.Decimal(18, 2)
+  unitCost    Decimal @db.Decimal(18, 2) // ສຳລັບລາຍງານ COGS / P&L
+  quantity    Int
+  discount    Decimal @default(0) @db.Decimal(18, 2)
+  lineTotal   Decimal @db.Decimal(18, 2)
+
+  @@index([orderId])
+  @@index([variantId])
+}

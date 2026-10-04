@@ -1,0 +1,6 @@
+{
+  "name": "@oca/integrations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Couriers, payments and notification adapters"
+}
