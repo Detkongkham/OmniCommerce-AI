@@ -12,25 +12,22 @@ import {
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
-import { uniqueViolationFields } from "../../common/prisma-errors";
+import { duplicateError } from "../../common/duplicate-error";
+import { prismaErrorCode } from "../../common/prisma-errors";
 import { uniqueSlug } from "../../common/unique-slug";
 import { PRISMA } from "../../prisma/prisma.module";
 import {
   type ProductDetailDto,
   type ProductDetailRow,
   type ProductListItemDto,
+  type VariantDto,
   productDetailInclude,
   productListInclude,
   productSnapshot,
   toProductDetail,
   toProductListItem,
+  variantSnapshot,
 } from "./products.mapper";
-
-export function duplicateError(error: unknown): ConflictException | undefined {
-  const fields = uniqueViolationFields(error);
-  if (!fields) return undefined;
-  return new ConflictException(`Duplicate value: ${fields.join(", ") || "unique field"}`);
-}
 
 @Injectable()
 export class ProductsService {
@@ -142,8 +139,9 @@ export class ProductsService {
           });
         }
         return product.id;
-      });
+      }, { timeout: 15_000 });
     } catch (error) {
+      if (prismaErrorCode(error) === "P2003") throw new BadRequestException("Category not found");
       throw duplicateError(error) ?? error;
     }
 
@@ -174,6 +172,9 @@ export class ProductsService {
         },
       });
     } catch (error) {
+      const code = prismaErrorCode(error);
+      if (code === "P2025") throw new NotFoundException("Product not found");
+      if (code === "P2003") throw new BadRequestException("Category not found");
       throw duplicateError(error) ?? error;
     }
     const after = await this.requireDetail(id);
@@ -213,7 +214,14 @@ export class ProductsService {
     if ((await this.prisma.stockMovement.count({ where: { variantId: { in: variantIds } } })) > 0) {
       throw new ConflictException("Product has stock history; archive it instead (PATCH status=ARCHIVED)");
     }
-    await this.prisma.product.delete({ where: { id } });
+    try {
+      await this.prisma.product.delete({ where: { id } });
+    } catch (error) {
+      const code = prismaErrorCode(error);
+      if (code === "P2025") throw new NotFoundException("Product not found");
+      if (code === "P2003") throw new ConflictException("Product is referenced by orders/stock; archive it instead");
+      throw error;
+    }
     await this.audit.record({
       userId: actor.id,
       action: "product.delete",
@@ -225,64 +233,72 @@ export class ProductsService {
     return { archived: false };
   }
 
-  async addVariant(productId: string, input: VariantInput, actor: AuthUser, ip: string | undefined) {
-    const product = await this.requireDetail(productId);
-    const optionNames = product.options.map((option) => option.name);
-
-    if (optionNames.length === 0) {
-      throw new ConflictException("A product without options has exactly one variant");
-    }
-    const givenKeys = Object.keys(input.optionValues);
-    if (givenKeys.length !== optionNames.length || !optionNames.every((name) => name in input.optionValues)) {
-      throw new BadRequestException("optionValues must specify every option");
-    }
-    const valueIds: string[] = [];
-    for (const option of product.options) {
-      const match = option.values.find((value) => value.value === input.optionValues[option.name]);
-      if (!match) throw new BadRequestException(`Value for option "${option.name}" is not in its list`);
-      valueIds.push(match.id);
-    }
-    const combo = [...valueIds].sort().join("|");
-    const taken = product.variants.some(
-      (variant) =>
-        variant.optionValues
-          .map((value) => value.id)
-          .sort()
-          .join("|") === combo,
-    );
-    if (taken) throw new ConflictException("A variant with these option values already exists");
-
+  async addVariant(productId: string, input: VariantInput, actor: AuthUser, ip: string | undefined): Promise<VariantDto> {
+    let createdId: string;
+    let createdSku: string;
     try {
-      const created = await this.prisma.productVariant.create({
-        data: {
-          productId,
-          sku: input.sku,
-          barcode: input.barcode ?? null,
-          name: variantName(optionNames, input.optionValues),
-          price: input.price,
-          compareAtPrice: input.compareAtPrice ?? null,
-          costPrice: input.costPrice,
-          weightGrams: input.weightGrams ?? null,
-          isActive: input.isActive,
-          optionValues: { connect: valueIds.map((valueId) => ({ id: valueId })) },
-        },
-      });
-      await this.audit.record({
-        userId: actor.id,
-        action: "variant.create",
-        entity: "ProductVariant",
-        entityId: created.id,
-        after: { productId, sku: created.sku },
-        ip,
-      });
-      const detail = await this.requireDetail(productId);
-      return toProductDetail(detail).variants.find((variant) => variant.id === created.id);
+      ({ id: createdId, sku: createdSku } = await this.prisma.$transaction(async (tx) => {
+        // serialise concurrent variant additions to the same product
+        await tx.$queryRaw`SELECT 1 FROM "Product" WHERE id = ${productId} FOR UPDATE`;
+        const product = await tx.product.findUnique({ where: { id: productId }, include: productDetailInclude });
+        if (!product) throw new NotFoundException("Product not found");
+        const optionNames = product.options.map((option) => option.name);
+
+        if (optionNames.length === 0) {
+          throw new ConflictException("A product without options has exactly one variant");
+        }
+        const givenKeys = Object.keys(input.optionValues);
+        if (givenKeys.length !== optionNames.length || !optionNames.every((name) => name in input.optionValues)) {
+          throw new BadRequestException("optionValues must specify every option");
+        }
+        const valueIds: string[] = [];
+        for (const option of product.options) {
+          const match = option.values.find((value) => value.value === input.optionValues[option.name]);
+          if (!match) throw new BadRequestException(`Value for option "${option.name}" is not in its list`);
+          valueIds.push(match.id);
+        }
+        const combo = [...valueIds].sort().join("|");
+        const taken = product.variants.some(
+          (variant) =>
+            variant.optionValues
+              .map((value) => value.id)
+              .sort()
+              .join("|") === combo,
+        );
+        if (taken) throw new ConflictException("A variant with these option values already exists");
+
+        return tx.productVariant.create({
+          data: {
+            productId,
+            sku: input.sku,
+            barcode: input.barcode ?? null,
+            name: variantName(optionNames, input.optionValues),
+            price: input.price,
+            compareAtPrice: input.compareAtPrice ?? null,
+            costPrice: input.costPrice,
+            weightGrams: input.weightGrams ?? null,
+            isActive: input.isActive,
+            optionValues: { connect: valueIds.map((valueId) => ({ id: valueId })) },
+          },
+        });
+      }));
     } catch (error) {
       throw duplicateError(error) ?? error;
     }
+    await this.audit.record({
+      userId: actor.id,
+      action: "variant.create",
+      entity: "ProductVariant",
+      entityId: createdId,
+      after: { productId, sku: createdSku },
+      ip,
+    });
+    const variant = toProductDetail(await this.requireDetail(productId)).variants.find((item) => item.id === createdId);
+    if (!variant) throw new NotFoundException("Variant not found");
+    return variant;
   }
 
-  async updateVariant(id: string, input: UpdateVariantInput, actor: AuthUser, ip: string | undefined) {
+  async updateVariant(id: string, input: UpdateVariantInput, actor: AuthUser, ip: string | undefined): Promise<VariantDto> {
     const before = await this.prisma.productVariant.findUnique({ where: { id } });
     if (!before) throw new NotFoundException("Variant not found");
 
@@ -292,8 +308,9 @@ export class ProductsService {
       throw new BadRequestException("compareAtPrice must be >= price");
     }
 
+    let after: typeof before;
     try {
-      await this.prisma.productVariant.update({
+      after = await this.prisma.productVariant.update({
         where: { id },
         data: {
           sku: input.sku,
@@ -306,24 +323,26 @@ export class ProductsService {
         },
       });
     } catch (error) {
+      if (prismaErrorCode(error) === "P2025") throw new NotFoundException("Variant not found");
       throw duplicateError(error) ?? error;
     }
     const detail = await this.requireDetail(before.productId);
     const variant = toProductDetail(detail).variants.find((item) => item.id === id);
+    if (!variant) throw new NotFoundException("Variant not found");
     await this.audit.record({
       userId: actor.id,
       action: "variant.update",
       entity: "ProductVariant",
       entityId: id,
-      before: { sku: before.sku, price: before.price.toFixed(2), costPrice: before.costPrice.toFixed(2), isActive: before.isActive },
-      after: variant ? { sku: variant.sku, price: variant.price, costPrice: variant.costPrice, isActive: variant.isActive } : undefined,
+      before: variantSnapshot(before),
+      after: variantSnapshot(after),
       ip,
     });
     return variant;
   }
 
   async putImages(productId: string, input: PutProductImagesInput, actor: AuthUser, ip: string | undefined): Promise<ProductDetailDto> {
-    await this.requireDetail(productId);
+    const before = await this.requireDetail(productId);
     const variantIds = [...new Set(input.images.flatMap((image) => (image.variantId ? [image.variantId] : [])))];
     if (variantIds.length > 0) {
       const owned = await this.prisma.productVariant.count({ where: { id: { in: variantIds }, productId } });
@@ -348,7 +367,8 @@ export class ProductsService {
       action: "product.images",
       entity: "Product",
       entityId: productId,
-      after: { count: input.images.length },
+      before: { images: before.images.map((image) => ({ url: image.url, variantId: image.variantId })) },
+      after: { images: input.images.map((image) => ({ url: image.url, variantId: image.variantId ?? null })) },
       ip,
     });
     return toProductDetail(await this.requireDetail(productId));

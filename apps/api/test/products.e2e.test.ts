@@ -96,8 +96,27 @@ describe("products (e2e)", () => {
 
     it("SKU ຊ້ຳກັບສິນຄ້າອື່ນ → 409 ແລະ ບໍ່ມີສິນຄ້າຄ້າງ (rollback)", async () => {
       await create(cup).expect(201);
-      await create({ name: "Other", variants: [{ sku: "CUP-1", price: "1" }] }).expect(409);
+      const dup = await create({ name: "Other", variants: [{ sku: "CUP-1", price: "1" }] }).expect(409);
+      expect(dup.body.message).toContain("sku");
+      expect(dup.body.message).not.toContain("_key");
       expect(await db.product.count()).toBe(1);
+    });
+
+    it("barcode / slug ຊ້ຳ → 409 ແລະ message ບອກຊື່ field (ບໍ່ມີ _key)", async () => {
+      await create({ name: "A", slug: "a-slug", variants: [{ sku: "A-1", barcode: "BC-1", price: "1" }] }).expect(201);
+      const barcode = await create({ name: "B", variants: [{ sku: "B-1", barcode: "BC-1", price: "1" }] }).expect(409);
+      expect(barcode.body.message).toContain("barcode");
+      expect(barcode.body.message).not.toContain("_key");
+      const slug = await create({ name: "C", slug: "a-slug", variants: [{ sku: "C-1", price: "1" }] }).expect(409);
+      expect(slug.body.message).toContain("slug");
+      expect(slug.body.message).not.toContain("_key");
+    });
+
+    it("optionValues ຮຽງ key ຕາມລຳດັບ option", async () => {
+      const res = await create(shirt).expect(201);
+      for (const variant of res.body.variants) {
+        expect(Object.keys(variant.optionValues)).toEqual(["ສີ", "ໄຊສ໌"]);
+      }
     });
 
     it("category ທີ່ບໍ່ມີ → 400; body ຜິດ → 400 ພ້ອມ issues", async () => {
@@ -250,6 +269,16 @@ describe("products (e2e)", () => {
       await post({ sku: "TS-BK-M", price: "1", optionValues: { ສີ: "ຂາວ", ໄຊສ໌: "L" } }).expect(409);
     });
 
+    it("ເພີ່ມ variant ຊຸດຄ່າດຽວກັນພ້ອມກັນ → ສຳເລັດ 1 ແລະ 409 1", async () => {
+      for (let round = 0; round < 4; round++) {
+        const p = await create({ ...shirt, name: `Race ${round}`, variants: [{ sku: `R${round}-A`, price: "1", optionValues: { ສີ: "ດຳ", ໄຊສ໌: "M" } }], images: [] }).expect(201);
+        const post = (sku: string) =>
+          request(server()).post(`/products/${p.body.id}/variants`).set(writer).send({ sku, price: "1", optionValues: { ສີ: "ຂາວ", ໄຊສ໌: "L" } });
+        const [r1, r2] = await Promise.all([post(`R${round}-X`), post(`R${round}-Y`)]);
+        expect([r1.status, r2.status].sort()).toEqual([201, 409]);
+      }
+    });
+
     it("ສິນຄ້າບໍ່ມີ option ເພີ່ມ variant ທີສອງບໍ່ໄດ້ → 409; ບໍ່ມີສິນຄ້າ → 404", async () => {
       const p = await create(cup).expect(201);
       await request(server()).post(`/products/${p.body.id}/variants`).set(writer).send({ sku: "CUP-2", price: "1" }).expect(409);
@@ -290,7 +319,7 @@ describe("products (e2e)", () => {
         .set(writer)
         .send({ images: [{ url: "https://cdn.test/c.jpg", variantId: other.body.variants[0].id }] })
         .expect(400);
-      expect(await db.productImage.count({ where: { productId: p.body.id } })).toBe(2); // rollback: ຍັງເປັນຊຸດເກົ່າ
+      expect(await db.productImage.count({ where: { productId: p.body.id } })).toBe(2); // pre-check ຄືນ 400 ກ່ອນແຕະຮູບ: ຍັງເປັນຊຸດເກົ່າ
 
       const cleared = await request(server()).put(`/products/${p.body.id}/images`).set(writer).send({ images: [] }).expect(200);
       expect(cleared.body.images).toEqual([]);

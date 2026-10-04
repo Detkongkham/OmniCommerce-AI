@@ -1,9 +1,10 @@
-import { Prisma } from "@oca/database";
+import { Prisma, type ProductVariant } from "@oca/database";
+import type { ProductStatus } from "@oca/shared";
 import { money, moneyOrNull } from "../../common/money";
 
 export const productDetailInclude = {
   options: { orderBy: { position: "asc" }, include: { values: { orderBy: { position: "asc" } } } },
-  variants: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { optionValues: true, stockLevels: true } },
+  variants: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { optionValues: true, stockLevels: { orderBy: { warehouseId: "asc" } } } },
   images: { orderBy: { position: "asc" } },
 } as const satisfies Prisma.ProductInclude;
 
@@ -21,7 +22,7 @@ export interface ProductListItemDto {
   id: string;
   name: string;
   slug: string;
-  status: string;
+  status: ProductStatus;
   category: { id: string; name: string } | null;
   imageUrl: string | null;
   variantCount: number;
@@ -68,7 +69,7 @@ export interface ProductDetailDto {
   name: string;
   slug: string;
   description: string | null;
-  status: string;
+  status: ProductStatus;
   categoryId: string | null;
   options: { id: string; name: string; position: number; values: { id: string; value: string; position: number }[] }[];
   variants: VariantDto[];
@@ -76,7 +77,6 @@ export interface ProductDetailDto {
 }
 
 export function toProductDetail(row: ProductDetailRow): ProductDetailDto {
-  const optionNameById = new Map(row.options.map((option) => [option.id, option.name]));
   return {
     id: row.id,
     name: row.name,
@@ -101,7 +101,10 @@ export function toProductDetail(row: ProductDetailRow): ProductDetailDto {
       weightGrams: variant.weightGrams,
       isActive: variant.isActive,
       optionValues: Object.fromEntries(
-        variant.optionValues.map((value) => [optionNameById.get(value.optionId) ?? value.optionId, value.value]),
+        row.options.flatMap((option) => {
+          const chosen = variant.optionValues.find((value) => value.optionId === option.id);
+          return chosen ? [[option.name, chosen.value] as const] : [];
+        }),
       ),
       stock: variant.stockLevels.map((level) => ({
         warehouseId: level.warehouseId,
@@ -128,5 +131,18 @@ export function productSnapshot(row: ProductDetailRow): Prisma.InputJsonObject {
     status: row.status,
     categoryId: row.categoryId,
     variantSkus: row.variants.map((variant) => variant.sku),
+  };
+}
+
+/** snapshot ຂອງ variant ສຳລັບ AuditLog: ທຸກ field ທີ່ແກ້ໄຂໄດ້ (ເງິນເປັນ string). */
+export function variantSnapshot(row: ProductVariant): Prisma.InputJsonObject {
+  return {
+    sku: row.sku,
+    barcode: row.barcode,
+    price: money(row.price),
+    compareAtPrice: moneyOrNull(row.compareAtPrice),
+    costPrice: money(row.costPrice),
+    weightGrams: row.weightGrams,
+    isActive: row.isActive,
   };
 }
