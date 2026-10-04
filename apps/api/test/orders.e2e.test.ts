@@ -1,5 +1,5 @@
 import type { INestApplication } from "@nestjs/common";
-import { type PrismaClient, receive } from "@oca/database";
+import { type PrismaClient, expireOrder, receive } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { bearerFor, createTestApp, resetDb, seedCatalog, seedInventoryUsers } from "./helpers";
@@ -201,8 +201,7 @@ describe("orders (e2e)", () => {
       await request(server()).get("/orders/nope").set(reader).expect(404);
     });
 
-    // TODO(Task 3): ເອົາ .skip ອອກເມື່ອມີ route cancel
-    it.skip("GET /orders: filter status / q (ເລກບິນ, ຊື່, ໂທ) / pagination", async () => {
+    it("GET /orders: filter status / q (ເລກບິນ, ຊື່, ໂທ) / pagination", async () => {
       const item = { variantId: f.v1.id, quantity: 1 };
       const a = await createOrder({ items: [item], customer: { name: "Somchai", phone: "020111222" } }).expect(201);
       await createOrder({ items: [item] }).expect(201);
@@ -218,6 +217,160 @@ describe("orders (e2e)", () => {
       expect(paged.items).toHaveLength(1);
       expect(paged.items[0]).toMatchObject({ itemCount: 1, total: "100.00" });
       await request(server()).get("/orders?status=NOPE").set(reader).expect(400);
+    });
+  });
+
+  describe("ວົງຈອນບິນ", () => {
+    const newOrder = async (quantity = 2) =>
+      (await createOrder({ items: [{ variantId: f.v1.id, quantity }] }).expect(201)).body as { id: string };
+    const statusOf = async (id: string) => (await db.order.findUniqueOrThrow({ where: { id } })).status;
+
+    it("pay → pack → ship → complete: ສະຖານະ, timestamp, ສະຕ໋ອກ (ship ຕັດ onHand ແລະ reserved)", async () => {
+      const { id } = await newOrder(2);
+
+      const paid = await act(id, "pay").expect(200);
+      expect(paid.body.status).toBe("PAID");
+      expect(paid.body.paidAt).not.toBeNull();
+      expect(paid.body.secondsUntilExpiry).toBeNull();
+      expect(await level()).toEqual({ onHand: 10, reserved: 2 });
+
+      expect((await act(id, "pack").expect(200)).body.status).toBe("PACKING");
+      const shipped = await act(id, "ship").expect(200);
+      expect(shipped.body.status).toBe("SHIPPED");
+      expect(shipped.body.shippedAt).not.toBeNull();
+      expect(await level()).toEqual({ onHand: 8, reserved: 0 });
+
+      const done = await act(id, "complete").expect(200);
+      expect(done.body.status).toBe("COMPLETED");
+      expect(done.body.completedAt).not.toBeNull();
+
+      const types = (await db.stockMovement.findMany({ where: { orderId: id }, orderBy: { createdAt: "asc" } })).map((m) => m.type);
+      expect(types).toEqual(["RESERVE", "SHIP"]);
+      for (const action of ["pay", "pack", "ship", "complete"]) {
+        expect(await db.auditLog.count({ where: { action: `order.${action}`, entityId: id } })).toBe(1);
+      }
+    });
+
+    it("ຂ້າມຂັ້ນ/ຍ້ອນຫຼັງ → 409 ແລະ ບໍ່ປ່ຽນຫຍັງ; ບໍ່ມີບິນ → 404", async () => {
+      const { id } = await newOrder();
+      await act(id, "pack").expect(409);
+      await act(id, "ship").expect(409);
+      await act(id, "complete").expect(409);
+      expect(await statusOf(id)).toBe("PENDING_PAYMENT");
+
+      await act(id, "pay").expect(200);
+      await act(id, "pay").expect(409);
+      await act("nope", "pay").expect(404);
+      expect(await level()).toEqual({ onHand: 10, reserved: 2 });
+    });
+
+    it("pay ຫຼັງ reservedUntil → 409 (ໝົດເວລາແລ້ວ) ແລະ ຍັງ PENDING_PAYMENT", async () => {
+      const { id } = await newOrder();
+      await db.order.update({ where: { id }, data: { reservedUntil: new Date(Date.now() - 1000) } });
+      const res = await act(id, "pay").expect(409);
+      expect(res.body.message).toMatch(/expired/i);
+      expect(await statusOf(id)).toBe("PENDING_PAYMENT");
+    });
+
+    it("cancel ຈາກ PENDING_PAYMENT / PAID / PACKING ຄືນສະຕ໋ອກທີ່ຈອງ ແລະ ເກັບເຫດຜົນໃນ note", async () => {
+      const a = await newOrder(1);
+      const b = await newOrder(2);
+      const c = await newOrder(3);
+      await act(b.id, "pay").expect(200);
+      await act(c.id, "pay").expect(200);
+      await act(c.id, "pack").expect(200);
+      expect(await level()).toEqual({ onHand: 10, reserved: 6 });
+
+      const res = await act(a.id, "cancel", { reason: "ລູກຄ້າຍົກເລີກ" }).expect(200);
+      expect(res.body.status).toBe("CANCELLED");
+      expect(res.body.cancelledAt).not.toBeNull();
+      expect(res.body.note).toContain("ລູກຄ້າຍົກເລີກ");
+      await act(b.id, "cancel").expect(200);
+      await act(c.id, "cancel").expect(200);
+
+      expect(await level()).toEqual({ onHand: 10, reserved: 0 });
+      expect(await db.stockMovement.count({ where: { type: "RELEASE" } })).toBe(3);
+      expect(await db.auditLog.count({ where: { action: "order.cancel" } })).toBe(3);
+    });
+
+    it("cancel ຊ້ຳ, ຫຼັງ SHIPPED, COMPLETED, ຫຼື EXPIRED → 409 ແລະ ບໍ່ຄືນສະຕ໋ອກຊ້ຳ", async () => {
+      const { id } = await newOrder(2);
+      await act(id, "cancel").expect(200);
+      await act(id, "cancel").expect(409);
+      expect(await level()).toEqual({ onHand: 10, reserved: 0 });
+
+      const shipped = await newOrder(1);
+      await act(shipped.id, "pay").expect(200);
+      await act(shipped.id, "pack").expect(200);
+      await act(shipped.id, "ship").expect(200);
+      await act(shipped.id, "cancel").expect(409);
+      await act(shipped.id, "complete").expect(200);
+      await act(shipped.id, "cancel").expect(409);
+
+      const expired = await newOrder(1);
+      await db.order.update({ where: { id: expired.id }, data: { reservedUntil: new Date(Date.now() - 1000) } });
+      expect(await expireOrder(db, expired.id)).toBe(true);
+      await act(expired.id, "cancel").expect(409);
+      expect(await level()).toEqual({ onHand: 9, reserved: 0 });
+    });
+
+    it("cancel ແຂ່ງກັບ expire ພ້ອມກັນ (30 ຮອບ): ຜູ້ຊະນະຄົນດຽວ, ຄືນສະຕ໋ອກຄັ້ງດຽວ, reserved ບໍ່ຕິດລົບ", async () => {
+      for (let i = 0; i < 30; i += 1) {
+        const { id } = await newOrder(1);
+        await db.order.update({ where: { id }, data: { reservedUntil: new Date(Date.now() - 1000) } });
+
+        // ໜ່ວງ expire 0-4ms (cancel ຜ່ານ HTTP ຊ້າກວ່າ) ເພື່ອໃຫ້ທັງສອງຝ່າຍໄດ້ຊະນະບາງຮອບ; assertion ບໍ່ຂຶ້ນກັບຜູ້ຊະນະ
+        const expireLater = async () => {
+          await new Promise((resolve) => setTimeout(resolve, i % 5));
+          return expireOrder(db, id);
+        };
+        const [cancelRes, expired] = await Promise.all([act(id, "cancel"), expireLater()]);
+
+        const finalStatus = await statusOf(id);
+        expect(["CANCELLED", "EXPIRED"]).toContain(finalStatus);
+        expect(cancelRes.status === 200 ? 1 : 0).toBe(finalStatus === "CANCELLED" ? 1 : 0);
+        expect(expired).toBe(finalStatus === "EXPIRED");
+        expect(await db.stockMovement.count({ where: { orderId: id, type: "RELEASE" } })).toBe(1);
+        expect(await level()).toEqual({ onHand: 10, reserved: 0 });
+      }
+    });
+
+    it("pay ແຂ່ງກັບ expire (30 ຮອບ): ຖ້າ pay ຊະນະ ສະຕ໋ອກຍັງຈອງ; ຖ້າ expire ຊະນະ ສະຕ໋ອກຄືນ", async () => {
+      for (let i = 0; i < 30; i += 1) {
+        const { id } = await newOrder(1);
+        // ໃຫ້ guard ຂອງທັງສອງຝ່າຍຜ່ານແນ່ນອນເມື່ອແລ່ນດ່ຽວ: pay (ໂມງຈິງ) ເຫັນ reservedUntil > now,
+        // expire ໄດ້ `now` ທີ່ເລີຍ reservedUntil ແລ້ວ (ຄື worker ທີ່ໂມງເດີນໄປແລ້ວ). ຜູ້ຕັດສິນຈຶ່ງເປັນ row lock ເທົ່ານັ້ນ
+        // (ບໍ່ມີກໍລະນີ "ບໍ່ມີໃຜຊະນະ" ຈາກເວລາ ms ທີ່ຄາດເດົາບໍ່ໄດ້). ໜ່ວງ expire 0-4ms ເພື່ອໃຫ້ທັງສອງຝ່າຍໄດ້ຊະນະບາງຮອບ.
+        const reservedUntil = new Date(Date.now() + 60_000);
+        await db.order.update({ where: { id }, data: { reservedUntil } });
+        const expireLater = async () => {
+          await new Promise((resolve) => setTimeout(resolve, i % 5));
+          return expireOrder(db, id, new Date(reservedUntil.getTime() + 1));
+        };
+
+        const [payRes, expired] = await Promise.all([act(id, "pay"), expireLater()]);
+
+        const finalStatus = await statusOf(id);
+        expect(["PAID", "EXPIRED"]).toContain(finalStatus);
+        expect(payRes.status).toBe(finalStatus === "PAID" ? 200 : 409);
+        expect(expired).toBe(finalStatus === "EXPIRED");
+        expect(await level()).toEqual({ onHand: 10, reserved: finalStatus === "PAID" ? 1 : 0 });
+        expect(await db.stockMovement.count({ where: { orderId: id, type: "RELEASE" } })).toBe(
+          finalStatus === "EXPIRED" ? 1 : 0,
+        );
+        await db.order.update({ where: { id }, data: { status: "CANCELLED" } }); // ລ້າງສຳລັບຮອບຕໍ່ໄປ
+        await db.stockLevel.update({
+          where: { variantId_warehouseId: { variantId: f.v1.id, warehouseId: f.whA.id } },
+          data: { reserved: 0 },
+        });
+      }
+    });
+
+    it("ສິດ: read-only ປ່ຽນສະຖານະບໍ່ໄດ້ 403", async () => {
+      const { id } = await newOrder();
+      for (const action of ["pay", "pack", "ship", "complete", "cancel"]) {
+        await request(server()).post(`/orders/${id}/${action}`).set(reader).send({}).expect(403);
+      }
     });
   });
 });

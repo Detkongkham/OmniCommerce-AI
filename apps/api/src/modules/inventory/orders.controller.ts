@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Inject, Param, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import {
+  type CancelOrderInput,
   type CreateOrderInput,
   type OrderListQuery,
+  cancelOrderSchema,
   createOrderSchema,
   orderListQuerySchema,
 } from "@oca/shared";
@@ -35,5 +37,45 @@ export class OrdersController {
     @Req() req: Request,
   ) {
     return this.orders.create(body, actor, req.ip);
+  }
+
+  @Post(":id/pay")
+  @HttpCode(200)
+  @RequirePermissions("inventory:write")
+  pay(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.orders.pay(id, actor, req.ip);
+  }
+
+  @Post(":id/pack")
+  @HttpCode(200)
+  @RequirePermissions("inventory:write")
+  pack(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.orders.pack(id, actor, req.ip);
+  }
+
+  @Post(":id/ship")
+  @HttpCode(200)
+  @RequirePermissions("inventory:write")
+  ship(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.orders.ship(id, actor, req.ip);
+  }
+
+  @Post(":id/complete")
+  @HttpCode(200)
+  @RequirePermissions("inventory:write")
+  complete(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.orders.complete(id, actor, req.ip);
+  }
+
+  @Post(":id/cancel")
+  @HttpCode(200)
+  @RequirePermissions("inventory:write")
+  cancel(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(cancelOrderSchema)) body: CancelOrderInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.orders.cancel(id, body, actor, req.ip);
   }
 }

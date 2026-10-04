@@ -1,6 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { type Prisma, type PrismaClient, reserveMany } from "@oca/database";
-import { type CreateOrderInput, type OrderListQuery, calculateOrderTotals } from "@oca/shared";
+import { type Prisma, type PrismaClient, releaseMany, reserveMany, shipMany } from "@oca/database";
+import {
+  type CancelOrderInput,
+  type CreateOrderInput,
+  type OrderListQuery,
+  type OrderStatus,
+  calculateOrderTotals,
+} from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
@@ -201,6 +207,123 @@ export class OrdersService {
       ip,
     });
     return toOrderDetail(created);
+  }
+
+  pay(id: string, actor: AuthUser, ip: string | undefined) {
+    return this.transition(id, "pay", {
+      from: ["PENDING_PAYMENT"],
+      to: "PAID",
+      data: { paidAt: new Date() },
+      // ຕ້ອງຍັງບໍ່ໝົດເວລາຈອງ: guard ຢູ່ໃນ WHERE ເພື່ອແຂ່ງກັບ worker expire ໄດ້ຢ່າງປອດໄພ
+      extraWhere: { reservedUntil: { gt: new Date() } },
+      stock: null,
+      actor,
+      ip,
+    });
+  }
+
+  pack(id: string, actor: AuthUser, ip: string | undefined) {
+    return this.transition(id, "pack", { from: ["PAID"], to: "PACKING", data: {}, stock: null, actor, ip });
+  }
+
+  ship(id: string, actor: AuthUser, ip: string | undefined) {
+    return this.transition(id, "ship", {
+      from: ["PACKING"],
+      to: "SHIPPED",
+      data: { shippedAt: new Date() },
+      stock: "ship",
+      actor,
+      ip,
+    });
+  }
+
+  complete(id: string, actor: AuthUser, ip: string | undefined) {
+    return this.transition(id, "complete", {
+      from: ["SHIPPED"],
+      to: "COMPLETED",
+      data: { completedAt: new Date() },
+      stock: null,
+      actor,
+      ip,
+    });
+  }
+
+  cancel(id: string, input: CancelOrderInput, actor: AuthUser, ip: string | undefined) {
+    return this.transition(id, "cancel", {
+      from: ["PENDING_PAYMENT", "PAID", "PACKING"],
+      to: "CANCELLED",
+      data: { cancelledAt: new Date() },
+      stock: "release",
+      reason: input.reason,
+      actor,
+      ip,
+    });
+  }
+
+  /**
+   * UPDATE ... WHERE id AND status IN (from) [AND extraWhere]: ກະທົບ 0 ແຖວ = ບໍ່ມີບິນ ຫຼື ສະຖານະບໍ່ຖືກ ຫຼື ແພ້ການແຂ່ງ.
+   * ເມື່ອຜ່ານ ເຮັດການຕັດ/ປ່ອຍສະຕ໋ອກໃນ transaction ດຽວກັນ (ຜິດ → rollback ທັງສະຖານະ).
+   */
+  private async transition(
+    id: string,
+    action: "pay" | "pack" | "ship" | "complete" | "cancel",
+    options: {
+      from: OrderStatus[];
+      to: OrderStatus;
+      data: Prisma.OrderUpdateManyMutationInput;
+      extraWhere?: Prisma.OrderWhereInput;
+      stock: "ship" | "release" | null;
+      reason?: string;
+      actor: AuthUser;
+      ip: string | undefined;
+    },
+  ): Promise<OrderDetailDto> {
+    const changed = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.order.updateMany({
+        where: { id, status: { in: options.from }, ...options.extraWhere },
+        data: { status: options.to, ...options.data },
+      });
+      if (count === 0) return false;
+
+      if (options.stock) {
+        const items = await tx.orderItem.findMany({
+          where: { orderId: id },
+          select: { variantId: true, warehouseId: true, quantity: true },
+        });
+        const ctx = { orderId: id, actorId: options.actor.id };
+        if (options.stock === "ship") await shipMany(tx, items, ctx);
+        else await releaseMany(tx, items, ctx);
+      }
+      if (options.reason) {
+        const current = await tx.order.findUniqueOrThrow({ where: { id }, select: { note: true } });
+        await tx.order.update({
+          where: { id },
+          data: { note: [current.note, `Cancelled: ${options.reason}`].filter(Boolean).join("\n") },
+        });
+      }
+      return true;
+    });
+
+    if (!changed) await this.failTransition(id, action);
+
+    await this.audit.record({
+      userId: options.actor.id,
+      action: `order.${action}`,
+      entity: "Order",
+      entityId: id,
+      after: { status: options.to, ...(options.reason ? { reason: options.reason } : {}) },
+      ip: options.ip,
+    });
+    return toOrderDetail(await this.requireDetail(id));
+  }
+
+  private async failTransition(id: string, action: string): Promise<never> {
+    const order = await this.prisma.order.findUnique({ where: { id }, select: { status: true, reservedUntil: true } });
+    if (!order) throw new NotFoundException("Order not found");
+    if (action === "pay" && order.status === "PENDING_PAYMENT") {
+      throw new ConflictException("Reservation expired; the order can no longer be paid");
+    }
+    throw new ConflictException(`Order is ${order.status}; cannot ${action}`);
   }
 
   async requireDetail(id: string): Promise<OrderDetailRow> {
