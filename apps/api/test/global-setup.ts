@@ -6,6 +6,10 @@ export default async function setup(): Promise<void> {
   loadRepoEnv();
   const testUrl = testDatabaseUrl(process.env.DATABASE_URL);
 
+  if (new URL(testUrl).pathname !== "/oca_test") {
+    throw new Error(`Refusing to set up a database other than oca_test: ${new URL(testUrl).pathname}`);
+  }
+
   const adminUrl = new URL(testUrl);
   adminUrl.pathname = "/postgres";
   const client = new Client({ connectionString: adminUrl.toString() });

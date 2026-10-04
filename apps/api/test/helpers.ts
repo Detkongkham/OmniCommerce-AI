@@ -34,6 +34,10 @@ export async function createTestApp(
 }
 
 export async function resetDb(db: PrismaClient): Promise<void> {
+  const [row] = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
+  if (row?.name !== "oca_test") {
+    throw new Error(`Refusing to truncate non-test database "${row?.name}"`);
+  }
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role" RESTART IDENTITY CASCADE',
   );
