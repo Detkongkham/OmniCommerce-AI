@@ -1,0 +1,21 @@
+{
+  "name": "@oca/dev-infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Docker-free local Postgres + Redis for development",
+  "scripts": {
+    "start": "node src/start.mjs",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "embedded-postgres": "18.4.0-beta.17",
+    "redis-memory-server": "^0.12.0"
+  },
+  "devDependencies": {
+    "@oca/config": "workspace:*",
+    "eslint": "^9.39.5",
+    "vitest": "^5.0.3"
+  }
+}

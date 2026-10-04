@@ -11,6 +11,7 @@
     "test": "turbo run test",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
+    "infra:local": "pnpm --filter @oca/dev-infra start",
     "db:seed": "pnpm --filter @oca/database db:seed"
   },
   "devDependencies": {
