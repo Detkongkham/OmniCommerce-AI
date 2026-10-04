@@ -9,6 +9,8 @@ export interface HealthResult {
   redis: boolean;
 }
 
+const CACHE_MS = 2000;
+
 @Injectable()
 export class HealthService {
   constructor(
@@ -16,9 +18,23 @@ export class HealthService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
+  private cached: { at: number; result: HealthResult } | null = null;
+  private inFlight: Promise<HealthResult> | null = null;
+
+  /** Public endpoint: cache for CACHE_MS and share one in-flight check so hits cannot amplify DB/Redis load. */
   async check(): Promise<HealthResult> {
+    if (this.cached && Date.now() - this.cached.at < CACHE_MS) return this.cached.result;
+    this.inFlight ??= this.compute().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
+
+  private async compute(): Promise<HealthResult> {
     const [db, redis] = await Promise.all([this.checkDb(), this.checkRedis()]);
-    return { db, redis };
+    const result = { db, redis };
+    this.cached = { at: Date.now(), result };
+    return result;
   }
 
   private async checkDb(): Promise<boolean> {

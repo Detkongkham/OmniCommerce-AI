@@ -13,6 +13,16 @@ describe("health (e2e)", () => {
     }
   });
 
+  it("sets security headers (helmet)", async () => {
+    const { app } = await createTestApp();
+    try {
+      const res = await request(app.getHttpServer()).get("/health");
+      expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("ຄືນ 503 ແລະ ບອກວ່າ redis ລົ້ມ ເມື່ອເຊື່ອມ Redis ບໍ່ໄດ້", async () => {
     const { app } = await createTestApp({ REDIS_URL: "redis://127.0.0.1:1" });
     try {
