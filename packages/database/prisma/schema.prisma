@@ -385,6 +385,7 @@ model RefreshToken {
 
   @@index([userId])
   @@index([familyId])
+  @@index([expiresAt])
 }
 
 // ເພີ່ມຢ່າງດຽວ (append-only): ແອັບບໍ່ມີ endpoint ແກ້/ລຶບ
