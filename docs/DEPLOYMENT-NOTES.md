@@ -33,3 +33,7 @@
 ## 7. ລຶບ refresh token ເກົ່າ
 - worker ມີ job `cleanup-refresh-tokens` ໃນ queue `maintenance` ຣັນທຸກວັນ 03:00 (cron `0 3 * * *`, ເວລາຂອງເຄື່ອງ worker).
 - ລຶບ token ທີ່ໝົດອາຍຸເກີນ 1 ມື້ ຫຼື ຖືກ revoke ເກີນ 7 ມື້. ຕ້ອງມີ worker ຢ່າງໜ້ອຍ 1 ໂຕຣັນຢູ່ ແລະ ຕັ້ງ `DATABASE_URL` ໃຫ້ worker.
+
+## ພອດຂອງ Postgres / Redis ໃນ Docker
+
+`docker-compose.yml` ເປີດພອດຝັ່ງເຄື່ອງຜ່ານ `POSTGRES_PORT` (ຄ່າເລີ່ມຕົ້ນ 5432) ແລະ `REDIS_PORT` (ຄ່າເລີ່ມຕົ້ນ 6379); ພອດໃນ container ບໍ່ປ່ຽນ. ຖ້າເຄື່ອງມີ Postgres/Redis ອື່ນໃຊ້ພອດນັ້ນຢູ່ ໃຫ້ຕັ້ງ `POSTGRES_PORT`/`REDIS_PORT` ໃນ `.env` ແລະ ແກ້ `DATABASE_URL`/`REDIS_URL` ໃຫ້ກົງກັນ. Container ທີ່ຕິດຕໍ່ກັນເອງໃນ compose network ໃຊ້ຊື່ service ກັບພອດ container (`postgres:5432`) ບໍ່ກະທົບ.

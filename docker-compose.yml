@@ -6,14 +6,15 @@ services:
       POSTGRES_PASSWORD: oca
       POSTGRES_DB: oca
     ports:
-      - "5432:5432"
+      # ພອດຝັ່ງເຄື່ອງປ່ຽນໄດ້ຜ່ານ POSTGRES_PORT ຖ້າຊົນກັບ Postgres ອື່ນ (ພອດໃນ container ຍັງເປັນ 5432)
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
 
