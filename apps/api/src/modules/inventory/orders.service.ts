@@ -11,6 +11,7 @@ import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { PRISMA } from "../../prisma/prisma.module";
+import { ensureStoreSetting } from "./ensure-store-setting";
 import {
   type OrderDetailDto,
   type OrderDetailRow,
@@ -64,9 +65,7 @@ export class OrdersService {
   /** ສ້າງບິນ + ຈອງສະຕ໋ອກ ໃນ transaction ດຽວ. ສະຕ໋ອກບໍ່ພໍ → InsufficientStockError (filter ແປເປັນ 409) ແລະ rollback ທັງໝົດ. */
   async create(input: CreateOrderInput, actor: AuthUser, ip: string | undefined): Promise<OrderDetailDto> {
     const orderId = await this.prisma.$transaction(async (tx) => {
-      // ON CONFLICT DO NOTHING: upsert ຂອງ Prisma ແຂ່ງກັນຕອນຍັງບໍ່ມີແຖວ (ສ້າງບິນພ້ອມກັນ) ໄດ້ P2002
-      await tx.storeSetting.createMany({ data: [{ id: 1, name: "OCA Store" }], skipDuplicates: true });
-      const settings = await tx.storeSetting.findUniqueOrThrow({ where: { id: 1 } });
+      const settings = await ensureStoreSetting(tx);
 
       // 1) ສາງ
       let defaultWarehouseId: string | undefined;
@@ -215,7 +214,8 @@ export class OrdersService {
       to: "PAID",
       data: { paidAt: new Date() },
       // ຕ້ອງຍັງບໍ່ໝົດເວລາຈອງ: guard ຢູ່ໃນ WHERE ເພື່ອແຂ່ງກັບ worker expire ໄດ້ຢ່າງປອດໄພ
-      extraWhere: { reservedUntil: { gt: new Date() } },
+      // reservedUntil = null (ບໍ່ມີກຳນົດ) ຈ່າຍໄດ້ສະເໝີ
+      extraWhere: { OR: [{ reservedUntil: null }, { reservedUntil: { gt: new Date() } }] },
       stock: null,
       actor,
       ip,
@@ -320,7 +320,12 @@ export class OrdersService {
   private async failTransition(id: string, action: string): Promise<never> {
     const order = await this.prisma.order.findUnique({ where: { id }, select: { status: true, reservedUntil: true } });
     if (!order) throw new NotFoundException("Order not found");
-    if (action === "pay" && order.status === "PENDING_PAYMENT") {
+    if (
+      action === "pay" &&
+      order.status === "PENDING_PAYMENT" &&
+      order.reservedUntil !== null &&
+      order.reservedUntil.getTime() <= Date.now()
+    ) {
       throw new ConflictException("Reservation expired; the order can no longer be paid");
     }
     throw new ConflictException(`Order is ${order.status}; cannot ${action}`);

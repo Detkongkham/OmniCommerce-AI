@@ -1680,9 +1680,10 @@ Expected: ຜ່ານທັງໝົດ.
 
 Run:
 ```bash
-grep -rnE "stockLevel\.(update|updateMany|create|upsert|delete)|stockMovement\.(create|createMany|update|delete)|UPDATE \"StockLevel\"" apps/api/src apps/worker/src
+grep -rnE -A3 "stockLevel\.(update|updateMany|create|upsert|delete)|stockMovement\.(create|createMany|update|delete)|UPDATE \"StockLevel\"" apps/api/src apps/worker/src \
+  | awk '/^--$/{if(b!=""&&b!~/lowStockThreshold/)printf "%s",b;b="";next}{b=b $0 "\n"}END{if(b!=""&&b!~/lowStockThreshold/)printf "%s",b}'
 ```
-Expected: ບໍ່ມີຜົນລັບ (ມີແຕ່ໃນ `packages/database/src/inventory/` ແລະ test).
+Expected: ບໍ່ມີຜົນລັບ (ມີແຕ່ໃນ `packages/database/src/inventory/` ແລະ test). `-A3` + `awk` ຕັດ block ທີ່ແກ້ພຽງ `lowStockThreshold` ອອກ (ການຕັ້ງ threshold ໃນ `StockService.setThreshold` ບໍ່ແມ່ນການເຄື່ອນໄຫວສະຕ໋ອກ ຈຶ່ງອະນຸຍາດ); ການຂຽນ `stockLevel`/`stockMovement` ອື່ນໆຍັງຖືກສະແດງ.
 
 - [ ] **Step 3: ກວດ route ຄົບຕາມ spec §6**
 

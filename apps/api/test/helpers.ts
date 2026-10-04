@@ -4,6 +4,7 @@ import { hash } from "@node-rs/argon2";
 import type { PrismaClient } from "@oca/database";
 import { PERMISSIONS } from "@oca/shared";
 import request from "supertest";
+import { expect } from "vitest";
 import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/app.setup";
 import { parseEnv } from "../src/config/env";
@@ -144,4 +145,27 @@ export async function seedInventoryUsers(db: PrismaClient) {
 export async function bearerFor(app: INestApplication, email: string): Promise<{ Authorization: string }> {
   const { accessToken } = await loginAs(app, email);
   return { Authorization: `Bearer ${accessToken}` };
+}
+
+/** onHand/reserved ຂອງທຸກ StockLevel ຕ້ອງເທົ່າກັບຜົນລວມຂອງ StockMovement (spec §4 invariant). */
+export async function expectLedgerMatches(db: PrismaClient): Promise<void> {
+  const rows = await db.$queryRaw<
+    { onHand: number; reserved: number; expectedOnHand: number; expectedReserved: number }[]
+  >`
+    SELECT l."onHand", l."reserved",
+      COALESCE(SUM(CASE
+        WHEN m."type" IN ('RECEIVE','RETURN','TRANSFER_IN','ADJUST') THEN m."quantity"
+        WHEN m."type" IN ('SHIP','TRANSFER_OUT') THEN -m."quantity"
+        ELSE 0 END), 0)::int AS "expectedOnHand",
+      COALESCE(SUM(CASE
+        WHEN m."type" = 'RESERVE' THEN m."quantity"
+        WHEN m."type" IN ('RELEASE','SHIP') THEN -m."quantity"
+        ELSE 0 END), 0)::int AS "expectedReserved"
+    FROM "StockLevel" l
+    LEFT JOIN "StockMovement" m ON m."variantId" = l."variantId" AND m."warehouseId" = l."warehouseId"
+    GROUP BY l."id"`;
+  for (const row of rows) {
+    expect(row.onHand).toBe(row.expectedOnHand);
+    expect(row.reserved).toBe(row.expectedReserved);
+  }
 }

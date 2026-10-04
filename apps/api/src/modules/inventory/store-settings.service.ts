@@ -4,6 +4,7 @@ import type { UpdateStoreSettingsInput } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { PRISMA } from "../../prisma/prisma.module";
+import { type StoreSettingRow, ensureStoreSetting } from "./ensure-store-setting";
 
 export interface StoreSettingsDto {
   name: string;
@@ -13,9 +14,7 @@ export interface StoreSettingsDto {
   reservationMinutes: number;
 }
 
-type SettingsRow = Awaited<ReturnType<PrismaClient["storeSetting"]["upsert"]>>;
-
-export function toStoreSettingsDto(row: SettingsRow): StoreSettingsDto {
+export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
   return {
     name: row.name,
     baseCurrency: row.baseCurrency,
@@ -34,11 +33,11 @@ export class StoreSettingsService {
 
   /** ສ້າງແຖວເລີ່ມຕົ້ນຖ້າຍັງບໍ່ມີ (ກໍລະນີຍັງບໍ່ໄດ້ run seed). */
   async get(): Promise<StoreSettingsDto> {
-    return toStoreSettingsDto(await this.ensure());
+    return toStoreSettingsDto(await ensureStoreSetting(this.prisma));
   }
 
   async update(input: UpdateStoreSettingsInput, actor: AuthUser, ip: string | undefined): Promise<StoreSettingsDto> {
-    const before = await this.ensure();
+    const before = await ensureStoreSetting(this.prisma);
     const after = await this.prisma.storeSetting.update({
       where: { id: 1 },
       data: {
@@ -58,13 +57,5 @@ export class StoreSettingsService {
       ip,
     });
     return toStoreSettingsDto(after);
-  }
-
-  private ensure(): Promise<SettingsRow> {
-    return this.prisma.storeSetting.upsert({
-      where: { id: 1 },
-      create: { id: 1, name: "OCA Store" },
-      update: {},
-    });
   }
 }

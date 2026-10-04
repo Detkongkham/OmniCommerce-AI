@@ -16,7 +16,7 @@ import {
   transfer,
 } from "@oca/database";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { resetDb, seedCatalog } from "./helpers";
+import { expectLedgerMatches, resetDb, seedCatalog } from "./helpers";
 
 type Tx = Prisma.TransactionClient;
 
@@ -31,29 +31,6 @@ describe("stock engine (Postgres ຈິງ)", () => {
       where: { variantId_warehouseId: { variantId, warehouseId } },
     });
     return row ? { onHand: row.onHand, reserved: row.reserved } : null;
-  }
-
-  /** onHand/reserved ຕ້ອງເທົ່າກັບຜົນລວມຂອງ StockMovement (spec §4 invariant). */
-  async function expectLedgerMatches() {
-    const rows = await db.$queryRaw<
-      { onHand: number; reserved: number; expectedOnHand: number; expectedReserved: number }[]
-    >`
-      SELECT l."onHand", l."reserved",
-        COALESCE(SUM(CASE
-          WHEN m."type" IN ('RECEIVE','RETURN','TRANSFER_IN','ADJUST') THEN m."quantity"
-          WHEN m."type" IN ('SHIP','TRANSFER_OUT') THEN -m."quantity"
-          ELSE 0 END), 0)::int AS "expectedOnHand",
-        COALESCE(SUM(CASE
-          WHEN m."type" = 'RESERVE' THEN m."quantity"
-          WHEN m."type" IN ('RELEASE','SHIP') THEN -m."quantity"
-          ELSE 0 END), 0)::int AS "expectedReserved"
-      FROM "StockLevel" l
-      LEFT JOIN "StockMovement" m ON m."variantId" = l."variantId" AND m."warehouseId" = l."warehouseId"
-      GROUP BY l."id"`;
-    for (const row of rows) {
-      expect(row.onHand).toBe(row.expectedOnHand);
-      expect(row.reserved).toBe(row.expectedReserved);
-    }
   }
 
   beforeAll(() => {
@@ -79,7 +56,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
       ["RECEIVE", 5],
     ]);
     expect(movements[0]).toMatchObject({ actorId: "u1", note: "PO-1" });
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("reserve ສຳເລັດເມື່ອພໍ ແລະ throw InsufficientStockError ເມື່ອບໍ່ພໍ (ພ້ອມ available)", async () => {
@@ -94,7 +71,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     ]);
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 5, reserved: 3 });
     expect(await db.stockMovement.count({ where: { type: "RESERVE" } })).toBe(1);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("reserve ໃສ່ variant ທີ່ບໍ່ເຄີຍມີສະຕ໋ອກ → ບໍ່ພໍ (available 0)", async () => {
@@ -119,7 +96,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     await expect(run((tx) => ship(tx, { ...k, quantity: 2 }))).rejects.toBeInstanceOf(InsufficientStockError);
     await expect(run((tx) => release(tx, { ...k, quantity: 2 }))).rejects.toBeInstanceOf(InsufficientStockError);
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 7, reserved: 1 });
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("returnStock ເພີ່ມ onHand ແລະ ຂຽນ RETURN", async () => {
@@ -127,7 +104,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     await run((tx) => returnStock(tx, { ...k, quantity: 2 }));
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 2, reserved: 0 });
     expect(await db.stockMovement.count({ where: { type: "RETURN" } })).toBe(1);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("adjust: ບວກສ້າງແຖວໄດ້; ລົບຕ້ອງບໍ່ເຮັດໃຫ້ onHand < reserved; movement ເກັບຄ່າຕິດລົບ", async () => {
@@ -143,7 +120,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
 
     const adjustments = await db.stockMovement.findMany({ where: { type: "ADJUST" }, orderBy: { createdAt: "asc" } });
     expect(adjustments.map((m) => m.quantity)).toEqual([5, -2]);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("adjust ລົບໃສ່ variant ທີ່ບໍ່ມີແຖວ → ບໍ່ພໍ; delta 0 ຫຼື ບໍ່ແມ່ນ integer → RangeError", async () => {
@@ -200,7 +177,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     expect(await catching((tx) => shipMany(tx, [good, bad]))).toBeInstanceOf(RangeError);
     expect(await level(first!, f.whA.id)).toEqual({ onHand: 5, reserved: 2 });
     expect(await db.stockMovement.count({ where: { type: { in: ["RELEASE", "SHIP"] } } })).toBe(0);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("transfer ຈາກສາງ id ໃຫຍ່ → ນ້ອຍ (ສ້າງປາຍທາງກ່ອນ) ແຕ່ຕົ້ນທາງບໍ່ພໍ → rollback ປາຍທາງ", async () => {
@@ -234,7 +211,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
       .map((m) => `${m.type}:${m.warehouseId === f.whA.id ? "A" : "B"}:${m.quantity}`)
       .sort();
     expect(types).toEqual(["TRANSFER_IN:B:2", "TRANSFER_OUT:A:2"]);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("transfer ໄປສາງດຽວກັນ → RangeError", async () => {
@@ -257,7 +234,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     expect(rejected.every((r) => r.reason instanceof InsufficientStockError)).toBe(true);
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 1, reserved: 1 });
     expect(await db.stockMovement.count({ where: { type: "RESERVE" } })).toBe(1);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("reserveMany: ລາຍການສຸດທ້າຍບໍ່ພໍ → rollback ທັງໝົດ ແລະ ລາຍງານທຸກລາຍການທີ່ບໍ່ພໍ", async () => {
@@ -281,7 +258,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     );
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 5, reserved: 0 });
     expect(await db.stockMovement.count({ where: { type: "RESERVE" } })).toBe(0);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("reserveMany/releaseMany/shipMany ໃສ່ orderId ໃນ movement", async () => {
@@ -311,7 +288,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 5, reserved: 0 });
     const movements = await db.stockMovement.findMany({ where: { orderId: order.id } });
     expect(movements.map((m) => m.type).sort()).toEqual(["RELEASE", "RESERVE", "RESERVE", "SHIP"]);
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("ບໍ່ deadlock ເມື່ອສອງ transaction ຈອງຊຸດດຽວກັນຄົນລະລຳດັບ (ວົນ 50 ຮອບ)", async () => {
@@ -332,7 +309,7 @@ describe("stock engine (Postgres ຈິງ)", () => {
     }
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 1000, reserved: 100 });
     expect(await level(f.v2.id, f.whA.id)).toEqual({ onHand: 1000, reserved: 100 });
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 
   it("transfer ສອງທິດ A→B ແລະ B→A ພ້ອມກັນ ບໍ່ deadlock (ວົນ 30 ຮອບ)", async () => {
@@ -347,6 +324,6 @@ describe("stock engine (Postgres ຈິງ)", () => {
     }
     expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: 500, reserved: 0 });
     expect(await level(f.v1.id, f.whB.id)).toEqual({ onHand: 500, reserved: 0 });
-    await expectLedgerMatches();
+    await expectLedgerMatches(db);
   });
 });

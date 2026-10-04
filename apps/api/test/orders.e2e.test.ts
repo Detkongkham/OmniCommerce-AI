@@ -2,7 +2,7 @@ import type { INestApplication } from "@nestjs/common";
 import { type PrismaClient, expireOrder, receive } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { bearerFor, createTestApp, resetDb, seedCatalog, seedInventoryUsers } from "./helpers";
+import { bearerFor, createTestApp, expectLedgerMatches, resetDb, seedCatalog, seedInventoryUsers } from "./helpers";
 
 describe("orders (e2e)", () => {
   let app: INestApplication;
@@ -194,11 +194,27 @@ describe("orders (e2e)", () => {
       const created = await createOrder({ items: [{ variantId: f.v1.id, quantity: 1 }] }).expect(201);
       const res = await request(server()).get(`/orders/${created.body.id}`).set(reader).expect(200);
       expect(res.body.movements).toEqual([
-        expect.objectContaining({ type: "RESERVE", quantity: 1, warehouseCode: "A" }),
+        expect.objectContaining({ type: "RESERVE", quantity: 1, warehouseCode: "A", variantId: f.v1.id, sku: "SKU-1" }),
       ]);
       expect(res.body.secondsUntilExpiry).toBeGreaterThan(29 * 60);
       expect(res.body.secondsUntilExpiry).toBeLessThanOrEqual(30 * 60);
       await request(server()).get("/orders/nope").set(reader).expect(404);
+
+      // ບິນຫຼາຍລາຍການ: movement ແຕ່ລະອັນບອກ variant/sku ຂອງລາຍການຕົນ
+      const multi = await createOrder({
+        items: [
+          { variantId: f.v1.id, quantity: 1 },
+          { variantId: f.v2.id, quantity: 2 },
+        ],
+      }).expect(201);
+      const detail = await request(server()).get(`/orders/${multi.body.id}`).set(reader).expect(200);
+      expect(detail.body.movements).toHaveLength(2);
+      expect(detail.body.movements).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "RESERVE", quantity: 1, variantId: f.v1.id, sku: "SKU-1" }),
+          expect.objectContaining({ type: "RESERVE", quantity: 2, variantId: f.v2.id, sku: "SKU-2" }),
+        ]),
+      );
     });
 
     it("GET /orders: filter status / q (ເລກບິນ, ຊື່, ໂທ) / pagination", async () => {
@@ -249,6 +265,7 @@ describe("orders (e2e)", () => {
       for (const action of ["pay", "pack", "ship", "complete"]) {
         expect(await db.auditLog.count({ where: { action: `order.${action}`, entityId: id } })).toBe(1);
       }
+      await expectLedgerMatches(db);
     });
 
     it("ຂ້າມຂັ້ນ/ຍ້ອນຫຼັງ → 409 ແລະ ບໍ່ປ່ຽນຫຍັງ; ບໍ່ມີບິນ → 404", async () => {
@@ -272,6 +289,14 @@ describe("orders (e2e)", () => {
       expect(await statusOf(id)).toBe("PENDING_PAYMENT");
     });
 
+    it("reservedUntil = null ບໍ່ເຮັດໃຫ້ບິນຈ່າຍບໍ່ໄດ້", async () => {
+      const { id } = await newOrder();
+      await db.order.update({ where: { id }, data: { reservedUntil: null } });
+      const res = await act(id, "pay").expect(200);
+      expect(res.body.status).toBe("PAID");
+      expect(await level()).toEqual({ onHand: 10, reserved: 2 });
+    });
+
     it("cancel ຈາກ PENDING_PAYMENT / PAID / PACKING ຄືນສະຕ໋ອກທີ່ຈອງ ແລະ ເກັບເຫດຜົນໃນ note", async () => {
       const a = await newOrder(1);
       const b = await newOrder(2);
@@ -291,6 +316,7 @@ describe("orders (e2e)", () => {
       expect(await level()).toEqual({ onHand: 10, reserved: 0 });
       expect(await db.stockMovement.count({ where: { type: "RELEASE" } })).toBe(3);
       expect(await db.auditLog.count({ where: { action: "order.cancel" } })).toBe(3);
+      await expectLedgerMatches(db);
     });
 
     it("cancel ຊ້ຳ, ຫຼັງ SHIPPED, COMPLETED, ຫຼື EXPIRED → 409 ແລະ ບໍ່ຄືນສະຕ໋ອກຊ້ຳ", async () => {
@@ -312,6 +338,7 @@ describe("orders (e2e)", () => {
       expect(await expireOrder(db, expired.id)).toBe(true);
       await act(expired.id, "cancel").expect(409);
       expect(await level()).toEqual({ onHand: 9, reserved: 0 });
+      await expectLedgerMatches(db);
     });
 
     it("cancel ແຂ່ງກັບ expire ພ້ອມກັນ (30 ຮອບ): ຜູ້ຊະນະຄົນດຽວ, ຄືນສະຕ໋ອກຄັ້ງດຽວ, reserved ບໍ່ຕິດລົບ", async () => {
@@ -333,6 +360,7 @@ describe("orders (e2e)", () => {
         expect(await db.stockMovement.count({ where: { orderId: id, type: "RELEASE" } })).toBe(1);
         expect(await level()).toEqual({ onHand: 10, reserved: 0 });
       }
+      await expectLedgerMatches(db);
     });
 
     it("pay ແຂ່ງກັບ expire (30 ຮອບ): ຖ້າ pay ຊະນະ ສະຕ໋ອກຍັງຈອງ; ຖ້າ expire ຊະນະ ສະຕ໋ອກຄືນ", async () => {
@@ -358,12 +386,11 @@ describe("orders (e2e)", () => {
         expect(await db.stockMovement.count({ where: { orderId: id, type: "RELEASE" } })).toBe(
           finalStatus === "EXPIRED" ? 1 : 0,
         );
-        await db.order.update({ where: { id }, data: { status: "CANCELLED" } }); // ລ້າງສຳລັບຮອບຕໍ່ໄປ
-        await db.stockLevel.update({
-          where: { variantId_warehouseId: { variantId: f.v1.id, warehouseId: f.whA.id } },
-          data: { reserved: 0 },
-        });
+        // ລ້າງສຳລັບຮອບຕໍ່ໄປຜ່ານ API (ຄືນສະຕ໋ອກດ້ວຍເຄື່ອງຈັກ ບໍ່ຂຽນ reserved ກົງ) ເພື່ອໃຫ້ ledger ຖືກຕ້ອງຂ້າມຮອບ
+        if (finalStatus === "PAID") await act(id, "cancel").expect(200);
+        expect(await level()).toEqual({ onHand: 10, reserved: 0 });
       }
+      await expectLedgerMatches(db);
     });
 
     it("ສິດ: read-only ປ່ຽນສະຖານະບໍ່ໄດ້ 403", async () => {

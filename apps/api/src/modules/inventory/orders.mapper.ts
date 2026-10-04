@@ -4,7 +4,10 @@ import { money } from "../../common/money";
 export const orderDetailInclude = {
   customer: true,
   items: { orderBy: { id: "asc" } },
-  stockMovements: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { warehouse: { select: { code: true } } } },
+  stockMovements: {
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    include: { warehouse: { select: { code: true } }, variant: { select: { sku: true } } },
+  },
 } as const satisfies Prisma.OrderInclude;
 
 export type OrderDetailRow = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
@@ -83,7 +86,16 @@ export interface OrderDetailDto {
     discount: string;
     lineTotal: string;
   }[];
-  movements: { id: string; type: string; quantity: number; warehouseId: string; warehouseCode: string; createdAt: Date }[];
+  movements: {
+    id: string;
+    type: string;
+    quantity: number;
+    variantId: string;
+    sku: string;
+    warehouseId: string;
+    warehouseCode: string;
+    createdAt: Date;
+  }[];
 }
 
 export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): OrderDetailDto {
@@ -136,6 +148,8 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
       id: movement.id,
       type: movement.type,
       quantity: movement.quantity,
+      variantId: movement.variantId,
+      sku: movement.variant.sku,
       warehouseId: movement.warehouseId,
       warehouseCode: movement.warehouse.code,
       createdAt: movement.createdAt,
