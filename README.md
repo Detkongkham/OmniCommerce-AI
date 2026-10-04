@@ -86,4 +86,4 @@ pnpm infra:up      # ເປີດ PostgreSQL + Redis
 pnpm dev
 ```
 
-> ໝາຍເຫດ: `packages/database` ມີ Prisma schema ຂອງໂມດູນ 7 + Auth/RBAC (ເບິ່ງ [DATABASE](docs/DATABASE.md)), ແລະ `pnpm db:seed` ສ້າງ OWNER; `packages/config` ແລະ `packages/shared` ພ້ອມໃຊ້; `apps/*` ແລະ package ອື່ນຍັງເປັນໂຄງເປົ່າ (Phase 0 ກຳລັງດຳເນີນ, ເບິ່ງ `docs/superpowers/specs/`).
+> ໝາຍເຫດ: `packages/database` (Prisma schema + Auth/RBAC + seed), `packages/config`, `packages/shared` ແລະ `apps/api` (login, RBAC, staff/roles, `/health`; module ອື່ນເປັນໂຄງເປົ່າ) ພ້ອມໃຊ້. `apps/worker`, `apps/admin`, `apps/storefront` ຍັງເປັນໂຄງເປົ່າ (Phase 0 ກຳລັງດຳເນີນ, ເບິ່ງ `docs/superpowers/specs/`). Test ຂອງ API ໃຊ້ Postgres + Redis ຈິງ (`pnpm infra:up`).
