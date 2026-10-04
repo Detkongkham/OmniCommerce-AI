@@ -2,8 +2,10 @@
 // ຂອບເຂດ: ຮ້ານດຽວ (ບໍ່ມີ tenantId) - ເບິ່ງ docs/adr/0001-single-store-first.md
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated"
+  provider            = "prisma-client"
+  output              = "../src/generated"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
 }
 
 datasource db {
@@ -322,4 +324,82 @@ model OrderItem {
 
   @@index([orderId])
   @@index([variantId])
+}
+
+// ---------------------------------------------------------------------------
+// Auth & RBAC (Phase 0)
+// ---------------------------------------------------------------------------
+
+// Role ປັບແຕ່ງໄດ້; Role ລະບົບ (isSystem) ລຶບ ຫຼື ແກ້ permission ບໍ່ໄດ້
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  isSystem    Boolean          @default(false)
+  permissions RolePermission[]
+  users       User[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+// permission ເປັນ string "module:action" ທີ່ກຳນົດໃນ @oca/shared (ບໍ່ແມ່ນຕາຕະລາງ)
+model RolePermission {
+  id         String @id @default(cuid())
+  roleId     String
+  role       Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission String
+
+  @@unique([roleId, permission])
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  isActive      Boolean        @default(true)
+  lastLoginAt   DateTime?
+  roleId        String
+  role          Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([roleId])
+}
+
+// Refresh token ແບບ rotation: ແຕ່ລະ login ເປັນ family ໜຶ່ງ. ຖ້າ token ທີ່ຖືກໃຊ້ແລ້ວ
+// ຖືກນຳມາໃຊ້ຊ້ຳ ໃຫ້ revoke ທັງ family
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  familyId  String
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+// ເພີ່ມຢ່າງດຽວ (append-only): ແອັບບໍ່ມີ endpoint ແກ້/ລຶບ
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String // ເຊັ່ນ auth.login, staff.update
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
 }
