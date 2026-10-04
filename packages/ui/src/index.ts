@@ -13,3 +13,7 @@ export * from "./components/confirm-dialog";
 export * from "./components/dialog";
 export * from "./components/toast-store";
 export * from "./components/toaster";
+export * from "./components/data-table-footer";
+export * from "./components/empty-state";
+export * from "./components/page-header";
+export * from "./components/pagination";
