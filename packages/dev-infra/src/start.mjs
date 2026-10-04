@@ -46,7 +46,11 @@ const pg = new EmbeddedPostgres({
   port: config.postgresPort,
   persistent: true,
 });
-const redis = new RedisMemoryServer({ instance: { port: config.redisPort } });
+const redis = new RedisMemoryServer({
+  instance: { port: config.redisPort },
+  // "stable" is Redis 8, whose bundled modules need a newer GNU make than macOS ships; pin 7.x.
+  binary: { version: process.env.REDISMS_VERSION || "7.4.1" },
+});
 let pgStarted = false;
 let redisStarted = false;
 

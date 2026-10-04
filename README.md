@@ -86,4 +86,18 @@ pnpm infra:up      # ເປີດ PostgreSQL + Redis
 pnpm dev
 ```
 
+**ທາງເລືອກທີ່ບໍ່ໃຊ້ Docker** (Postgres + Redis ແບບເບົາ ຜ່ານ npm):
+
+```bash
+cp .env.example .env
+pnpm install
+pnpm infra:local   # ເປີດໃນ terminal ແຍກ ແລ້ວປະໄວ້ (Ctrl+C ເພື່ອຢຸດ)
+pnpm db:deploy
+pnpm db:seed
+pnpm dev
+```
+
+- ພອດໃນ `.env` (`POSTGRES_PORT`, `REDIS_PORT`, `DATABASE_URL`, `REDIS_URL`) ຕ້ອງກົງກັນ; `pnpm infra:local` ຈະພິມ URL ທີ່ຖືກຕ້ອງ. ຖ້າພອດຖືກໃຊ້ຢູ່ ມັນຈະຢຸດພ້ອມຂໍ້ຄວາມບອກ.
+- ການຣັນຄັ້ງທຳອິດ ດາວໂຫຼດ Postgres (~100MB) ແລະ compile Redis ຈາກ source (ຕ້ອງມີ Xcode Command Line Tools ຫຼື `make` + C compiler; ໃຊ້ເວລາ 1-2 ນາທີ). ຂໍ້ມູນ Postgres ເກັບໃນ `.local/postgres` (ຖືກ ignore ໂດຍ git).
+
 > ໝາຍເຫດ: `packages/database` (Prisma schema + Auth/RBAC + seed), `packages/config`, `packages/shared`, `apps/api` (login, RBAC, staff/roles, `/health`; module ອື່ນເປັນໂຄງເປົ່າ) ແລະ `apps/worker` (BullMQ, queue `system`/`ping`) ພ້ອມໃຊ້. `apps/admin` ແລະ `apps/storefront` ຍັງເປັນໂຄງເປົ່າ (Phase 0 ກຳລັງດຳເນີນ, ເບິ່ງ `docs/superpowers/specs/`). Test ຂອງ api ແລະ worker ໃຊ້ Postgres + Redis ຈິງ (`pnpm infra:up`).

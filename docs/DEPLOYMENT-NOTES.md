@@ -37,3 +37,8 @@
 ## ພອດຂອງ Postgres / Redis ໃນ Docker
 
 `docker-compose.yml` ເປີດພອດຝັ່ງເຄື່ອງຜ່ານ `POSTGRES_PORT` (ຄ່າເລີ່ມຕົ້ນ 5432) ແລະ `REDIS_PORT` (ຄ່າເລີ່ມຕົ້ນ 6379); ພອດໃນ container ບໍ່ປ່ຽນ. ຖ້າເຄື່ອງມີ Postgres/Redis ອື່ນໃຊ້ພອດນັ້ນຢູ່ ໃຫ້ຕັ້ງ `POSTGRES_PORT`/`REDIS_PORT` ໃນ `.env` ແລະ ແກ້ `DATABASE_URL`/`REDIS_URL` ໃຫ້ກົງກັນ. Container ທີ່ຕິດຕໍ່ກັນເອງໃນ compose network ໃຊ້ຊື່ service ກັບພອດ container (`postgres:5432`) ບໍ່ກະທົບ.
+
+## 8. ຕົວຣັນ infra ໃນເຄື່ອງ (ບໍ່ໃຊ້ Docker)
+
+- `pnpm infra:local` (`packages/dev-infra`) ໃຊ້ embedded Postgres 18 (package beta `embedded-postgres@18.4.0-beta.*`) ແລະ Redis ໃນໜ່ວຍຄວາມຈຳ (`redis-memory-server`, pin Redis 7.4.1; ຂໍ້ມູນ queue ຈະຫາຍເມື່ອຢຸດ) → **ໃຊ້ສຳລັບການພັດທະນາເທົ່ານັ້ນ**.
+- docker-compose ໃຊ້ Postgres 16 / Redis 7. production ຄວນໃຊ້ Postgres + Redis ແບບ managed ຫຼື ຕົວຈິງ; ກວດ migration ຄືນເທິງເວີຊັນ Postgres ຂອງ production.
