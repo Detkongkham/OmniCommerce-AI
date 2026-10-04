@@ -58,4 +58,10 @@ describe("parseEnv", () => {
       LOGIN_EMAIL_WINDOW_MINUTES: 5,
     });
   });
+
+  it("REFRESH_COOKIE_PATH ມີ default /auth, ປ່ຽນໄດ້ ແລະ ຕ້ອງຂຶ້ນຕົ້ນດ້ວຍ /", () => {
+    expect(parseEnv(base).REFRESH_COOKIE_PATH).toBe("/auth");
+    expect(parseEnv({ ...base, REFRESH_COOKIE_PATH: "/api/auth" }).REFRESH_COOKIE_PATH).toBe("/api/auth");
+    expect(() => parseEnv({ ...base, REFRESH_COOKIE_PATH: "api/auth" })).toThrow();
+  });
 });

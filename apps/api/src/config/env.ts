@@ -33,6 +33,7 @@ const envSchema = z
     LOGIN_EMAIL_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
     TRUST_PROXY: trustProxySchema,
     CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  REFRESH_COOKIE_PATH: z.string().startsWith("/").default("/auth"),
   })
   .superRefine((env, ctx) => {
     if (

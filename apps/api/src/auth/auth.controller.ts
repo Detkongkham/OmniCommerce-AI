@@ -19,7 +19,6 @@ import { ENV, type Env } from "../config/env";
 import { AuthService, type RequestContext, type SessionResult } from "./auth.service";
 
 const REFRESH_COOKIE = "oca_rt";
-const REFRESH_COOKIE_PATH = "/auth";
 
 function contextOf(req: Request): RequestContext {
   return { ip: req.ip, userAgent: req.headers["user-agent"] };
@@ -84,7 +83,7 @@ export class AuthController {
       httpOnly: true,
       sameSite: "lax" as const,
       secure: this.env.NODE_ENV === "production",
-      path: REFRESH_COOKIE_PATH,
+      path: this.env.REFRESH_COOKIE_PATH,
     };
   }
 

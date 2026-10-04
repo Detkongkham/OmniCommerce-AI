@@ -46,6 +46,21 @@ describe("auth (e2e)", () => {
     expect(await db.auditLog.count({ where: { action: "auth.login", userId: user.id } })).toBe(1);
   });
 
+  it("REFRESH_COOKIE_PATH ກຳນົດ path ຂອງ cookie (ໃຊ້ເມື່ອຜ່ານ proxy /api)", async () => {
+    const { app: proxied } = await createTestApp({ REFRESH_COOKIE_PATH: "/api/auth" });
+    try {
+      const res = await request(proxied.getHttpServer())
+        .post("/auth/login")
+        .send({ email: "owner@test.local", password: TEST_PASSWORD })
+        .expect(200);
+      const cookies = (res.headers["set-cookie"] as unknown as string[]).join(";");
+      expect(cookies).toContain("Path=/api/auth");
+      expect(cookies).not.toMatch(/Path=\/auth(;|$)/);
+    } finally {
+      await proxied.close();
+    }
+  });
+
   it("login ຜິດ (ລະຫັດຜິດ, ບໍ່ມີ email, ບັນຊີຖືກປິດ) ໄດ້ 401 ຂໍ້ຄວາມດຽວກັນ ແລະ ບັນທຶກ audit", async () => {
     const wrongPassword = await request(server())
       .post("/auth/login")
