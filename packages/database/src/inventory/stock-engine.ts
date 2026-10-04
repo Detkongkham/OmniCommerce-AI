@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { Prisma } from "../generated/client";
+import type { Prisma, StockMovementType } from "../generated/client";
 import { InsufficientStockError, type StockShortage, isStockCheckViolation } from "./errors";
 
 /**
  * ເຄື່ອງຈັກສະຕ໋ອກ. ທຸກ function ຕ້ອງຖືກເອີ້ນພາຍໃນ `$transaction` ຂອງຜູ້ເອີ້ນ:
  * ຖ້າ throw (ເຊັ່ນ InsufficientStockError) ຜູ້ເອີ້ນປ່ອຍໃຫ້ transaction rollback ທັງໝົດ.
  * ໂມດູນອື່ນຫ້າມ UPDATE "StockLevel" / INSERT "StockMovement" ນອກຈາກຜ່ານໄຟລ໌ນີ້.
+ *
+ * ສົມມຸດວ່າ transaction ໃຊ້ isolation ຄ່າເລີ່ມຕົ້ນ Read Committed (conditional UPDATE ອ່ານແຖວລ່າສຸດຫຼັງລໍ lock).
+ * ຖ້າຜູ້ເອີ້ນໃຊ້ Serializable/RepeatableRead ຈະໄດ້ error 40001 (serialization failure) ເຊິ່ງບໍ່ຖືກແປເປັນ
+ * InsufficientStockError ແລະ ຜູ້ເອີ້ນຕ້ອງ retry ເອງ.
  */
 export type Tx = Prisma.TransactionClient;
 
@@ -36,28 +40,21 @@ export interface MoveContext {
   note?: string | null;
 }
 
-type MovementType =
-  | "RECEIVE"
-  | "ADJUST"
-  | "RESERVE"
-  | "RELEASE"
-  | "SHIP"
-  | "RETURN"
-  | "TRANSFER_IN"
-  | "TRANSFER_OUT";
+/** ເພດານຂອງ |quantity| / |delta| ຕໍ່ການເຄື່ອນໄຫວ (ເທົ່າກັບ Zod schema) ກັນ int4 overflow. */
+export const MAX_STOCK_QUANTITY = 1_000_000;
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 function assertQuantity(quantity: number): void {
-  if (!Number.isInteger(quantity) || quantity <= 0) {
-    throw new RangeError("quantity must be a positive integer");
+  if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_STOCK_QUANTITY) {
+    throw new RangeError(`quantity must be an integer between 1 and ${MAX_STOCK_QUANTITY}`);
   }
 }
 
 function assertDelta(delta: number): void {
-  if (!Number.isInteger(delta) || delta === 0) {
-    throw new RangeError("delta must be a non-zero integer");
+  if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > MAX_STOCK_QUANTITY) {
+    throw new RangeError(`delta must be a non-zero integer with |delta| <= ${MAX_STOCK_QUANTITY}`);
   }
 }
 
@@ -73,7 +70,7 @@ function sortLines<T extends StockKey>(lines: readonly T[]): T[] {
 async function record(
   tx: Tx,
   key: StockKey,
-  type: MovementType,
+  type: StockMovementType,
   quantity: number,
   ctx: MoveContext,
   extraNote?: string,
@@ -108,6 +105,7 @@ async function conditional(key: StockKey, requested: number, run: () => Promise<
     return (await run()) > 0;
   } catch (error) {
     if (isStockCheckViolation(error)) {
+      // available: 0 ເປັນຄ່າແທນ ບໍ່ໄດ້ອ່ານຈາກ DB (transaction ຖືກ abort ແລ້ວ ຈຶ່ງ query ບໍ່ໄດ້)
       throw new InsufficientStockError([{ ...key, requested, available: 0 }]);
     }
     throw error;
@@ -115,6 +113,7 @@ async function conditional(key: StockKey, requested: number, run: () => Promise<
 }
 
 async function increaseOnHand(tx: Tx, key: StockKey, quantity: number): Promise<void> {
+  // id ຂອງແຖວທີ່ເຄື່ອງຈັກສ້າງເປັນ UUID ໂດຍເຈດຕະນາ (schema default ເປັນ cuid ເຊິ່ງ raw SQL ໃຊ້ບໍ່ໄດ້): ຢ່າ "ແກ້"
   await tx.$executeRaw`
     INSERT INTO "StockLevel" ("id", "variantId", "warehouseId", "onHand", "reserved", "updatedAt")
     VALUES (${randomUUID()}, ${key.variantId}, ${key.warehouseId}, ${quantity}, 0, now())
@@ -234,10 +233,11 @@ export async function transfer(tx: Tx, line: TransferLine, ctx: MoveContext = {}
  */
 export async function reserveMany(tx: Tx, lines: readonly StockLine[], ctx: MoveContext = {}): Promise<void> {
   const sorted = sortLines(lines);
+  // ກວດທຸກລາຍການກ່ອນ UPDATE ໃດໆ: ລາຍການເສຍຈະບໍ່ປະການຈອງບາງສ່ວນໄວ້ ເຖິງຜູ້ເອີ້ນຈະຈັບ error ແລ້ວ commit
+  for (const line of sorted) assertQuantity(line.quantity);
   const reserved: StockLine[] = [];
   const shortages: StockShortage[] = [];
   for (const line of sorted) {
-    assertQuantity(line.quantity);
     if (await tryReserve(tx, line, line.quantity)) reserved.push(line);
     else shortages.push(await shortageOf(tx, line, line.quantity));
   }
@@ -246,9 +246,13 @@ export async function reserveMany(tx: Tx, lines: readonly StockLine[], ctx: Move
 }
 
 export async function releaseMany(tx: Tx, lines: readonly StockLine[], ctx: MoveContext = {}): Promise<void> {
-  for (const line of sortLines(lines)) await release(tx, line, ctx);
+  const sorted = sortLines(lines);
+  for (const line of sorted) assertQuantity(line.quantity);
+  for (const line of sorted) await release(tx, line, ctx);
 }
 
 export async function shipMany(tx: Tx, lines: readonly StockLine[], ctx: MoveContext = {}): Promise<void> {
-  for (const line of sortLines(lines)) await ship(tx, line, ctx);
+  const sorted = sortLines(lines);
+  for (const line of sorted) assertQuantity(line.quantity);
+  for (const line of sorted) await ship(tx, line, ctx);
 }

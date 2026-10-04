@@ -1,5 +1,6 @@
 import {
   InsufficientStockError,
+  MAX_STOCK_QUANTITY,
   type Prisma,
   type PrismaClient,
   adjust,
@@ -157,6 +158,65 @@ describe("stock engine (Postgres ຈິງ)", () => {
     await expect(run((tx) => receive(tx, { ...k, quantity: 0 }))).rejects.toBeInstanceOf(RangeError);
     await expect(run((tx) => reserve(tx, { ...k, quantity: -1 }))).rejects.toBeInstanceOf(RangeError);
     await expect(run((tx) => receive(tx, { ...k, quantity: 1.2 }))).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it("quantity/delta ເກີນ MAX_STOCK_QUANTITY → RangeError; ເທົ່າ MAX ຮັບໄດ້", async () => {
+    const k = key(f.v1.id, f.whA.id);
+    const over = MAX_STOCK_QUANTITY + 1;
+    expect(MAX_STOCK_QUANTITY).toBe(1_000_000);
+    await expect(run((tx) => receive(tx, { ...k, quantity: over }))).rejects.toBeInstanceOf(RangeError);
+    await expect(run((tx) => reserve(tx, { ...k, quantity: over }))).rejects.toBeInstanceOf(RangeError);
+    await expect(run((tx) => adjust(tx, { ...k, delta: over }))).rejects.toBeInstanceOf(RangeError);
+    await expect(run((tx) => adjust(tx, { ...k, delta: -over }))).rejects.toBeInstanceOf(RangeError);
+    expect(await level(f.v1.id, f.whA.id)).toBeNull();
+
+    await run((tx) => receive(tx, { ...k, quantity: MAX_STOCK_QUANTITY }));
+    expect(await level(f.v1.id, f.whA.id)).toEqual({ onHand: MAX_STOCK_QUANTITY, reserved: 0 });
+  });
+
+  it("reserveMany/releaseMany/shipMany ກວດທຸກລາຍການກ່ອນຂຽນ: ຈັບ RangeError ແລ້ວ commit ກໍບໍ່ມີການຈອງຄ້າງ", async () => {
+    // ລາຍການເສຍຕ້ອງຖືກຮຽງໄວ້ຫຼັງລາຍການດີ (ຫຼັງ sortLines) ເພື່ອພິສູດວ່າກວດກ່ອນ UPDATE ໃດໆ
+    const [first, second] = [f.v1.id, f.v2.id].sort();
+    const good = { ...key(first!, f.whA.id), quantity: 1 };
+    const bad = { ...key(second!, f.whA.id), quantity: 0 };
+    await run((tx) => receive(tx, { ...good, quantity: 5 }));
+
+    const catching = (fn: (tx: Tx) => Promise<void>) =>
+      run(async (tx) => {
+        try {
+          await fn(tx);
+          return null;
+        } catch (error) {
+          return error;
+        }
+      });
+
+    expect(await catching((tx) => reserveMany(tx, [good, bad]))).toBeInstanceOf(RangeError);
+    expect(await level(first!, f.whA.id)).toEqual({ onHand: 5, reserved: 0 });
+    expect(await db.stockMovement.count({ where: { type: "RESERVE" } })).toBe(0);
+
+    await run((tx) => reserve(tx, { ...good, quantity: 2 }));
+    expect(await catching((tx) => releaseMany(tx, [good, bad]))).toBeInstanceOf(RangeError);
+    expect(await catching((tx) => shipMany(tx, [good, bad]))).toBeInstanceOf(RangeError);
+    expect(await level(first!, f.whA.id)).toEqual({ onHand: 5, reserved: 2 });
+    expect(await db.stockMovement.count({ where: { type: { in: ["RELEASE", "SHIP"] } } })).toBe(0);
+    await expectLedgerMatches();
+  });
+
+  it("transfer ຈາກສາງ id ໃຫຍ່ → ນ້ອຍ (ສ້າງປາຍທາງກ່ອນ) ແຕ່ຕົ້ນທາງບໍ່ພໍ → rollback ປາຍທາງ", async () => {
+    const [low, high] = [f.whA, f.whB].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    await run((tx) => receive(tx, { ...key(f.v1.id, high!.id), quantity: 1 }));
+    const before = await db.stockMovement.count();
+
+    await expect(
+      run((tx) =>
+        transfer(tx, { variantId: f.v1.id, fromWarehouseId: high!.id, toWarehouseId: low!.id, quantity: 2 }),
+      ),
+    ).rejects.toBeInstanceOf(InsufficientStockError);
+
+    expect(await level(f.v1.id, low!.id)).toBeNull();
+    expect(await level(f.v1.id, high!.id)).toEqual({ onHand: 1, reserved: 0 });
+    expect(await db.stockMovement.count()).toBe(before);
   });
 
   it("transfer: ຍ້າຍສະເພາະທີ່ຂາຍໄດ້ (onHand - reserved); ເຮັດ 2 movement", async () => {
