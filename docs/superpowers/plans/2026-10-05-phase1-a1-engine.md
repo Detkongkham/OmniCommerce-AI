@@ -73,6 +73,14 @@ apps/api/test/
       '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
       '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
   );
+  // sequence ເລກບິນບໍ່ຖືກ RESTART IDENTITY ແຕະ (ບໍ່ໄດ້ເປັນຂອງຖັນໃດ); ມີເງື່ອນໄຂເພາະ sequence ເກີດຈາກ migration inventory
+  await db.$executeRawUnsafe(
+    `DO $$ BEGIN
+       IF to_regclass('"Order_number_seq"') IS NOT NULL THEN
+         ALTER SEQUENCE "Order_number_seq" RESTART WITH 1;
+       END IF;
+     END $$`,
+  );
 ```
 
 ແລະເພີ່ມທ້າຍໄຟລ໌ helper ສຳລັບ fixture ສິນຄ້າ/ສາງ:
