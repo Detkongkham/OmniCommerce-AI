@@ -35,6 +35,11 @@
 - worker ມີ job `cleanup-refresh-tokens` ໃນ queue `maintenance` ຣັນທຸກວັນ 03:00 (cron `0 3 * * *`, ເວລາຂອງເຄື່ອງ worker).
 - ລຶບ token ທີ່ໝົດອາຍຸເກີນ 1 ມື້ ຫຼື ຖືກ revoke ເກີນ 7 ມື້. ຕ້ອງມີ worker ຢ່າງໜ້ອຍ 1 ໂຕຣັນຢູ່ ແລະ ຕັ້ງ `DATABASE_URL` ໃຫ້ worker.
 
+## 9. ຄືນສະຕ໋ອກຂອງບິນທີ່ໝົດເວລາຈອງ
+- worker ມີ job `expire-reservations` ໃນ queue `inventory` ຣັນທຸກ 60 ວິນາທີ: ບິນ `PENDING_PAYMENT` ທີ່ເກີນ `reservedUntil` ຖືກປ່ຽນເປັນ `EXPIRED` ແລະ ຄືນສະຕ໋ອກທີ່ຈອງ. **ຕ້ອງມີ worker ຢ່າງໜ້ອຍ 1 ໂຕຣັນຢູ່** ບໍ່ດັ່ງນັ້ນສະຕ໋ອກຈະຄ້າງຈອງ (ບິນທີ່ໝົດເວລາຍັງກົດ "ຊຳລະ" ບໍ່ໄດ້ ເພາະ API ກວດ `reservedUntil` ເອງ).
+- ຫຼາຍ worker ພ້ອມກັນໄດ້ (scheduler upsert; ການຄືນສະຕ໋ອກມີ guard ໃນ SQL ຈຶ່ງບໍ່ຄືນຊ້ຳ).
+- Migration `20261005000000_inventory` ເພີ່ມ `StoreSetting.reservationMinutes` ແລະ sequence ເລກບິນ. **ກວດ migration ນີ້ເທິງ Postgres 16 ກ່ອນ deploy** (ຄືກັບຂໍ້ 6). ຫຼັງ deploy ຕ້ອງຣັນ `pnpm db:seed` ເພື່ອສ້າງສາງ default `MAIN` (ແລະແຖວ `StoreSetting` ຖ້າຍັງບໍ່ມີ; API ກໍສ້າງແຖວ `StoreSetting` ໃຫ້ອັດຕະໂນມັດຄັ້ງທຳອິດທີ່ໃຊ້) ແລະ ຕັ້ງຊື່ຮ້ານດ້ວຍ `SEED_STORE_NAME`; ຮັນຊ້ຳໄດ້ປອດໄພ.
+
 ## ພອດຂອງ Postgres / Redis ໃນ Docker
 
 `docker-compose.yml` ເປີດພອດຝັ່ງເຄື່ອງຜ່ານ `POSTGRES_PORT` (ຄ່າເລີ່ມຕົ້ນ 5432) ແລະ `REDIS_PORT` (ຄ່າເລີ່ມຕົ້ນ 6379); ພອດໃນ container ບໍ່ປ່ຽນ. ຖ້າເຄື່ອງມີ Postgres/Redis ອື່ນໃຊ້ພອດນັ້ນຢູ່ ໃຫ້ຕັ້ງ `POSTGRES_PORT`/`REDIS_PORT` ໃນ `.env` ແລະ ແກ້ `DATABASE_URL`/`REDIS_URL` ໃຫ້ກົງກັນ. Container ທີ່ຕິດຕໍ່ກັນເອງໃນ compose network ໃຊ້ຊື່ service ກັບພອດ container (`postgres:5432`) ບໍ່ກະທົບ.

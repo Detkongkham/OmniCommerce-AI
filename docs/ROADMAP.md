@@ -9,7 +9,7 @@
 ## Phase 1: MVP
 | ລຳດັບ | ໂມດູນ | ຂອບເຂດ |
 |---|---|---|
-| 1 | 7. Inventory | ສິນຄ້າ, variants, ຕັດສະຕ໋ອກແບບ atomic, ຄຳສັ່ງຊື້ |
+| 1 | 7. Inventory | ສິນຄ້າ, variants, ຕັດສະຕ໋ອກແບບ atomic, ຄຳສັ່ງຊື້ — **API + worker ສຳເລັດ (1a-api)**, ໜ້າ admin ຢູ່ລະຫວ່າງເຮັດ (1a-ui) |
 | 2 | 1. Omnichannel Inbox | ເລີ່ມຈາກ Facebook Messenger, ເປີດບິນໃນແຊັດ |
 | 3 | 4. Live & Post CF Engine | ດັກຄອມເມັ້ນ CF, ອອກບິນ QR ນັບຖອຍຫຼັງ |
 | 4 | 9. Slip Verification | AI ອ່ານສະລິບ ແລະ ປັບສະຖານະບິນ |
