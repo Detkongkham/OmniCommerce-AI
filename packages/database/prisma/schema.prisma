@@ -78,6 +78,7 @@ model StoreSetting {
   baseCurrency     Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
   vatRate          Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
   pricesIncludeVat Boolean  @default(true)
+  reservationMinutes Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
   updatedAt        DateTime @updatedAt
 }
 

@@ -43,6 +43,6 @@ describe("resetDb guard", () => {
   it("truncates oca_test", async () => {
     const { db, executeRawUnsafe } = fakeDb("oca_test");
     await resetDb(db);
-    expect(executeRawUnsafe).toHaveBeenCalledOnce();
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(2); // TRUNCATE + sequence restart
   });
 });

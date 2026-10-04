@@ -39,7 +39,18 @@ export async function resetDb(db: PrismaClient): Promise<void> {
     throw new Error(`Refusing to truncate non-test database "${row?.name}"`);
   }
   await db.$executeRawUnsafe(
-    'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role", ' +
+      '"OrderItem", "Order", "Customer", "StockMovement", "StockLevel", "ProductImage", ' +
+      '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
+      '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
+  );
+  // sequence ເລກບິນບໍ່ຖືກ RESTART IDENTITY ແຕະ (ບໍ່ໄດ້ເປັນຂອງຖັນໃດ); ມີເງື່ອນໄຂເພາະ sequence ເກີດຈາກ migration inventory
+  await db.$executeRawUnsafe(
+    `DO $$ BEGIN
+       IF to_regclass('"Order_number_seq"') IS NOT NULL THEN
+         ALTER SEQUENCE "Order_number_seq" RESTART WITH 1;
+       END IF;
+     END $$`,
   );
 }
 
@@ -95,4 +106,18 @@ export async function loginAs(app: INestApplication, email: string, password = T
     cookie: refreshCookieOf(res) as string,
     body: res.body as Record<string, unknown>,
   };
+}
+
+/** ສາງ A (default) + B, ສິນຄ້າ 1 ໂຕ ມີ 2 variants (SKU-1, SKU-2). ຍັງບໍ່ມີສະຕ໋ອກ. */
+export async function seedCatalog(db: PrismaClient) {
+  const whA = await db.warehouse.create({ data: { code: "A", name: "Warehouse A", isDefault: true } });
+  const whB = await db.warehouse.create({ data: { code: "B", name: "Warehouse B" } });
+  const product = await db.product.create({ data: { name: "Product", slug: "product", status: "ACTIVE" } });
+  const makeVariant = (sku: string) =>
+    db.productVariant.create({
+      data: { productId: product.id, sku, price: "100.00", costPrice: "60.00" },
+    });
+  const v1 = await makeVariant("SKU-1");
+  const v2 = await makeVariant("SKU-2");
+  return { whA, whB, product, v1, v2 };
 }
