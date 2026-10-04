@@ -86,4 +86,4 @@ pnpm infra:up      # ເປີດ PostgreSQL + Redis
 pnpm dev
 ```
 
-> ໝາຍເຫດ: `packages/database` ມີ Prisma schema ຂອງໂມດູນ 7 (ເບິ່ງ [DATABASE](docs/DATABASE.md)); `packages/config` ແລະ `packages/shared` ພ້ອມໃຊ້; `apps/*` ແລະ package ອື່ນຍັງເປັນໂຄງເປົ່າ (Phase 0 ກຳລັງດຳເນີນ, ເບິ່ງ `docs/superpowers/specs/`).
+> ໝາຍເຫດ: `packages/database` ມີ Prisma schema ຂອງໂມດູນ 7 + Auth/RBAC (ເບິ່ງ [DATABASE](docs/DATABASE.md)), ແລະ `pnpm db:seed` ສ້າງ OWNER; `packages/config` ແລະ `packages/shared` ພ້ອມໃຊ້; `apps/*` ແລະ package ອື່ນຍັງເປັນໂຄງເປົ່າ (Phase 0 ກຳລັງດຳເນີນ, ເບິ່ງ `docs/superpowers/specs/`).
