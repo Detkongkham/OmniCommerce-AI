@@ -162,4 +162,139 @@ describe("products (e2e)", () => {
       await request(server()).get("/products?pageSize=101").set(reader).expect(400);
     });
   });
+
+  describe("ແກ້ໄຂສິນຄ້າ", () => {
+    it("PATCH ແກ້ຊື່/ສະຖານະ/ໝວດ/ລຶບ description (null); slug ຊ້ຳ 409; body ວ່າງ 400; ບໍ່ມີ id 404", async () => {
+      const a = await create(cup).expect(201);
+      const b = await create({ ...cup, name: "B", slug: "b-slug", variants: [{ sku: "B-1", price: "1" }] }).expect(201);
+      const category = await db.category.create({ data: { name: "C", slug: "c" } });
+      const patch = (id: string, body: object) => request(server()).patch(`/products/${id}`).set(writer).send(body);
+
+      const res = await patch(a.body.id, { name: "ໃໝ່", status: "ACTIVE", categoryId: category.id, description: null }).expect(200);
+      expect(res.body).toMatchObject({ name: "ໃໝ່", status: "ACTIVE", categoryId: category.id, description: null });
+      await patch(a.body.id, { slug: "b-slug" }).expect(409);
+      await patch(a.body.id, { categoryId: "missing" }).expect(400);
+      await patch(a.body.id, {}).expect(400);
+      await patch("nope", { name: "x" }).expect(404);
+      expect(await db.auditLog.count({ where: { action: "product.update", entityId: a.body.id } })).toBe(1);
+      expect(b.body.slug).toBe("b-slug");
+    });
+  });
+
+  describe("ລຶບ / archive", () => {
+    it("ບໍ່ເຄີຍຖືກຂາຍ ແລະ ບໍ່ມີ movement → ລຶບແທ້ 204 (variant/ຮູບຖືກລຶບຕາມ)", async () => {
+      const p = await create(shirt).expect(201);
+      await request(server()).delete(`/products/${p.body.id}`).set(writer).expect(204);
+      expect(await db.product.count()).toBe(0);
+      expect(await db.productVariant.count()).toBe(0);
+      expect(await db.auditLog.count({ where: { action: "product.delete" } })).toBe(1);
+    });
+
+    it("ເຄີຍຖືກຂາຍ → ARCHIVED ແທນການລຶບ (200 { archived: true })", async () => {
+      const p = await create(cup).expect(201);
+      const variantId = p.body.variants[0].id;
+      const wh = await db.warehouse.create({ data: { code: "A", name: "A", isDefault: true } });
+      const order = await db.order.create({
+        data: {
+          orderNumber: "SO-X1",
+          channel: "OFFLINE",
+          source: "MANUAL",
+          currency: "LAK",
+          subtotal: "1",
+          vatRate: "10",
+          vatAmount: "0",
+          total: "1",
+          items: {
+            create: [
+              { variantId, warehouseId: wh.id, productName: "x", sku: "CUP-1", unitPrice: "1", unitCost: "0", quantity: 1, lineTotal: "1" },
+            ],
+          },
+        },
+      });
+      expect(order.id).toBeTruthy();
+
+      const res = await request(server()).delete(`/products/${p.body.id}`).set(writer).expect(200);
+      expect(res.body).toEqual({ archived: true });
+      expect((await db.product.findUniqueOrThrow({ where: { id: p.body.id } })).status).toBe("ARCHIVED");
+      expect(await db.auditLog.count({ where: { action: "product.archive" } })).toBe(1);
+    });
+
+    it("ມີ StockMovement ແຕ່ບໍ່ເຄີຍຖືກຂາຍ → 409 (ໃຫ້ archive ດ້ວຍ PATCH status)", async () => {
+      const p = await create(cup).expect(201);
+      const wh = await db.warehouse.create({ data: { code: "A", name: "A", isDefault: true } });
+      await db.stockMovement.create({
+        data: { variantId: p.body.variants[0].id, warehouseId: wh.id, type: "RECEIVE", quantity: 1 },
+      });
+      await request(server()).delete(`/products/${p.body.id}`).set(writer).expect(409);
+    });
+  });
+
+  describe("variants", () => {
+    it("POST /products/:id/variants ເພີ່ມ variant ໃໝ່ຂອງສິນຄ້າທີ່ມີ options", async () => {
+      const p = await create(shirt).expect(201);
+      const res = await request(server())
+        .post(`/products/${p.body.id}/variants`)
+        .set(writer)
+        .send({ sku: "TS-WH-L", price: "110000", optionValues: { ສີ: "ຂາວ", ໄຊສ໌: "L" } })
+        .expect(201);
+      expect(res.body).toMatchObject({ sku: "TS-WH-L", name: "ຂາວ / L", optionValues: { ສີ: "ຂາວ", ໄຊສ໌: "L" } });
+      expect((await request(server()).get(`/products/${p.body.id}`).set(reader)).body.variants).toHaveLength(4);
+    });
+
+    it("ເພີ່ມ variant ຜິດ: ຊຸດຄ່າຊ້ຳ / ຄ່າບໍ່ຢູ່ໃນ option / ບໍ່ຄົບ → 409/400; SKU ຊ້ຳ → 409", async () => {
+      const p = await create(shirt).expect(201);
+      const post = (body: object) => request(server()).post(`/products/${p.body.id}/variants`).set(writer).send(body);
+      await post({ sku: "N1", price: "1", optionValues: { ສີ: "ດຳ", ໄຊສ໌: "M" } }).expect(409);
+      await post({ sku: "N2", price: "1", optionValues: { ສີ: "ແດງ", ໄຊສ໌: "M" } }).expect(400);
+      await post({ sku: "N3", price: "1", optionValues: { ສີ: "ຂາວ" } }).expect(400);
+      await post({ sku: "TS-BK-M", price: "1", optionValues: { ສີ: "ຂາວ", ໄຊສ໌: "L" } }).expect(409);
+    });
+
+    it("ສິນຄ້າບໍ່ມີ option ເພີ່ມ variant ທີສອງບໍ່ໄດ້ → 409; ບໍ່ມີສິນຄ້າ → 404", async () => {
+      const p = await create(cup).expect(201);
+      await request(server()).post(`/products/${p.body.id}/variants`).set(writer).send({ sku: "CUP-2", price: "1" }).expect(409);
+      await request(server()).post("/products/nope/variants").set(writer).send({ sku: "Z", price: "1" }).expect(404);
+    });
+
+    it("PATCH /variants/:id ແກ້ລາຄາ/ຕົ້ນທຶນ/active; compareAt < price → 400; SKU ຊ້ຳ → 409; ບໍ່ມີ → 404", async () => {
+      const p = await create(shirt).expect(201);
+      const [first, second] = p.body.variants as { id: string; sku: string }[];
+      const patch = (id: string, body: object) => request(server()).patch(`/variants/${id}`).set(writer).send(body);
+
+      const res = await patch(first!.id, { price: "120000", costPrice: "70000", isActive: false, compareAtPrice: "150000" }).expect(200);
+      expect(res.body).toMatchObject({ price: "120000.00", costPrice: "70000.00", isActive: false, compareAtPrice: "150000.00" });
+      await patch(first!.id, { compareAtPrice: "100" }).expect(400);
+      await patch(first!.id, { price: "200000" }).expect(400); // compareAt 150000 ຕ້ອງ >= price ໃໝ່
+      await patch(second!.id, { sku: first!.sku }).expect(409);
+      await patch("nope", { price: "1" }).expect(404);
+      expect(await db.auditLog.count({ where: { action: "variant.update" } })).toBe(1);
+    });
+  });
+
+  describe("ຮູບ", () => {
+    it("PUT /products/:id/images ແທນທັງລາຍການ ແລະ ຈັດ position; variant ຕ້ອງເປັນຂອງສິນຄ້ານີ້", async () => {
+      const p = await create(shirt).expect(201);
+      const other = await create({ ...cup, name: "Other", variants: [{ sku: "O-1", price: "1" }] }).expect(201);
+      const variantId = p.body.variants[0].id;
+
+      const res = await request(server())
+        .put(`/products/${p.body.id}/images`)
+        .set(writer)
+        .send({ images: [{ url: "https://cdn.test/b.jpg" }, { url: "https://cdn.test/a.jpg", variantId }] })
+        .expect(200);
+      expect(res.body.images.map((i: { url: string }) => i.url)).toEqual(["https://cdn.test/b.jpg", "https://cdn.test/a.jpg"]);
+      expect(res.body.images[1].variantId).toBe(variantId);
+
+      await request(server())
+        .put(`/products/${p.body.id}/images`)
+        .set(writer)
+        .send({ images: [{ url: "https://cdn.test/c.jpg", variantId: other.body.variants[0].id }] })
+        .expect(400);
+      expect(await db.productImage.count({ where: { productId: p.body.id } })).toBe(2); // rollback: ຍັງເປັນຊຸດເກົ່າ
+
+      const cleared = await request(server()).put(`/products/${p.body.id}/images`).set(writer).send({ images: [] }).expect(200);
+      expect(cleared.body.images).toEqual([]);
+      await request(server()).put(`/products/${p.body.id}/images`).set(writer).send({ images: [{ url: "ftp://x" }] }).expect(400);
+    });
+  });
 });
