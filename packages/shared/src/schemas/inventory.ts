@@ -64,7 +64,11 @@ const requireNonEmpty = <T extends object>(value: T) => Object.keys(value).lengt
 const NON_EMPTY_MESSAGE = "ຕ້ອງມີຢ່າງໜ້ອຍ 1 field";
 
 // ບໍ່ໃຊ້ `URL` ເພາະ tsconfig ຂອງ package ນີ້ບໍ່ມີ DOM/Node lib
-const isHttpUrl = (value: string): boolean => /^https?:\/\/[^\s/]+\S*$/i.test(value);
+// ປະຕິເສດ control/whitespace/ຕົວອັກສອນເບິ່ງບໍ່ເຫັນ ແລະ ຕ້ອງມີ host ທີ່ຂຶ້ນຕົ້ນດ້ວຍ ຕົວອັກສອນ/ຕົວເລກ
+// eslint-disable-next-line no-control-regex
+const FORBIDDEN_URL_CHARS = /[\u0000-\u0020\u007f-\u009f\u2028\u2029\u200b-\u200f\ufeff]/;
+const isHttpUrl = (value: string): boolean =>
+  !FORBIDDEN_URL_CHARS.test(value) && /^https?:\/\/[A-Za-z0-9][^/?#]*(?:[/?#]\S*)?$/i.test(value);
 const imageUrlSchema = z.string().trim().max(2048).refine(isHttpUrl, "URL ຕ້ອງເປັນ http ຫຼື https");
 
 // ---------------------------------------------------------------------------
@@ -152,8 +156,12 @@ const barcodeSchema = z.string().trim().min(1).max(64);
 const weightSchema = z.number().int().min(0).max(1_000_000);
 
 const compareAtMessage = { message: "compareAtPrice ຕ້ອງ >= price", path: ["compareAtPrice"] };
+// ບໍ່ throw ເມື່ອເງິນຜິດຮູບແບບ (moneySchema ລາຍງານ issue ນັ້ນແລ້ວ)
 const compareAtOk = (value: { price: string; compareAtPrice?: string | null }) =>
-  value.compareAtPrice == null || new Decimal(value.compareAtPrice).gte(value.price);
+  value.compareAtPrice == null ||
+  !moneySchema.safeParse(value.price).success ||
+  !moneySchema.safeParse(value.compareAtPrice).success ||
+  new Decimal(value.compareAtPrice).gte(value.price);
 
 export const productOptionInputSchema = z.strictObject({
   name: text(50),
@@ -174,6 +182,7 @@ export const variantInputSchema = z
   })
   .refine(compareAtOk, compareAtMessage);
 
+// ໝາຍເຫດ: compareAtPrice >= price ທຽບກັບຄ່າທີ່ເກັບໄວ້ ຕ້ອງກວດໃນ service
 export const updateVariantSchema = z
   .strictObject({
     sku: skuSchema.optional(),
@@ -240,7 +249,7 @@ export const createProductSchema = z
       value.variants.forEach((variant, index) => {
         const path = ["variants", index, "optionValues"];
         const keys = Object.keys(variant.optionValues);
-        const complete = keys.length === optionNames.length && optionNames.every((name) => name in variant.optionValues);
+        const complete = keys.length === optionNames.length && optionNames.every((name) => Object.hasOwn(variant.optionValues, name));
         if (!complete) {
           issue(path, "ຕ້ອງລະບຸຄ່າຂອງທຸກ option");
           return;
@@ -284,7 +293,7 @@ export type VariantInput = z.infer<typeof variantInputSchema>;
 export type UpdateVariantInput = z.infer<typeof updateVariantSchema>;
 export type PutProductImagesInput = z.infer<typeof putProductImagesSchema>;
 
-/** ຊື່ variant = ຄ່າຕາມລຳດັບ option ຕໍ່ດ້ວຍ " / "; null ຖ້າບໍ່ມີ option. */
+/** ຕ້ອງມີຄ່າຂອງທຸກ option (schema ຮັບປະກັນແລ້ວ). ຊື່ variant = ຄ່າຕາມລຳດັບ option ຕໍ່ດ້ວຍ " / "; null ຖ້າບໍ່ມີ option. */
 export function variantName(optionNames: readonly string[], optionValues: Record<string, string>): string | null {
   const name = optionNames.map((optionName) => optionValues[optionName] ?? "").join(" / ");
   return name === "" ? null : name;

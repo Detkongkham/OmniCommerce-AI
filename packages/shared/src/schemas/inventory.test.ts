@@ -5,12 +5,17 @@ import {
   createOrderSchema,
   createProductSchema,
   createWarehouseSchema,
+  deltaSchema,
   moneySchema,
   orderListQuerySchema,
   productListQuerySchema,
+  quantitySchema,
+  stockListQuerySchema,
   transferStockSchema,
   updateProductSchema,
   updateStoreSettingsSchema,
+  updateVariantSchema,
+  variantInputSchema,
   variantName,
 } from "./inventory";
 
@@ -256,5 +261,80 @@ describe("updateStoreSettingsSchema", () => {
   });
   it.each([0.015, 1.005, 5.555])("vatRate %s ມີເກີນ 2 ທົດສະນິຍົມ ຜິດ", (vatRate) => {
     expect(updateStoreSettingsSchema.safeParse({ vatRate }).success).toBe(false);
+  });
+});
+
+describe("hardening: invalid money must not throw", () => {
+  const cases = [
+    { price: "abc", compareAtPrice: "5" },
+    { price: "5", compareAtPrice: "abc" },
+    { price: "abc", compareAtPrice: "abc" },
+  ];
+  it.each(cases)("variantInputSchema %o", (prices) => {
+    const result = variantInputSchema.safeParse({ sku: "A", ...prices });
+    expect(result.success).toBe(false);
+  });
+  it.each(cases)("createProductSchema %o", (prices) => {
+    const result = createProductSchema.safeParse({ name: "x", variants: [{ sku: "A", ...prices }] });
+    expect(result.success).toBe(false);
+  });
+  it("compareAtPrice: null ຮັບໄດ້", () => {
+    expect(variantInputSchema.safeParse({ sku: "A", price: "1", compareAtPrice: null }).success).toBe(true);
+  });
+});
+
+describe("image URL", () => {
+  const parse = (url: string) =>
+    createProductSchema.safeParse({ ...simpleProduct, images: [{ url }] }).success;
+  it.each(["https://cdn.test/a.jpg", "http://localhost:3000/x.png?v=1#a", "HTTPS://CDN.TEST/A.JPG"])(
+    "ຮັບ %s",
+    (url) => expect(parse(url)).toBe(true),
+  );
+  it.each([
+    "ftp://x.com/a.jpg",
+    "data:image/png;base64,AAAA",
+    "javascript:alert(1)",
+    "//x.com/a.jpg",
+    "https://cdn.test/a b.jpg",
+    "https://cdn.test/a\u0000.jpg",
+    "https://cdn.test/a\u0007.jpg",
+    "https://cdn.test/a\u200b.jpg",
+    "https://cdn.test/a\u2028.jpg",
+    "https://cdn.test/a\ufeff.jpg",
+    "https://",
+    "https://@",
+    "https://:80",
+    "https://?x",
+    "https://#x",
+    "https:///x",
+  ])("ປະຕິເສດ %j", (url) => expect(parse(url)).toBe(false));
+});
+
+describe("boundaries", () => {
+  it("quantity", () => {
+    expect(quantitySchema.safeParse(1_000_000).success).toBe(true);
+    expect(quantitySchema.safeParse(1_000_001).success).toBe(false);
+  });
+  it("delta", () => {
+    expect(deltaSchema.safeParse(-1_000_000).success).toBe(true);
+    expect(deltaSchema.safeParse(1_000_000).success).toBe(true);
+    expect(deltaSchema.safeParse(1_000_001).success).toBe(false);
+  });
+  it("page / pageSize ຕ່ຳສຸດ", () => {
+    expect(productListQuerySchema.safeParse({ pageSize: "0" }).success).toBe(false);
+    expect(productListQuerySchema.safeParse({ page: "0" }).success).toBe(false);
+  });
+  it("lowStock coerce", () => {
+    expect(stockListQuerySchema.parse({ lowStock: "true" }).lowStock).toBe(true);
+    expect(stockListQuerySchema.safeParse({ lowStock: "maybe" }).success).toBe(false);
+  });
+  it("option ທີ່ values ຫວ່າງ ຜິດ", () => {
+    expect(
+      createProductSchema.safeParse({ ...shirt, options: [{ name: "ສີ", values: [] }] }).success,
+    ).toBe(false);
+  });
+  it("updateVariantSchema", () => {
+    expect(updateVariantSchema.safeParse({}).success).toBe(false);
+    expect(updateVariantSchema.safeParse({ price: "1" }).success).toBe(true);
   });
 });
