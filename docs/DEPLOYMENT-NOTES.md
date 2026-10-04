@@ -6,6 +6,7 @@
 - ຄ່າ default `false` (ບໍ່ເຊື່ອ header `X-Forwarded-For`). ຖ້າ API ຢູ່ຫຼັງ reverse proxy / load balancer ໃຫ້ຕັ້ງເປັນ **ຈຳນວນ proxy hop** ເຊັ່ນ `TRUST_PROXY=1`.
 - ຫ້າມໃຊ້ `true` (ລະບົບຈະປະຕິເສດຄ່ານີ້): ການເຊື່ອທຸກ proxy ເຮັດໃຫ້ຜູ້ໂຈມຕີປອມ IP ດ້ວຍ `X-Forwarded-For` ໄດ້ ແລະ ຫຼົບ rate limit / ເຮັດໃຫ້ audit log ຜິດ.
 - ຕັ້ງຈຳນວນ hop ໃຫ້ກົງກັບຕົວຈິງ: ຕັ້ງຫຼາຍກວ່າຕົວຈິງ = ເຊື່ອ header ທີ່ client ສົ່ງມາ.
+- Admin ເອີ້ນ API ຜ່ານ proxy `/api` ຂອງ Next.js ນັ້ນນັບເປັນ 1 hop: ຖ້າບໍ່ຕັ້ງ `TRUST_PROXY` IP ທີ່ rate limit ແລະ AuditLog ເຫັນຈະເປັນ IP ຂອງ admin server ທຸກຄົນ (ທຸກ client ແບ່ງ quota login ດຽວກັນ). ຕັ້ງ `TRUST_PROXY=1` ເມື່ອມີແຕ່ proxy ຂອງ admin, ແລະ +1 ຕໍ່ reverse proxy / load balancer ທີ່ຢູ່ໜ້າ admin. ກວດໄດ້ວ່າ header ປອມຖືກປະຕິເສດ: ສົ່ງ `X-Forwarded-For` ເອງຕອນ `TRUST_PROXY=false` ແລ້ວ IP ໃນ AuditLog ຕ້ອງບໍ່ປ່ຽນ.
 
 ## 2. Rate limit ຕໍ່ IP
 - throttler ຂອງ `/auth/login` (`LOGIN_RATE_LIMIT` ຕໍ່ນາທີ) ໃຊ້ **memory ໃນ process** ດັ່ງນັ້ນນັບແຍກຕໍ່ແຕ່ລະ instance.
