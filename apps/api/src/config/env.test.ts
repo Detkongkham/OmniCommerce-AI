@@ -28,4 +28,14 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ ...base, JWT_ACCESS_SECRET: "short" })).toThrow();
     expect(() => parseEnv({ REDIS_URL: "redis://x", JWT_ACCESS_SECRET: "a".repeat(32) })).toThrow();
   });
+
+  it("rejects placeholder JWT secrets in production only", () => {
+    const dev = { ...base, JWT_ACCESS_SECRET: `dev-only-${"x".repeat(32)}` };
+    const test = { ...base, JWT_ACCESS_SECRET: `test-secret-${"x".repeat(32)}` };
+    expect(() => parseEnv({ ...dev, NODE_ENV: "production" })).toThrow();
+    expect(() => parseEnv({ ...test, NODE_ENV: "production" })).toThrow();
+    expect(() => parseEnv({ ...base, NODE_ENV: "production" })).not.toThrow();
+    expect(() => parseEnv({ ...dev, NODE_ENV: "development" })).not.toThrow();
+    expect(() => parseEnv(test)).not.toThrow();
+  });
 });

@@ -28,6 +28,14 @@ describe("TokenService", () => {
     await expect(service.verifyAccessToken(`${valid}x`)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it("rejects a token signed with a different algorithm (HS512) using the same secret", async () => {
+    const hs512 = await new JwtService().signAsync(
+      {},
+      { subject: "user-1", secret: env.JWT_ACCESS_SECRET, algorithm: "HS512", expiresIn: 60 },
+    );
+    await expect(service.verifyAccessToken(hs512)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it("refresh token ສຸ່ມທຸກຄັ້ງ ແລະ hash ຄົງທີ່ (ບໍ່ເທົ່າກັບ token)", () => {
     const a = service.generateRefreshToken();
     const b = service.generateRefreshToken();

@@ -16,6 +16,7 @@ export class TokenService {
       {
         subject: userId,
         secret: this.env.JWT_ACCESS_SECRET,
+        algorithm: "HS256",
         expiresIn: this.env.ACCESS_TOKEN_TTL_SECONDS,
       },
     );
@@ -25,6 +26,7 @@ export class TokenService {
     try {
       const payload = await this.jwt.verifyAsync<{ sub?: string }>(token, {
         secret: this.env.JWT_ACCESS_SECRET,
+        algorithms: ["HS256"],
       });
       if (!payload.sub) throw new Error("missing sub");
       return { sub: payload.sub };
