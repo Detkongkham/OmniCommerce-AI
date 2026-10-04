@@ -22,7 +22,7 @@ Cookie refresh ປັດຈຸບັນ `path=/auth` ([auth.controller.ts](../..
 * `AuthProvider`: ຕອນເປີດໜ້າເອີ້ນ `/auth/refresh` ແລ້ວ `/auth/me`; ເກັບ user + permissions. Hook `useCan(permission)` ຊ່ອນເມນູ/ປຸ່ມ; API ຍັງບັງຄັບສິດຈິງ.
 * `/login`: `loginSchema`, ສະແດງ error ຈາກ API (401, 429).
 * `/staff`: ຕາຕະລາງ (GET /staff), dialog ສ້າງ (POST) ແລະ ແກ້ (PATCH), ປິດ/ເປີດໃຊ້ງານດ້ວຍ PATCH `isActive`. ປຸ່ມຂຶ້ນກັບ `staff:write`.
-* `/roles`: ລາຍການ, ສ້າງ/ແກ້ (POST/PUT) ພ້ອມ matrix permission ຈັດກຸ່ມຕາມ module ຈາກ `GET /permissions`, ລຶບ (DELETE). Role ລະບົບ (`isSystem`) ເປັນ read-only. ສະແດງ error ເມື່ອ API ປະຕິເສດ (ເຊັ່ນ ລຶບ role ທີ່ມີຄົນໃຊ້, ປິດ OWNER ຄົນສຸດທ້າຍ).
+* `/roles`: ລາຍການ, ສ້າງ/ແກ້ (POST/PUT) ພ້ອມ matrix permission ຈັດກຸ່ມຕາມ module ຈາກ `MODULES`/`ACTIONS` ໃນ `@oca/shared` (ແຫຼ່ງຄວາມຈິງດຽວ; API ຍັງບັງຄັບສິດ), ລຶບ (DELETE). Role ລະບົບ (`isSystem`) ເປັນ read-only. ສະແດງ error ເມື່ອ API ປະຕິເສດ (ເຊັ່ນ ລຶບ role ທີ່ມີຄົນໃຊ້, ປິດ OWNER ຄົນສຸດທ້າຍ).
 
 ## `apps/storefront`
 Next.js App Router ໜ້າດຽວ placeholder ໃຊ້ token ຈາກ `@oca/ui`. ບໍ່ມີ logic.
@@ -34,3 +34,6 @@ Next.js App Router ໜ້າດຽວ placeholder ໃຊ້ token ຈາກ `@oc
 
 ## ນອກຂອບເຂດ
 Dark mode toggle, i18n library, ໜ້າອື່ນນອກຈາກ login/staff/roles, logic ຂອງ storefront, ໜ້າ Design System.
+
+## ຂໍ້ຈຳກັດທີ່ຮູ້
+ຜ່ານ proxy API ເຫັນ IP ຂອງ Next server ເປັນ `req.ip` ຈຶ່ງ rate limit ຂອງ login ແລະ IP ໃນ AuditLog ບໍ່ແມ່ນ IP ແທ້ຂອງ client. ແກ້ພາຍຫຼັງດ້ວຍ `trust proxy`.
