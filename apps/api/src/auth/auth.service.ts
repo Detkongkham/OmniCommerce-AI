@@ -88,15 +88,20 @@ export class AuthService {
       throw new UnauthorizedException("Invalid refresh token");
     }
 
-    const claimed = await this.prisma.refreshToken.updateMany({
-      where: { id: row.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+    // Claim the old token and create its successor atomically: a failure leaves the old token usable.
+    const issued = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.refreshToken.updateMany({
+        where: { id: row.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (claimed.count === 0) return null;
+      return this.createRefreshRow(tx, row.userId, row.familyId, ctx);
     });
-    if (claimed.count === 0) {
+    if (!issued) {
       await this.reportReuse(row.familyId, row.userId, ctx);
       throw new UnauthorizedException("Refresh token reuse detected");
     }
-    return this.issueSession(row.user, row.familyId, ctx);
+    return this.buildSession(row.user, issued);
   }
 
   async logout(token: string | undefined, ctx: RequestContext): Promise<void> {
@@ -123,11 +128,20 @@ export class AuthService {
   }
 
   private async issueSession(user: UserWithRole, familyId: string, ctx: RequestContext): Promise<SessionResult> {
+    return this.buildSession(user, await this.createRefreshRow(this.prisma, user.id, familyId, ctx));
+  }
+
+  private async createRefreshRow(
+    client: Prisma.TransactionClient | PrismaClient,
+    userId: string,
+    familyId: string,
+    ctx: RequestContext,
+  ): Promise<{ token: string; expiresAt: Date }> {
     const { token, hash } = this.tokens.generateRefreshToken();
     const expiresAt = this.tokens.refreshExpiry();
-    await this.prisma.refreshToken.create({
+    await client.refreshToken.create({
       data: {
-        userId: user.id,
+        userId,
         tokenHash: hash,
         familyId,
         expiresAt,
@@ -135,10 +149,17 @@ export class AuthService {
         ip: ctx.ip ?? null,
       },
     });
+    return { token, expiresAt };
+  }
+
+  private async buildSession(
+    user: UserWithRole,
+    issued: { token: string; expiresAt: Date },
+  ): Promise<SessionResult> {
     return {
       accessToken: await this.tokens.signAccessToken(user.id),
-      refreshToken: token,
-      refreshExpiresAt: expiresAt,
+      refreshToken: issued.token,
+      refreshExpiresAt: issued.expiresAt,
       user: toAuthUser(user),
     };
   }

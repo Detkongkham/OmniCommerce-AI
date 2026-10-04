@@ -1,7 +1,8 @@
 import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { TokenService } from "../src/auth/token.service";
 import { TEST_PASSWORD, createTestApp, loginAs, refreshCookieOf, resetDb, seedBasics } from "./helpers";
 
 describe("auth (e2e)", () => {
@@ -93,6 +94,49 @@ describe("auth (e2e)", () => {
     await request(server()).post("/auth/refresh").set("Cookie", first.cookie).expect(401);
     await request(server()).post("/auth/refresh").set("Cookie", rotated as string).expect(401);
     expect(await db.auditLog.count({ where: { action: "auth.refresh_reuse" } })).toBe(1);
+  });
+
+  it("two concurrent refreshes with the same cookie: one wins, one 401, and the family is revoked", async () => {
+    const first = await loginAs(app, "owner@test.local");
+    const [a, b] = await Promise.all([
+      request(server()).post("/auth/refresh").set("Cookie", first.cookie),
+      request(server()).post("/auth/refresh").set("Cookie", first.cookie),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 401]);
+
+    const winnerCookie = refreshCookieOf(a.status === 200 ? a : b) as string;
+    expect(winnerCookie).toBeDefined();
+    await request(server()).post("/auth/refresh").set("Cookie", winnerCookie).expect(401);
+    expect(await db.refreshToken.count({ where: { revokedAt: null } })).toBe(0);
+  });
+
+  it("rotation is atomic: if issuing the new token fails, the old token is not consumed", async () => {
+    const { cookie } = await loginAs(app, "owner@test.local");
+    const existing = await db.refreshToken.findFirstOrThrow();
+    const tokens = app.get(TokenService);
+    // Force a unique violation on the new row by reusing the old token's hash.
+    const spy = vi
+      .spyOn(tokens, "generateRefreshToken")
+      .mockReturnValueOnce({ token: "forced", hash: existing.tokenHash });
+    try {
+      await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await db.refreshToken.findUniqueOrThrow({ where: { id: existing.id } })).revokedAt).toBeNull();
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(200);
+  });
+
+  it("an expired refresh token is rejected with 401", async () => {
+    const { cookie } = await loginAs(app, "owner@test.local");
+    await db.refreshToken.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(401);
+  });
+
+  it("refresh by a user deactivated after login is rejected with 401", async () => {
+    const { cookie } = await loginAs(app, "viewer@test.local");
+    await db.user.update({ where: { email: "viewer@test.local" }, data: { isActive: false } });
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(401);
   });
 
   it("refresh ໂດຍບໍ່ມີ cookie ຫຼື cookie ມົ່ວ ໄດ້ 401", async () => {
