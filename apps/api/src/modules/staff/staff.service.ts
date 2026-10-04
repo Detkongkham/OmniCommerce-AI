@@ -1,0 +1,121 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import type { PrismaClient } from "@oca/database";
+import { type CreateStaffInput, SYSTEM_ROLE_OWNER, type UpdateStaffInput } from "@oca/shared";
+import { AuditService } from "../../audit/audit.service";
+import { PasswordService } from "../../auth/password.service";
+import type { AuthUser } from "../../common/auth-types";
+import { PRISMA } from "../../prisma/prisma.module";
+import { type StaffDto, staffInclude, staffSnapshot, toStaffDto } from "./staff.mapper";
+
+export function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002";
+}
+
+@Injectable()
+export class StaffService {
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    @Inject(PasswordService) private readonly passwords: PasswordService,
+    @Inject(AuditService) private readonly audit: AuditService,
+  ) {}
+
+  async list(): Promise<StaffDto[]> {
+    const users = await this.prisma.user.findMany({ include: staffInclude, orderBy: { createdAt: "asc" } });
+    return users.map(toStaffDto);
+  }
+
+  async get(id: string): Promise<StaffDto> {
+    const user = await this.prisma.user.findUnique({ where: { id }, include: staffInclude });
+    if (!user) throw new NotFoundException("Staff not found");
+    return toStaffDto(user);
+  }
+
+  async create(input: CreateStaffInput, actor: AuthUser, ip: string | undefined): Promise<StaffDto> {
+    await this.assertRoleExists(input.roleId);
+    try {
+      const user = await this.prisma.user.create({
+        data: {
+          email: input.email,
+          name: input.name,
+          passwordHash: await this.passwords.hash(input.password),
+          roleId: input.roleId,
+        },
+        include: staffInclude,
+      });
+      await this.audit.record({
+        userId: actor.id,
+        action: "staff.create",
+        entity: "User",
+        entityId: user.id,
+        after: staffSnapshot(user),
+        ip,
+      });
+      return toStaffDto(user);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new ConflictException("Email already in use");
+      throw error;
+    }
+  }
+
+  async update(id: string, input: UpdateStaffInput, actor: AuthUser, ip: string | undefined): Promise<StaffDto> {
+    const before = await this.prisma.user.findUnique({ where: { id }, include: staffInclude });
+    if (!before) throw new NotFoundException("Staff not found");
+
+    const leavesOwner =
+      before.isActive &&
+      before.role.name === SYSTEM_ROLE_OWNER &&
+      (input.isActive === false || (input.roleId !== undefined && input.roleId !== before.roleId));
+    if (leavesOwner) {
+      const otherOwners = await this.prisma.user.count({
+        where: { id: { not: id }, isActive: true, role: { name: SYSTEM_ROLE_OWNER } },
+      });
+      if (otherOwners === 0) throw new ConflictException("Cannot remove the last active OWNER");
+    }
+    if (input.roleId !== undefined) await this.assertRoleExists(input.roleId);
+
+    const passwordHash = input.password === undefined ? undefined : await this.passwords.hash(input.password);
+    const revokeSessions = input.password !== undefined || input.isActive === false;
+
+    const after = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.update({
+        where: { id },
+        data: {
+          name: input.name,
+          roleId: input.roleId,
+          isActive: input.isActive,
+          passwordHash,
+        },
+        include: staffInclude,
+      });
+      if (revokeSessions) {
+        await tx.refreshToken.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+      return updated;
+    });
+
+    await this.audit.record({
+      userId: actor.id,
+      action: "staff.update",
+      entity: "User",
+      entityId: id,
+      before: staffSnapshot(before),
+      after: { ...staffSnapshot(after), passwordChanged: input.password !== undefined },
+      ip,
+    });
+    return toStaffDto(after);
+  }
+
+  private async assertRoleExists(roleId: string): Promise<void> {
+    const role = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
+    if (!role) throw new BadRequestException("Role not found");
+  }
+}
