@@ -2,7 +2,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { TEST_PASSWORD, createTestApp, loginAs, refreshCookieOf, resetDb, seedBasics } from "./helpers";
+import { TEST_PASSWORD, createTestApp, loginAs, refreshCookieOf, resetDb, seedBasics, seedHr } from "./helpers";
 
 describe("staff (e2e)", () => {
   let app: INestApplication;
@@ -113,17 +113,93 @@ describe("staff (e2e)", () => {
     expect(refreshCookieOf(relogin)).toBeDefined();
   });
 
-  it("ປິດ ຫຼື ປ່ຽນ role ຂອງ OWNER ຄົນສຸດທ້າຍບໍ່ໄດ້ (409); ມີ OWNER ອີກຄົນແລ້ວເຮັດໄດ້", async () => {
+  it("OWNER ປ່ຽນ role ຂອງ OWNER ຄົນອື່ນໄດ້ ເມື່ອມີ OWNER ເຫຼືອ; ແກ້ຕົນເອງບໍ່ໄດ້ (403)", async () => {
+    // The 409 last-OWNER path is only reachable via a race (an acting OWNER is always
+    // an active OWNER and self-demotion is forbidden); see the concurrency test below.
     const { accessToken } = await loginAs(app, "owner@test.local");
     const patch = (id: string, body: object) =>
       request(server()).patch(`/staff/${id}`).set(bearer(accessToken)).send(body);
 
-    await patch(ids.ownerUser.id, { isActive: false }).expect(409);
-    await patch(ids.ownerUser.id, { roleId: ids.viewer.id }).expect(409);
+    await patch(ids.ownerUser.id, { isActive: false }).expect(403);
+    await patch(ids.ownerUser.id, { roleId: ids.viewer.id }).expect(403);
 
-    await db.user.create({
+    const owner2 = await db.user.create({
       data: { email: "owner2@test.local", name: "Owner2", passwordHash: "x", roleId: ids.owner.id },
     });
-    await patch(ids.ownerUser.id, { roleId: ids.viewer.id }).expect(200);
+    await patch(owner2.id, { roleId: ids.viewer.id }).expect(200);
+  });
+
+  describe("privilege escalation", () => {
+    let hrToken: string;
+    let hrUserId: string;
+    let hrRoleId: string;
+    const hrReq = {
+      patch: (id: string, body: object) =>
+        request(server()).patch(`/staff/${id}`).set(bearer(hrToken)).send(body),
+      post: (body: object) => request(server()).post("/staff").set(bearer(hrToken)).send(body),
+    };
+
+    beforeEach(async () => {
+      const { hr, hrUser } = await seedHr(db);
+      hrUserId = hrUser.id;
+      hrRoleId = hr.id;
+      hrToken = (await loginAs(app, "hr@test.local")).accessToken;
+    });
+
+    it("HR cannot make itself OWNER", async () => {
+      const res = await hrReq.patch(hrUserId, { roleId: ids.owner.id }).expect(403);
+      expect(res.body.message).toBe("Only an OWNER can assign the OWNER role");
+      expect((await db.user.findUniqueOrThrow({ where: { id: hrUserId } })).roleId).toBe(hrRoleId);
+    });
+
+    it("HR cannot reset the password of, deactivate, or rename an OWNER", async () => {
+      await hrReq.patch(ids.ownerUser.id, { password: "HackedPass123!" }).expect(403);
+      await hrReq.patch(ids.ownerUser.id, { isActive: false }).expect(403);
+      await hrReq.patch(ids.ownerUser.id, { name: "Pwned" }).expect(403);
+      const owner = await db.user.findUniqueOrThrow({ where: { id: ids.ownerUser.id } });
+      expect(owner.isActive).toBe(true);
+      expect(owner.name).toBe("Owner");
+      await loginAs(app, "owner@test.local");
+    });
+
+    it("HR cannot promote another user to OWNER, nor create an OWNER", async () => {
+      await hrReq.patch(ids.viewerUser.id, { roleId: ids.owner.id }).expect(403);
+      const res = await hrReq
+        .post({ email: "x@test.local", name: "X", password: "Password123!", roleId: ids.owner.id })
+        .expect(403);
+      expect(res.body.message).toBe("Only an OWNER can assign the OWNER role");
+      expect(await db.user.count({ where: { email: "x@test.local" } })).toBe(0);
+    });
+
+    it("HR can create staff with a non-owner role and edit non-owner staff", async () => {
+      await hrReq
+        .post({ email: "ok@test.local", name: "Ok", password: "Password123!", roleId: ids.viewer.id })
+        .expect(201);
+      await hrReq.patch(ids.viewerUser.id, { name: "Renamed" }).expect(200);
+      await hrReq.patch(ids.viewerUser.id, { roleId: hrRoleId }).expect(200);
+    });
+
+    it("HR cannot change its own role or deactivate itself, but can rename itself", async () => {
+      const res = await hrReq.patch(hrUserId, { roleId: ids.viewer.id }).expect(403);
+      expect(res.body.message).toBe("Cannot change your own role or status");
+      await hrReq.patch(hrUserId, { isActive: false }).expect(403);
+      await hrReq.patch(hrUserId, { roleId: hrRoleId, name: "HR2" }).expect(200);
+    });
+  });
+
+  it("OWNER can still assign the OWNER role (create and update)", async () => {
+    const { accessToken } = await loginAs(app, "owner@test.local");
+    const created = await request(server())
+      .post("/staff")
+      .set(bearer(accessToken))
+      .send({ email: "o3@test.local", name: "O3", password: "Password123!", roleId: ids.owner.id })
+      .expect(201);
+    expect(created.body.roleName).toBe("OWNER");
+    const promoted = await request(server())
+      .patch(`/staff/${ids.viewerUser.id}`)
+      .set(bearer(accessToken))
+      .send({ roleId: ids.owner.id })
+      .expect(200);
+    expect(promoted.body.roleName).toBe("OWNER");
   });
 });

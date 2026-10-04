@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -15,6 +16,10 @@ import { type StaffDto, staffInclude, staffSnapshot, toStaffDto } from "./staff.
 
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002";
+}
+
+export function isOwner(actor: AuthUser): boolean {
+  return actor.roleName === SYSTEM_ROLE_OWNER;
 }
 
 @Injectable()
@@ -37,7 +42,10 @@ export class StaffService {
   }
 
   async create(input: CreateStaffInput, actor: AuthUser, ip: string | undefined): Promise<StaffDto> {
-    await this.assertRoleExists(input.roleId);
+    const role = await this.requireRole(input.roleId);
+    if (role.name === SYSTEM_ROLE_OWNER && !isOwner(actor)) {
+      throw new ForbiddenException("Only an OWNER can assign the OWNER role");
+    }
     try {
       const user = await this.prisma.user.create({
         data: {
@@ -67,6 +75,21 @@ export class StaffService {
     const before = await this.prisma.user.findUnique({ where: { id }, include: staffInclude });
     if (!before) throw new NotFoundException("Staff not found");
 
+    const actorIsOwner = isOwner(actor);
+    if (before.role.name === SYSTEM_ROLE_OWNER && !actorIsOwner) {
+      throw new ForbiddenException("Only an OWNER can modify an OWNER");
+    }
+    const targetRole = input.roleId === undefined ? undefined : await this.requireRole(input.roleId);
+    if (targetRole?.name === SYSTEM_ROLE_OWNER && !actorIsOwner) {
+      throw new ForbiddenException("Only an OWNER can assign the OWNER role");
+    }
+    if (
+      actor.id === id &&
+      ((input.roleId !== undefined && input.roleId !== before.roleId) || input.isActive === false)
+    ) {
+      throw new ForbiddenException("Cannot change your own role or status");
+    }
+
     const leavesOwner =
       before.isActive &&
       before.role.name === SYSTEM_ROLE_OWNER &&
@@ -77,8 +100,6 @@ export class StaffService {
       });
       if (otherOwners === 0) throw new ConflictException("Cannot remove the last active OWNER");
     }
-    if (input.roleId !== undefined) await this.assertRoleExists(input.roleId);
-
     const passwordHash = input.password === undefined ? undefined : await this.passwords.hash(input.password);
     const revokeSessions = input.password !== undefined || input.isActive === false;
 
@@ -114,8 +135,9 @@ export class StaffService {
     return toStaffDto(after);
   }
 
-  private async assertRoleExists(roleId: string): Promise<void> {
-    const role = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
+  private async requireRole(roleId: string): Promise<{ id: string; name: string }> {
+    const role = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true, name: true } });
     if (!role) throw new BadRequestException("Role not found");
+    return role;
   }
 }

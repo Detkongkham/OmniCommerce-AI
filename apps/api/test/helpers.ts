@@ -65,6 +65,20 @@ export async function seedBasics(db: PrismaClient) {
   return { owner, viewer, ownerUser, viewerUser };
 }
 
+/** Non-owner "HR" role (staff:read + staff:write) and a user hr@test.local with it. */
+export async function seedHr(db: PrismaClient) {
+  const hr = await db.role.create({
+    data: {
+      name: "HR",
+      permissions: { create: [{ permission: "staff:read" }, { permission: "staff:write" }] },
+    },
+  });
+  const hrUser = await db.user.create({
+    data: { email: "hr@test.local", name: "HR", passwordHash: await hash(TEST_PASSWORD), roleId: hr.id },
+  });
+  return { hr, hrUser };
+}
+
 /** ດຶງ cookie refresh (ຮູບ "oca_rt=...") ຈາກ response; undefined ຖ້າບໍ່ມີ ຫຼື ຖືກລ້າງແລ້ວ. */
 export function refreshCookieOf(res: { headers: Record<string, unknown> }): string | undefined {
   const raw = res.headers["set-cookie"];

@@ -2,7 +2,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestApp, loginAs, resetDb, seedBasics } from "./helpers";
+import { createTestApp, loginAs, resetDb, seedBasics, seedHr } from "./helpers";
 
 describe("roles and permissions (e2e)", () => {
   let app: INestApplication;
@@ -76,5 +76,44 @@ describe("roles and permissions (e2e)", () => {
     await del(spare.id).expect(204);
     expect(await db.role.count({ where: { id: spare.id } })).toBe(0);
     expect(await db.auditLog.count({ where: { action: "role.delete" } })).toBe(1);
+  });
+
+  describe("privilege escalation", () => {
+    let hrToken: string;
+    const asHr = {
+      post: (body: object) => request(server()).post("/roles").set(bearer(hrToken)).send(body),
+      put: (id: string, body: object) => request(server()).put(`/roles/${id}`).set(bearer(hrToken)).send(body),
+    };
+
+    beforeEach(async () => {
+      await seedHr(db);
+      hrToken = (await loginAs(app, "hr@test.local")).accessToken;
+    });
+
+    it("HR cannot create a role with permissions it lacks", async () => {
+      const res = await asHr.post({ name: "Evil", permissions: ["staff:read", "inventory:write"] }).expect(403);
+      expect(res.body.message).toBe("Cannot grant permissions you do not have");
+      expect(await db.role.count({ where: { name: "Evil" } })).toBe(0);
+    });
+
+    it("HR cannot escalate an existing role via PUT", async () => {
+      await asHr.put(ids.viewer.id, { name: "VIEWER", permissions: ["staff:read", "inventory:write"] }).expect(403);
+      const perms = await db.rolePermission.findMany({ where: { roleId: ids.viewer.id } });
+      expect(perms.map((p) => p.permission)).toEqual(["staff:read"]);
+    });
+
+    it("HR can create and update roles using only permissions it holds", async () => {
+      const created = await asHr.post({ name: "Clerk", permissions: ["staff:read"] }).expect(201);
+      await asHr.put(created.body.id, { name: "Clerk", permissions: ["staff:read", "staff:write"] }).expect(200);
+    });
+
+    it("OWNER can grant any permission", async () => {
+      const { accessToken } = await loginAs(app, "owner@test.local");
+      await request(server())
+        .post("/roles")
+        .set(bearer(accessToken))
+        .send({ name: "Stock", permissions: ["inventory:write"] })
+        .expect(201);
+    });
   });
 });
