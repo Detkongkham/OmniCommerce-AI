@@ -35,9 +35,9 @@ describe("warehouses (e2e)", () => {
       .expect(201);
     expect(created.body).toMatchObject({ code: "VTE", name: "ສາງວຽງຈັນ", isDefault: false, isActive: true });
 
-    await db.warehouse.create({ data: { code: "MAIN", name: "Main", isDefault: true } });
+    await db.warehouse.create({ data: { code: "ZZZ", name: "Last", isDefault: true } });
     const list = await request(server()).get("/warehouses").set(reader).expect(200);
-    expect(list.body.map((w: { code: string }) => w.code)).toEqual(["MAIN", "VTE"]);
+    expect(list.body.map((w: { code: string }) => w.code)).toEqual(["ZZZ", "VTE"]);
     expect(await db.auditLog.count({ where: { action: "warehouse.create" } })).toBe(1);
   });
 
@@ -71,6 +71,24 @@ describe("warehouses (e2e)", () => {
     const { whB } = await seedCatalog(db);
     await db.warehouse.update({ where: { id: whB.id }, data: { isActive: false } });
     await request(server()).post(`/warehouses/${whB.id}/default`).set(writer).expect(409);
+  });
+
+  it("POST /nope/default → 404", async () => {
+    await request(server()).post("/warehouses/nope/default").set(writer).expect(404);
+  });
+
+  it("ປິດສາງ ແລະ ຕັ້ງ default ພ້ອມກັນ ບໍ່ເຮັດໃຫ້ເກີດສາງ default ທີ່ປິດ", async () => {
+    const { whA, whB } = await seedCatalog(db);
+    for (let round = 0; round < 10; round += 1) {
+      await db.warehouse.update({ where: { id: whB.id }, data: { isDefault: false, isActive: true } });
+      await db.warehouse.update({ where: { id: whA.id }, data: { isDefault: true, isActive: true } });
+      await Promise.all([
+        request(server()).patch(`/warehouses/${whB.id}`).set(writer).send({ isActive: false }),
+        request(server()).post(`/warehouses/${whB.id}/default`).set(writer),
+      ]);
+      expect(await db.warehouse.count({ where: { isDefault: true, isActive: false } })).toBe(0);
+      expect(await db.warehouse.count({ where: { isDefault: true } })).toBe(1);
+    }
   });
 
   it("ປິດສາງ: ສາງ default → 409; ສາງທີ່ມີສະຕ໋ອກ → 409; ສາງວ່າງ → ສຳເລັດ", async () => {

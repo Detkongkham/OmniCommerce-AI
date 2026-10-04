@@ -55,19 +55,35 @@ export class WarehousesService {
 
   async update(id: string, input: UpdateWarehouseInput, actor: AuthUser, ip: string | undefined): Promise<WarehouseDto> {
     const before = await this.require(id);
-    if (input.isActive === false && before.isActive) {
+    const deactivating = input.isActive === false && before.isActive;
+    if (deactivating) {
       if (before.isDefault) throw new ConflictException("Cannot deactivate the default warehouse");
+      // Known, accepted check-then-act window: deactivation vs a concurrent stock receive. Stock in an
+      // inactive warehouse stays visible and the warehouse can be reactivated. StockService must
+      // re-validate warehouse.isActive when it acts.
       const stocked = await this.prisma.stockLevel.findFirst({
         where: { warehouseId: id, OR: [{ onHand: { gt: 0 } }, { reserved: { gt: 0 } }] },
         select: { id: true },
       });
       if (stocked) throw new ConflictException("Cannot deactivate a warehouse that still holds stock");
     }
+    const data = { code: input.code, name: input.name, address: input.address, isActive: input.isActive };
     try {
-      const after = await this.prisma.warehouse.update({
-        where: { id },
-        data: { code: input.code, name: input.name, address: input.address, isActive: input.isActive },
-      });
+      let after: WarehouseRow;
+      if (deactivating) {
+        // ເງື່ອນໄຂ isDefault: false ຢູ່ໃນ UPDATE ດຽວກັນ ກັນ race ກັບ setDefault
+        after = await this.prisma.$transaction(async (tx) => {
+          const res = await tx.warehouse.updateMany({ where: { id, isDefault: false }, data });
+          if (res.count === 0) {
+            const current = await tx.warehouse.findUnique({ where: { id } });
+            if (!current) throw new NotFoundException("Warehouse not found");
+            throw new ConflictException("Cannot deactivate the default warehouse");
+          }
+          return tx.warehouse.findUniqueOrThrow({ where: { id } });
+        });
+      } else {
+        after = await this.prisma.warehouse.update({ where: { id }, data });
+      }
       await this.record(actor, "warehouse.update", id, before, after, ip);
       return toWarehouseDto(after);
     } catch (error) {
@@ -78,11 +94,17 @@ export class WarehousesService {
 
   async setDefault(id: string, actor: AuthUser, ip: string | undefined): Promise<WarehouseDto> {
     const before = await this.require(id);
-    if (!before.isActive) throw new ConflictException("Cannot make an inactive warehouse the default");
     try {
       const after = await this.prisma.$transaction(async (tx) => {
         await tx.warehouse.updateMany({ where: { isDefault: true, id: { not: id } }, data: { isDefault: false } });
-        return tx.warehouse.update({ where: { id }, data: { isDefault: true } });
+        // ເງື່ອນໄຂ isActive: true ຢູ່ໃນ UPDATE ດຽວກັນ ກັນ race ກັບການປິດສາງ (count 0 → rollback ທັງ transaction)
+        const res = await tx.warehouse.updateMany({ where: { id, isActive: true }, data: { isDefault: true } });
+        if (res.count === 0) {
+          const current = await tx.warehouse.findUnique({ where: { id } });
+          if (!current) throw new NotFoundException("Warehouse not found");
+          throw new ConflictException("Cannot make an inactive warehouse the default");
+        }
+        return tx.warehouse.findUniqueOrThrow({ where: { id } });
       });
       await this.record(actor, "warehouse.setDefault", id, before, after, ip);
       return toWarehouseDto(after);

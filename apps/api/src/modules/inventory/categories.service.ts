@@ -103,14 +103,22 @@ export class CategoriesService {
 
   async remove(id: string, actor: AuthUser, ip: string | undefined): Promise<void> {
     const before = await this.require(id);
-    if ((await this.prisma.product.count({ where: { categoryId: id } })) > 0) {
-      throw new ConflictException("Category still has products");
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if ((await tx.product.count({ where: { categoryId: id } })) > 0) {
+          throw new ConflictException("Category still has products");
+        }
+        // ລູກຍ້າຍຂຶ້ນໄປຫາ parent ຂອງໝວດທີ່ລຶບ (ບໍ່ແມ່ນຫຼຸດໄປ root)
+        await tx.category.updateMany({ where: { parentId: id }, data: { parentId: before.parentId } });
+        await tx.category.delete({ where: { id } });
+      });
+    } catch (error) {
+      // ຖືກລຶບພ້ອມກັນໂດຍຄົນອື່ນ (P2025)
+      if (typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2025") {
+        throw new NotFoundException("Category not found");
+      }
+      throw error;
     }
-    await this.prisma.$transaction(async (tx) => {
-      // ລູກຍ້າຍຂຶ້ນໄປຫາ parent ຂອງໝວດທີ່ລຶບ (ບໍ່ແມ່ນຫຼຸດໄປ root)
-      await tx.category.updateMany({ where: { parentId: id }, data: { parentId: before.parentId } });
-      await tx.category.delete({ where: { id } });
-    });
     await this.audit.record({
       userId: actor.id,
       action: "category.delete",

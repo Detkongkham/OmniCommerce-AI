@@ -44,13 +44,13 @@ describe("categories (e2e)", () => {
 
   it("parentId ທີ່ບໍ່ມີ → 400; ລາຍການມີ productCount ແລະ ຮຽງຕາມ position", async () => {
     await create({ name: "X", parentId: "missing" }).expect(400);
-    const root = await create({ name: "Root", position: 2 }).expect(201);
-    await create({ name: "First", position: 1 }).expect(201);
+    const root = await create({ name: "Alpha", position: 5 }).expect(201);
+    await create({ name: "Zeta", position: 0 }).expect(201);
     await db.product.create({ data: { name: "P", slug: "p", categoryId: root.body.id } });
 
     const list = await request(server()).get("/categories").set(reader).expect(200);
-    expect(list.body.map((c: { name: string }) => c.name)).toEqual(["First", "Root"]);
-    expect(list.body[1]).toMatchObject({ name: "Root", productCount: 1, parentId: null });
+    expect(list.body.map((c: { name: string }) => c.name)).toEqual(["Zeta", "Alpha"]);
+    expect(list.body[1]).toMatchObject({ name: "Alpha", productCount: 1, parentId: null });
   });
 
   it("PATCH: ແກ້ຊື່; ຕັ້ງເປັນລູກຂອງຕົວເອງ ຫຼື ລູກຫຼານ → 400; ບໍ່ມີ id → 404", async () => {
@@ -64,6 +64,10 @@ describe("categories (e2e)", () => {
     await patch(root.body.id, { parentId: grand.body.id }).expect(400);
     await patch(grand.body.id, { parentId: root.body.id }).expect(200);
     await patch("nope", { name: "x" }).expect(404);
+  });
+
+  it("DELETE ທີ່ບໍ່ມີ id → 404", async () => {
+    await request(server()).delete("/categories/nope").set(writer).expect(404);
   });
 
   it("DELETE: ມີສິນຄ້າ → 409; ບໍ່ມີ → 204 ແລະ ລູກຍ້າຍຂຶ້ນໄປຫາ parent ຂອງມັນ", async () => {
