@@ -121,3 +121,27 @@ export async function seedCatalog(db: PrismaClient) {
   const v2 = await makeVariant("SKU-2");
   return { whA, whB, product, v1, v2 };
 }
+
+/**
+ * inv-write@test.local (inventory:read+write), inv-read@test.local (inventory:read),
+ * noinv@test.local (staff:read ເທົ່ານັ້ນ). ຄວນເອີ້ນຫຼັງ resetDb.
+ */
+export async function seedInventoryUsers(db: PrismaClient) {
+  const passwordHash = await hash(TEST_PASSWORD);
+  const makeUser = async (email: string, roleName: string, permissions: string[]) => {
+    const role = await db.role.create({
+      data: { name: roleName, permissions: { create: permissions.map((permission) => ({ permission })) } },
+    });
+    return db.user.create({ data: { email, name: roleName, passwordHash, roleId: role.id } });
+  };
+  const writer = await makeUser("inv-write@test.local", "INV_WRITE", ["inventory:read", "inventory:write"]);
+  const reader = await makeUser("inv-read@test.local", "INV_READ", ["inventory:read"]);
+  const none = await makeUser("noinv@test.local", "NO_INV", ["staff:read"]);
+  return { writer, reader, none };
+}
+
+/** { Authorization: "Bearer ..." } ຂອງຜູ້ໃຊ້ */
+export async function bearerFor(app: INestApplication, email: string): Promise<{ Authorization: string }> {
+  const { accessToken } = await loginAs(app, email);
+  return { Authorization: `Bearer ${accessToken}` };
+}
