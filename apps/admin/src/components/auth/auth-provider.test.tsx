@@ -1,14 +1,15 @@
 import type { Permission } from "@oca/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loginRequest, logoutRequest, refreshSession } from "@/lib/api";
+import { type Session, loginRequest, logoutRequest, refreshSession, setSessionRefreshedHandler } from "@/lib/api";
 import { AuthProvider, useAuth } from "./auth-provider";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   refreshSession: vi.fn(),
+  setSessionRefreshedHandler: vi.fn(),
   loginRequest: vi.fn(),
   logoutRequest: vi.fn(),
 }));
@@ -53,6 +54,7 @@ beforeEach(() => {
   vi.mocked(refreshSession).mockReset();
   vi.mocked(loginRequest).mockReset();
   vi.mocked(logoutRequest).mockReset();
+  vi.mocked(setSessionRefreshedHandler).mockReset();
 });
 
 describe("AuthProvider", () => {
@@ -97,5 +99,28 @@ describe("AuthProvider", () => {
     await userEvent.click(screen.getByRole("button", { name: "logout" }));
     await waitFor(() => expect(status()).toHaveTextContent("unauthenticated"));
     expect(logoutRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("background refresh ອັບເດດ user/permissions ຜ່ານ sessionRefreshed handler", async () => {
+    vi.mocked(refreshSession).mockResolvedValue(viewer);
+    renderProbe();
+    await waitFor(() => expect(status()).toHaveTextContent("authenticated"));
+    expect(screen.getByTestId("can-write")).toHaveTextContent("false");
+
+    const handler = vi.mocked(setSessionRefreshedHandler).mock.calls.map(([h]) => h).find((h) => h !== null) as (
+      session: Session,
+    ) => void;
+    expect(handler).toBeTypeOf("function");
+    act(() => handler(owner));
+    expect(screen.getByTestId("can-write")).toHaveTextContent("true");
+    expect(screen.getByTestId("user")).toHaveTextContent("owner@example.com");
+  });
+
+  it("unregister sessionRefreshed handler ເມື່ອ unmount", async () => {
+    vi.mocked(refreshSession).mockResolvedValue(owner);
+    const { unmount } = renderProbe();
+    await waitFor(() => expect(status()).toHaveTextContent("authenticated"));
+    unmount();
+    expect(vi.mocked(setSessionRefreshedHandler).mock.calls.at(-1)).toEqual([null]);
   });
 });

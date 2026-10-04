@@ -98,4 +98,24 @@ describe("StaffList", () => {
       expect(apiFetch).toHaveBeenCalledWith("/staff/s2", { method: "PATCH", body: { isActive: false } }),
     );
   });
+
+  it("/roles ລົ້ມ: ປຸ່ມເພີ່ມ ແລະ ແກ້ໄຂ ຖືກ disable", async () => {
+    vi.mocked(apiFetch).mockImplementation((async (path: string) => {
+      if (path === "/staff") return staff;
+      if (path === "/roles") throw new Error("boom");
+      return undefined;
+    }) as typeof apiFetch);
+    renderWithProviders(<StaffList />);
+    await screen.findByText("Owner One");
+
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Add staff" })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Edit staff Owner One" })).toBeDisabled();
+  });
+
+  it("/roles ໂຫຼດສຳເລັດ: ປຸ່ມເພີ່ມ ແລະ ແກ້ໄຂ ເປີດໃຊ້ງານ", async () => {
+    renderWithProviders(<StaffList />);
+    await screen.findByText("Owner One");
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Add staff" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Edit staff Owner One" })).toBeEnabled();
+  });
 });

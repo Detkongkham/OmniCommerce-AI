@@ -42,6 +42,7 @@ const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"
 
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+let onSessionRefreshed: ((session: Session) => void) | null = null;
 let refreshInFlight: Promise<Session | null> | null = null;
 
 export function setAccessToken(token: string | null): void {
@@ -55,6 +56,11 @@ export function getAccessToken(): string | null {
 /** ຖືກເອີ້ນເມື່ອ session ໝົດແທ້ (refresh ລົ້ມ). AuthProvider ໃຊ້ເພື່ອສົ່ງໄປ /login. */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
+}
+
+/** ຖືກເອີ້ນທຸກຄັ້ງທີ່ refresh ສຳເລັດ ເພື່ອໃຫ້ AuthProvider ອັບເດດ user/permissions. */
+export function setSessionRefreshedHandler(handler: ((session: Session) => void) | null): void {
+  onSessionRefreshed = handler;
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
@@ -89,17 +95,30 @@ function send(path: string, options: RequestOptions): Promise<Response> {
   });
 }
 
-/** Refresh ຄັ້ງດຽວຕໍ່ເທື່ອ (single-flight). network ລົ້ມ ຫຼື ບໍ່ ok = ບໍ່ມີ session. */
+async function requestRefresh(): Promise<Session | null> {
+  const response = await fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "same-origin" });
+  if (!response.ok) return null;
+  return (await response.json()) as Session;
+}
+
+/**
+ * Refresh ຄັ້ງດຽວຕໍ່ເທື່ອ (single-flight ໃນ tab). API ຫມຸນ refresh token ແລະ revoke ທັງ family ເມື່ອໃຊ້ຊ້ຳ
+ * ຈຶ່ງ serialise ຂ້າມ tab ດ້ວຍ Web Locks: tab ທີ່ສອງສົ່ງ cookie ທີ່ຖືກຫມຸນແລ້ວ (cookie jar ຮ່ວມກັນ).
+ * network ລົ້ມ ຫຼື ບໍ່ ok = ບໍ່ມີ session.
+ */
 export function refreshSession(): Promise<Session | null> {
   refreshInFlight ??= (async () => {
     try {
-      const response = await fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "same-origin" });
-      if (!response.ok) {
+      const session =
+        typeof navigator !== "undefined" && navigator.locks
+          ? await navigator.locks.request("oca-refresh", requestRefresh)
+          : await requestRefresh();
+      if (!session) {
         setAccessToken(null);
         return null;
       }
-      const session = (await response.json()) as Session;
       setAccessToken(session.accessToken);
+      onSessionRefreshed?.(session);
       return session;
     } catch {
       setAccessToken(null);
@@ -123,7 +142,10 @@ export async function apiFetch<T = void>(path: string, options: RequestOptions =
     return parse<T>(response);
   }
   const retry = await send(path, options);
-  if (retry.status === 401) onUnauthorized?.();
+  if (retry.status === 401) {
+    setAccessToken(null);
+    onUnauthorized?.();
+  }
   return parse<T>(retry);
 }
 

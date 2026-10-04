@@ -152,6 +152,9 @@ function StaffForm({ staff, roles, onDone }: { staff: StaffDto | null; roles: Ro
           >
             <Select id="staff-role" invalid={!!errors.roleId} {...register("roleId")}>
               <option value="">{t("staff.form.rolePlaceholder")}</option>
+              {staff && !roles.some((role) => role.id === staff.roleId) ? (
+                <option value={staff.roleId}>{staff.roleName}</option>
+              ) : null}
               {roles.map((role) => (
                 <option key={role.id} value={role.id}>
                   {role.name}

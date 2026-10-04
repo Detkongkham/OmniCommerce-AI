@@ -16,6 +16,7 @@ import {
   loginRequest,
   logoutRequest,
   refreshSession,
+  setSessionRefreshedHandler,
   setUnauthorizedHandler,
 } from "@/lib/api";
 
@@ -47,12 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.clear();
       setState(UNAUTHENTICATED);
     });
+    setSessionRefreshedHandler((session) => setState({ status: "authenticated", user: session.user }));
     void refreshSession().then((session) => {
       if (active) setState(session ? { status: "authenticated", user: session.user } : UNAUTHENTICATED);
     });
     return () => {
       active = false;
       setUnauthorizedHandler(null);
+      setSessionRefreshedHandler(null);
     };
   }, [queryClient]);
 

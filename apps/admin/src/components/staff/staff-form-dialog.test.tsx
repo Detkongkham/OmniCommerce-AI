@@ -96,4 +96,11 @@ describe("StaffFormDialog (edit)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Email already in use");
     expect(onOpenChange).not.toHaveBeenCalled();
   });
+
+  it("roles ຫວ່າງ: ຍັງສະແດງ role ປັດຈຸບັນຂອງພະນັກງານ ແລະ ເລືອກໄວ້", () => {
+    renderWithProviders(<StaffFormDialog open onOpenChange={() => {}} staff={existing} roles={[]} />);
+    const select = screen.getByLabelText("Role") as HTMLSelectElement;
+    expect(select.value).toBe("role-2");
+    expect(screen.getByRole("option", { name: "MANAGER" })).toBeInTheDocument();
+  });
 });

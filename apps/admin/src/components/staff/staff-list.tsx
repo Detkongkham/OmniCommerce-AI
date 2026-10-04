@@ -74,8 +74,11 @@ export function StaffList() {
     }
   }
 
+  // dialog ຕ້ອງການ roles: ປິດປຸ່ມຈົນກວ່າຈະໂຫຼດສຳເລັດ (ບໍ່ດັ່ງນັ້ນ select ຈະບໍ່ມີ option)
+  const rolesUnavailable = rolesQuery.isPending || rolesQuery.isError;
+
   const addButton = canWrite ? (
-    <Button className="rounded-xl" onClick={openCreate}>
+    <Button className="rounded-xl" onClick={openCreate} disabled={rolesUnavailable}>
       <Plus aria-hidden="true" />
       {t("staff.add")}
     </Button>
@@ -164,6 +167,7 @@ export function StaffList() {
                                 aria-label={`${t("staff.edit")} ${staff.name}`}
                                 title={t("staff.edit")}
                                 onClick={() => openEdit(staff)}
+                                disabled={rolesUnavailable}
                               >
                                 <Pencil aria-hidden="true" />
                               </Button>
