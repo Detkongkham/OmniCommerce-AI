@@ -13,3 +13,5 @@ allowBuilds:
   '@embedded-postgres/linux-x64': true
   '@embedded-postgres/linux-arm64': true
   '@embedded-postgres/windows-x64': true
+minimumReleaseAgeExclude:
+  - lucide-react@1.52.0
