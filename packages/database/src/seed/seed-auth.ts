@@ -2,7 +2,7 @@ import { SYSTEM_ROLE_OWNER } from "@oca/shared";
 import type { PrismaClient } from "../generated/client";
 import { ROLE_DEFINITIONS } from "./roles";
 
-export type SeedDb = Pick<PrismaClient, "role" | "rolePermission" | "user">;
+export type SeedDb = Pick<PrismaClient, "role" | "user">;
 
 export interface SeedAuthInput {
   ownerEmail: string;
@@ -22,9 +22,12 @@ export async function seedAuth(db: SeedDb, input: SeedAuthInput): Promise<void> 
         },
       });
     } else if (def.isSystem) {
-      await db.rolePermission.deleteMany({ where: { roleId: existing.id } });
-      await db.rolePermission.createMany({
-        data: def.permissions.map((permission) => ({ roleId: existing.id, permission })),
+      // Single nested write = one transaction: a failure can never leave the role without permissions.
+      await db.role.update({
+        where: { id: existing.id },
+        data: {
+          permissions: { deleteMany: {}, create: def.permissions.map((permission) => ({ permission })) },
+        },
       });
     }
   }

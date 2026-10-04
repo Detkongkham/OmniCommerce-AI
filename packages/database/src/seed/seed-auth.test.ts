@@ -38,14 +38,18 @@ function createFakeDb() {
         roles.push(role);
         return role;
       },
-    },
-    rolePermission: {
-      deleteMany: async ({ where }: { where: { roleId: string } }) => {
-        const role = roles.find((r) => r.id === where.roleId);
-        if (role) role.permissions = [];
-      },
-      createMany: async ({ data }: { data: { roleId: string; permission: string }[] }) => {
-        for (const row of data) roles.find((r) => r.id === row.roleId)?.permissions.push(row.permission);
+      update: async ({
+        where,
+        data,
+      }: {
+        where: { id: string };
+        data: { permissions: { deleteMany: object; create: { permission: string }[] } };
+      }) => {
+        const role = roles.find((r) => r.id === where.id);
+        if (!role) throw new Error("role not found");
+        // One atomic nested write: delete all then create.
+        role.permissions = data.permissions.create.map((p) => p.permission);
+        return role;
       },
     },
     user: {
