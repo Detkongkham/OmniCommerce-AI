@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Noto_Sans_Lao } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
+import { Providers } from "./providers";
 
 const notoSansLao = Noto_Sans_Lao({
   subsets: ["lao"],
@@ -19,7 +20,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="lo" className={`${notoSansLao.variable} ${inter.variable}`}>
-      <body>{children}</body>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
