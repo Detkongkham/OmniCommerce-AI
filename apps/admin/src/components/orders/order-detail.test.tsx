@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { OrderDetailDto } from "@/lib/types";
@@ -143,7 +143,7 @@ describe("OrderDetail: ນັບຖອຍ", () => {
   it("ສະແດງເວລາທີ່ເຫຼືອ (role=timer, ບໍ່ແມ່ນ aria-live) ແລະ ນັບລົງ", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderWithProviders(<OrderDetail id="o1" />);
-    const timer = await screen.findByRole("timer");
+    const timer = await screen.findByRole("timer", { name: "Time left before the reservation expires" });
     expect(timer).toHaveTextContent("Reservation expires in 02:00");
     expect(timer.closest("[aria-live]")).toBeNull();
     await act(async () => {
@@ -177,9 +177,12 @@ describe("OrderDetail: ນັບຖອຍ", () => {
     renderWithProviders(<OrderDetail id="o1" />);
     await heading();
     expect(gets()).toHaveLength(1);
-    await act(async () => {
-      vi.advanceTimersByTime(3000);
-    });
+    for (let i = 0; i < 8; i++) {
+      // ນັບຮອດ 0 ແລ້ວ poll ທຸກ 5 ວິ (ເດີນເທື່ອລະວິ ໃຫ້ React flush ລະຫວ່າງທາງ)
+      await act(async () => {
+        vi.advanceTimersByTime(1000);
+      });
+    }
     await waitFor(() => expect(gets().length).toBeGreaterThanOrEqual(2));
     expect(screen.getByRole("button", { name: "Confirm payment" })).toBeDisabled();
   });
@@ -233,6 +236,7 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
     const pay = screen.getByRole("button", { name: "Confirm payment" });
     await user.dblClick(pay);
     expect(posts()).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull(); // ກົດຊ້ຳບໍ່ແມ່ນຄວາມຜິດ
 
     expect(screen.getByRole("button", { name: "Cancel order" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Confirm payment/ })).toBeDisabled();
@@ -252,6 +256,7 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
       pay.click();
     });
     expect(posts()).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull(); // ກົດຊ້ຳ: ບໍ່ສະແດງ error
   });
 
   it("ສຳເລັດ: ປະກາດຜົນ (role=status) ແລະ focus ຍ້າຍໄປ status region ເມື່ອປຸ່ມຫາຍ", async () => {
@@ -268,7 +273,7 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
     expect(screen.getByTestId("order-announce")).toHaveTextContent("Payment confirmed");
   });
 
-  it("ORDER_INVALID_STATE: ສະແດງຂໍ້ຄວາມແປ (role=alert) ແລະ ສະຖານະຫຼ້າສຸດ (refetch)", async () => {
+  it("ORDER_INVALID_STATE: ສະຖານະຫຼ້າສຸດ (refetch) ແລະ ຂໍ້ຄວາມແປຖືກປະກາດ; alert ເກົ່າບໍ່ຄ້າງ", async () => {
     let current = base;
     vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
       if (options?.method === "POST") {
@@ -280,9 +285,11 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
     const { user } = renderWithProviders(<OrderDetail id="o1" />);
     await heading();
     await user.click(screen.getByRole("button", { name: "Confirm payment" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The order status does not allow this step");
+    // ສະຖານະຫຼ້າສຸດມາແລ້ວ: ບໍ່ມີ alert ເກົ່າຄ້າງຂ້າງສະຖານະໃໝ່; ຂໍ້ຄວາມຖືກປະກາດທີ່ status region
     expect(await screen.findByText("Paid")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start packing" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByTestId("order-announce")).toHaveTextContent("The order status does not allow this step");
   });
 
   it("RESERVATION_EXPIRED: ຂໍ້ຄວາມແປ; ປຸ່ມກັບມາໃຊ້ໄດ້ (ບໍ່ຄ້າງ pending)", async () => {
@@ -377,5 +384,215 @@ describe("OrderDetail: ຍົກເລີກ", () => {
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel order" }));
     expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("does not allow this step");
     await waitFor(() => expect(gets().length).toBeGreaterThan(before));
+  });
+});
+
+describe("OrderDetail: ແກ້ຕາມ review (ຂໍ້ມູນເກົ່າ/ຄ້າງ)", () => {
+  const advance = (ms: number) =>
+    act(async () => {
+      vi.advanceTimersByTime(ms);
+    });
+
+  it("ຢືນຢັນຍົກເລີກຂະນະມີ action ອື່ນກຳລັງສົ່ງ: ບໍ່ POST ຊ້ຳ, dialog ຍັງເປີດ ພ້ອມຂໍ້ຄວາມ", async () => {
+    vi.mocked(apiFetch).mockImplementation(((_path: string, options?: { method?: string }) =>
+      options?.method === "POST" ? new Promise(() => {}) : Promise.resolve(base)) as typeof apiFetch);
+    const { user } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    const dialog = await screen.findByRole("dialog");
+    const pay = screen.getByRole("button", { name: "Confirm payment", hidden: true });
+    const confirm = within(dialog).getByRole("button", { name: "Cancel order" });
+    await act(async () => {
+      pay.click(); // action ອື່ນເລີ່ມກ່ອນ ໃນ tick ດຽວກັນ
+      confirm.click();
+    });
+    expect(posts()).toEqual([["/orders/o1/pay", { method: "POST" }]]);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Another action is still in progress");
+  });
+
+  it("ຂະນະ action ກຳລັງສົ່ງ: ປຸ່ມຢືນຢັນໃນ dialog ຖືກ disable", async () => {
+    vi.mocked(apiFetch).mockImplementation(((_path: string, options?: { method?: string }) =>
+      options?.method === "POST" ? new Promise(() => {}) : Promise.resolve(base)) as typeof apiFetch);
+    const { user } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    await screen.findByRole("dialog");
+    await act(async () => {
+      screen.getByRole("button", { name: "Confirm payment", hidden: true }).click();
+    });
+    expect(posts()).toHaveLength(1);
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel order" })).toBeDisabled());
+  });
+
+  it("poll ລົ້ມ (ມີຂໍ້ມູນເກົ່າ): ປ້າຍເຕືອນ role=alert + Retry, ປຸ່ມ action ຖືກປິດ; Retry ສຳເລັດ → ກັບປົກກະຕິ", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let fail = false;
+    vi.mocked(apiFetch).mockImplementation((async () => {
+      if (fail) throw new ApiError(500, "", [], "INTERNAL_ERROR");
+      return { ...base, secondsUntilExpiry: 0 };
+    }) as typeof apiFetch);
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeEnabled();
+    fail = true;
+    await advance(15_000);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not refresh, showing the last known state");
+    expect(screen.getByRole("heading", { level: 1, name: "SO-000001" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeDisabled();
+    fail = false;
+    fireEvent.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeEnabled();
+  });
+
+  it("action ລົ້ມ ແລ້ວ refetch ຂອງ hook ກໍ່ລົ້ມ: ປ້າຍເຕືອນ ແລະ ປຸ່ມຖືກປິດ", async () => {
+    let getsFail = false;
+    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") {
+        getsFail = true;
+        throw new ApiError(409, "x", [], "ORDER_INVALID_STATE");
+      }
+      if (getsFail) throw new ApiError(500, "", [], "INTERNAL_ERROR");
+      return base;
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    expect(await screen.findByText(/Could not refresh, showing the last known state/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm payment" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeDisabled();
+  });
+
+  it("server ຍັງບອກເຫຼືອ 1 ວິຕະຫຼອດ: ຈຳນວນ GET ມີຂອບເຂດ (poll 5 ວິ ບໍ່ແມ່ນທຸກວິ)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockOrder({ ...base, secondsUntilExpiry: 1 });
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    for (let i = 0; i < 30; i++) await advance(1000);
+    expect(gets().length).toBeLessThanOrEqual(1 + 6 + 2);
+  });
+
+  it("refetch ຕອນໝົດເວລາລົ້ມ: ລອງໃໝ່ເອງ ແລ້ວປ່ຽນເປັນໝົດເວລາຈອງ (ບໍ່ຄ້າງ)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(apiFetch).mockImplementation((async () => {
+      const n = gets().length;
+      if (n === 2) throw new ApiError(500, "", [], "INTERNAL_ERROR");
+      return n === 1 ? { ...base, secondsUntilExpiry: 1 } : withStatus("EXPIRED");
+    }) as typeof apiFetch);
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    for (let i = 0; i < 25; i++) await advance(1000);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Confirm payment" })).toBeNull());
+    expect(within(screen.getByRole("group", { name: "Order status" })).getByText("Reservation expired")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ບິນບໍ່ cancel ໄດ້ແລ້ວຂະນະ dialog ເປີດ: dialog ປິດ, ປະກາດ 'Order status changed to Shipped' ແລະ focus ໄປ status region", async () => {
+    let current = withStatus("PACKING");
+    vi.mocked(apiFetch).mockImplementation((async () => current) as typeof apiFetch);
+    const { user, queryClient } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    await user.type(await screen.findByLabelText("Reason (optional)"), "abc");
+    current = withStatus("SHIPPED");
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const announce = screen.getByTestId("order-announce");
+    expect(announce).toHaveTextContent("Order status changed to Shipped");
+    await waitFor(() => expect(document.activeElement).toBe(announce));
+  });
+
+  it("ເປີດ dialog ໂດຍບໍ່ focus ປຸ່ມ ແລ້ວກົດ 'Keep order': focus ຄືນປຸ່ມ 'Cancel order'", async () => {
+    const { user } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    const opener = screen.getByRole("button", { name: "Cancel order" });
+    fireEvent.click(opener);
+    await user.click(await screen.findByRole("button", { name: "Keep order" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("ຫຼັງ action ສຳເລັດ ບໍ່ໃຊ້ setTimeout 50ms ເພື່ອຍ້າຍ focus (ໃຊ້ effect)", async () => {
+    let current = base;
+    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") current = withStatus("PAID");
+      return current;
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    const spy = vi.spyOn(window, "setTimeout");
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("order-announce")));
+    expect(spy.mock.calls.some((call) => call[1] === 50)).toBe(false);
+    spy.mockRestore();
+  });
+
+  it("ປະກາດເກົ່າຖືກລ້າງເມື່ອສະຖານະປ່ຽນຈາກພາຍນອກ", async () => {
+    let current = base;
+    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") current = withStatus("PAID");
+      return current;
+    }) as typeof apiFetch);
+    const { user, queryClient } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(screen.getByTestId("order-announce")).toHaveTextContent("Payment confirmed"));
+    current = withStatus("PACKING");
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await waitFor(() => expect(screen.getByTestId("order-announce").textContent).toBe(""));
+  });
+
+  it("network error (ບໍ່ແມ່ນ ApiError): ຂໍ້ຄວາມກາງແປແລ້ວ ແລະ ປ່ອຍ guard (ກົດໃໝ່ໄດ້)", async () => {
+    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") throw new TypeError("Failed to fetch");
+      return base;
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirm payment" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+  });
+
+  it("unmount ຂະນະ action ກຳລັງສົ່ງ: ຈົບແລ້ວບໍ່ມີ error", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let resolve!: (value: OrderDetailDto) => void;
+    vi.mocked(apiFetch).mockImplementation(((_path: string, options?: { method?: string }) =>
+      options?.method === "POST" ? new Promise<OrderDetailDto>((r) => (resolve = r)) : Promise.resolve(base)) as typeof apiFetch);
+    const { user, unmount } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    unmount();
+    await act(async () => {
+      resolve(withStatus("PAID"));
+    });
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it("alert ຂອງ network error ຫາຍເມື່ອສະຖານະປ່ຽນຈາກພາຍນອກ", async () => {
+    let current = base;
+    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") throw new TypeError("Failed to fetch");
+      return current;
+    }) as typeof apiFetch);
+    const { user, queryClient } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    current = withStatus("PAID");
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start packing" })).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

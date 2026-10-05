@@ -6,9 +6,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
-import { errorMessage } from "@/lib/errors";
+import { ActionBusyError, errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
-import { type OrderAction, useOrder, useOrderAction } from "@/lib/queries";
+import { type OrderAction, useOrder, useOrderAction, useOrderSnapshot } from "@/lib/queries";
 import type { OrderDetailDto } from "@/lib/types";
 import { formatCountdown, useCountdown } from "@/lib/use-countdown";
 import { CancelOrderDialog } from "./cancel-order-dialog";
@@ -24,8 +24,6 @@ const NEXT_STEP: Partial<Record<OrderDetailDto["status"], { action: OrderAction;
   SHIPPED: { action: "complete", permission: "logistics:write" },
 };
 const CANCELLABLE = new Set<OrderDetailDto["status"]>(["PENDING_PAYMENT", "PAID", "PACKING"]);
-/** code ທີ່ບອກວ່າສະຖານະບິນບໍ່ຕົງກັບທີ່ເຫັນ (useOrderAction refetch ໃຫ້ແລ້ວ) */
-const STALE_CODES = new Set(["ORDER_INVALID_STATE", "RESERVATION_EXPIRED"]);
 const EXPIRED_NOTE_ID = "order-expired-note";
 
 function BackLink() {
@@ -40,7 +38,9 @@ function BackLink() {
 
 export function OrderDetail({ id }: { id: string }) {
   const { t } = useT();
-  const query = useOrder(id);
+  // client ນັບຮອດ 0 ແລ້ວ (latch): ໃຫ້ useOrder poll ທຸກ 5 ວິ ຈົນ server ປ່ຽນສະຖານະ
+  const [clientExpired, setClientExpired] = useState(false);
+  const query = useOrder(id, { clientExpired });
 
   if (!query.data) {
     if (query.isError) {
@@ -74,52 +74,110 @@ export function OrderDetail({ id }: { id: string }) {
       </div>
     );
   }
-  return <OrderDetailBody order={query.data} fetchedAt={query.dataUpdatedAt} refetch={query.refetch} />;
+  return (
+    <OrderDetailBody
+      order={query.data}
+      fetchedAt={query.dataUpdatedAt}
+      // refetch ລ່າສຸດລົ້ມ ແຕ່ຍັງມີຂໍ້ມູນເກົ່າ: ສະແດງໄດ້ ແຕ່ຖືວ່າອາດເກົ່າ
+      stale={query.isRefetchError}
+      refreshing={query.isRefetching}
+      onRetry={() => void query.refetch()}
+      onClientExpired={() => setClientExpired(true)}
+    />
+  );
 }
 
-function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto; fetchedAt: number; refetch: () => unknown }) {
+interface BodyProps {
+  order: OrderDetailDto;
+  fetchedAt: number;
+  stale: boolean;
+  refreshing: boolean;
+  onRetry: () => void;
+  onClientExpired: () => void;
+}
+
+function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClientExpired }: BodyProps) {
   const { t } = useT();
   const canPay = useCan("payments:write");
   const canLogistics = useCan("logistics:write");
   const canCancel = useCan("orders:write");
   const canCosts = useCan("costs:read");
   const act = useOrderAction();
+  const snapshot = useOrderSnapshot(order.id);
   const inFlight = useRef(false);
+  const mounted = useRef(true);
+  // ສະຖານະທີ່ການປະກາດຂອງ action ເຮົາເອງອ້າງເຖິງ: ການປ່ຽນໄປຫາສະຖານະນີ້ບໍ່ແມ່ນການປ່ຽນຈາກພາຍນອກ
+  const announcedStatus = useRef<OrderDetailDto["status"] | null>(null);
+  const prevStatus = useRef(order.status);
   const announceRef = useRef<HTMLDivElement>(null);
-  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cancelButtonRef = useRef<HTMLElement | null>(null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  // ຜູກກັບສະຖານະທີ່ເຫັນຕອນເກີດ: ຖ້າ refetch ສະແດງສະຖານະໃໝ່ ຂໍ້ຄວາມເກົ່າບໍ່ຄ້າງຂ້າງສະຖານະໃໝ່
+  const [error, setError] = useState<{ message: string; status: OrderDetailDto["status"] } | null>(null);
   const pending = order.status === "PENDING_PAYMENT";
   const remaining = useCountdown(pending ? order.secondsUntilExpiry : null, fetchedAt);
 
-  useEffect(() => () => clearTimeout(focusTimer.current), []);
-
-  // ນັບຮອດ 0 ທີ່ client ໃນຂະນະ API ຍັງບອກວ່າເຫຼືອເວລາ: ໂຫຼດໃໝ່ເທື່ອດຽວ (ຫຼັງຈາກນັ້ນ useOrder poll ເອງເມື່ອ API ບອກ 0)
   useEffect(() => {
-    if (pending && remaining === 0 && order.secondsUntilExpiry !== 0) void refetch();
-  }, [pending, remaining, order.secondsUntilExpiry, refetch]);
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // client ນັບຮອດ 0 ໃນຂະນະ API ຍັງບອກວ່າເຫຼືອເວລາ: ໃຫ້ useOrder poll (ລອງໃໝ່ເອງເມື່ອລົ້ມ)
+  useEffect(() => {
+    if (pending && remaining === 0) onClientExpired();
+  }, [pending, remaining, onClientExpired]);
 
   const step = NEXT_STEP[order.status];
   const stepAllowed = step ? (step.permission === "payments:write" ? canPay : canLogistics) : false;
   const expired = pending && remaining === 0;
   const showCancel = CANCELLABLE.has(order.status) && canCancel;
-  // ປຸ່ມ action ທັງໝົດເປັນການປ່ຽນສະຖານະ (ບໍ່ idempotent): ຂະນະມີອັນໃດອັນໜຶ່ງກຳລັງສົ່ງ ຫ້າມກົດອັນໃດ
+  // ປຸ່ມ action ທັງໝົດເປັນການປ່ຽນສະຖານະ (ບໍ່ idempotent): ຂະນະມີອັນໃດກຳລັງສົ່ງ ຫຼື ຂໍ້ມູນອາດເກົ່າ ຫ້າມກົດອັນໃດ
   const busy = act.isPending;
+  const locked = busy || stale;
+  const dialogLost = cancelOpen && !showCancel;
 
-  /** ເຮັດ action; ລົ້ມ = toast ແລ້ວ throw ຕໍ່ (ຜູ້ເອີ້ນຕັດສິນວ່າຈະສະແດງຂໍ້ຄວາມຢູ່ໃສ) */
+  // ສະຖານະປ່ຽນຈາກພາຍນອກ: ລ້າງປະກາດເກົ່າ; ຖ້າ dialog ຍົກເລີກເປີດຢູ່ ແລະ ຍົກເລີກບໍ່ໄດ້ແລ້ວ ໃຫ້ປິດ ແລະ ບອກ
+  useEffect(() => {
+    const changed = prevStatus.current !== order.status;
+    prevStatus.current = order.status;
+    // action ຂອງເຮົາເອງ (ກຳລັງສົ່ງ ຫຼື ປະກາດຜົນແລ້ວ) ບໍ່ແມ່ນການປ່ຽນຈາກພາຍນອກ
+    const own = inFlight.current || announcedStatus.current === order.status;
+    if (!own && (changed || dialogLost)) {
+      announcedStatus.current = null;
+      setAnnouncement(dialogLost ? t("orders.detail.statusChanged", { status: t(`orders.status.${order.status}`) }) : "");
+      if (dialogLost) setFocusTick((n) => n + 1);
+    }
+    if (dialogLost) setCancelOpen(false);
+  }, [order.status, dialogLost, t]);
+
+  // ຍ້າຍ focus ໄປ status region ຫຼັງ render ຂໍ້ຄວາມໃໝ່ (ປຸ່ມທີ່ກົດ/dialog ອາດຫາຍໄປ)
+  useEffect(() => {
+    if (focusTick > 0) announceRef.current?.focus();
+  }, [focusTick]);
+
+  function announce(message: string, status: OrderDetailDto["status"] | null) {
+    announcedStatus.current = status;
+    setAnnouncement(message);
+    setFocusTick((n) => n + 1);
+  }
+
+  /** ເຮັດ action; ລົ້ມ = toast ແລ້ວ throw ຕໍ່; ມີອັນອື່ນກຳລັງສົ່ງ = ActionBusyError (ບໍ່ໄດ້ສົ່ງຫຍັງ) */
   async function perform(action: OrderAction, reason?: string) {
-    if (inFlight.current) return;
+    if (inFlight.current) throw new ActionBusyError();
     inFlight.current = true;
     setError(null);
+    setAnnouncement("");
+    announcedStatus.current = null;
     try {
-      await act.mutateAsync({ id: order.id, action, reason });
+      // mutation ຄ້າງຈົນ hook refetch ບິນສຳເລັດ (invalidate ຖືກ await) ຈຶ່ງເຫັນສະຖານະໃໝ່ແລ້ວ
+      const updated = await act.mutateAsync({ id: order.id, action, reason });
       const message = t(`orders.toast.${action}`);
       toast.success(message);
-      setAnnouncement(message);
-      // ປຸ່ມທີ່ກົດອາດຫາຍ (ສະຖານະປ່ຽນ): ຍ້າຍ focus ໄປ status region (ຫຼັງ Radix ຄືນ focus ຂອງ dialog ແລ້ວ)
-      clearTimeout(focusTimer.current);
-      focusTimer.current = setTimeout(() => announceRef.current?.focus(), 50);
+      if (mounted.current) announce(message, updated?.status ?? null);
     } catch (caught) {
       toast.error(errorMessage(caught, t));
       throw caught;
@@ -128,22 +186,40 @@ function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto;
     }
   }
 
+  /** ສະຖານະປ່ຽນໄປແລ້ວຕອນລົ້ມ (ປຸ່ມທີ່ກົດຫາຍ): ປະກາດຂໍ້ຄວາມ; ບໍ່ປ່ຽນ: ໃຫ້ຜູ້ເອີ້ນສະແດງຂໍ້ຄວາມຢູ່ບ່ອນຂອງມັນ */
+  function reportFailure(caught: unknown, startStatus: OrderDetailDto["status"], inline: boolean) {
+    if (!mounted.current) return;
+    const message = errorMessage(caught, t);
+    const latest = snapshot()?.status;
+    if (latest && latest !== startStatus) announce(message, latest);
+    else if (inline) setError({ message, status: startStatus });
+  }
+
   async function runStep(action: OrderAction) {
+    const startStatus = order.status;
     try {
       await perform(action);
     } catch (caught) {
-      setError(errorMessage(caught, t));
+      // ກົດຊ້ຳຂະນະອັນເກົ່າກຳລັງສົ່ງ: ຄຳຂໍທຳອິດຈັດການຢູ່ ບໍ່ຕ້ອງບອກຜິດ
+      if (!(caught instanceof ActionBusyError)) reportFailure(caught, startStatus, true);
     }
   }
 
   async function confirmCancel(reason: string | undefined) {
+    const startStatus = order.status;
     try {
       await perform("cancel", reason);
     } catch (caught) {
-      // dialog ສະແດງຂໍ້ຄວາມເອງ; ຖ້າບິນຖືກປ່ຽນໄປແລ້ວ dialog ອາດຫາຍ ຈຶ່ງໃຫ້ໜ້າສະແດງຂໍ້ຄວາມນຳ
-      if (caught instanceof ApiError && caught.code && STALE_CODES.has(caught.code)) setError(errorMessage(caught, t));
+      // dialog ສະແດງຂໍ້ຄວາມເອງ; ຖ້າບິນຖືກປ່ຽນແລ້ວ dialog ຫາຍ ຈຶ່ງປະກາດທີ່ໜ້າ
+      if (!(caught instanceof ActionBusyError)) reportFailure(caught, startStatus, false);
       throw caught;
     }
+  }
+
+  function restoreFocus() {
+    const opener = cancelButtonRef.current;
+    if (opener?.isConnected && !(opener as HTMLButtonElement).disabled) opener.focus();
+    else announceRef.current?.focus();
   }
 
   const showCost = canCosts && order.items.some((item) => item.unitCost !== undefined);
@@ -163,7 +239,7 @@ function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto;
               <Button
                 className="rounded-xl font-bold"
                 loading={busy && act.variables?.action === step.action}
-                disabled={busy || (step.action === "pay" && expired)}
+                disabled={locked || (step.action === "pay" && expired)}
                 aria-describedby={step.action === "pay" && expired ? EXPIRED_NOTE_ID : undefined}
                 onClick={() => void runStep(step.action)}
               >
@@ -171,7 +247,16 @@ function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto;
               </Button>
             ) : null}
             {showCancel ? (
-              <Button variant="outlineDanger" className="rounded-xl" disabled={busy} onClick={() => setCancelOpen(true)}>
+              <Button
+                variant="outlineDanger"
+                className="rounded-xl"
+                disabled={locked}
+                onClick={(event) => {
+                  // Safari/Firefox macOS ບໍ່ focus ປຸ່ມຕອນກົດ: ຈື່ປຸ່ມເອງ ເພື່ອຄືນ focus
+                  cancelButtonRef.current = event.currentTarget;
+                  setCancelOpen(true);
+                }}
+              >
                 {t("orders.action.cancel")}
               </Button>
             ) : null}
@@ -183,9 +268,17 @@ function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto;
         <div ref={announceRef} role="status" tabIndex={-1} data-testid="order-announce" className="sr-only">
           {announcement}
         </div>
-        {error ? (
+        {stale ? (
+          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-ink">
+            <p>{t("orders.detail.refreshFailed")}</p>
+            <Button variant="outlinePrimary" className="rounded-lg" loading={refreshing} onClick={onRetry}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : null}
+        {error && error.status === order.status ? (
           <p role="alert" className="rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-ink">
-            {error}
+            {error.message}
           </p>
         ) : null}
 
@@ -193,7 +286,7 @@ function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto;
           <OrderStatusPill status={order.status} />
           {pending && remaining !== null && remaining > 0 ? (
             // role=timer ບໍ່ປະກາດທຸກວິນາທີ (aria-live ປິດ) ຜູ້ໃຊ້ອ່ານໄດ້ເມື່ອໄປຫາ
-            <p role="timer" className="text-sm font-medium tabular-nums text-warning-ink">
+            <p role="timer" aria-label={t("orders.detail.countdownLabel")} className="text-sm font-medium tabular-nums text-warning-ink">
               {t("orders.detail.expiresIn", { time: formatCountdown(remaining) })}
             </p>
           ) : null}
@@ -236,7 +329,15 @@ function OrderDetailBody({ order, fetchedAt, refetch }: { order: OrderDetailDto;
         <OrderMovementsCard movements={order.movements} />
       </div>
 
-      {showCancel ? <CancelOrderDialog open={cancelOpen} onOpenChange={setCancelOpen} onConfirm={confirmCancel} /> : null}
+      {showCancel ? (
+        <CancelOrderDialog
+          open={cancelOpen}
+          onOpenChange={setCancelOpen}
+          onConfirm={confirmCancel}
+          disabled={locked}
+          restoreFocus={restoreFocus}
+        />
+      ) : null}
     </div>
   );
 }

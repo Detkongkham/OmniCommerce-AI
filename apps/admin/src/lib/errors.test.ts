@@ -1,12 +1,16 @@
 import { ERROR_CODES } from "@oca/shared";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { errorMessage, extractShortages, shortageLines } from "./errors";
+import { ActionBusyError, errorMessage, extractShortages, shortageLines } from "./errors";
 import { type TranslationKey, dictionaries, translate } from "./i18n/dictionary";
 
 const t = (key: TranslationKey, params?: Record<string, string | number>) => translate("en", key, params);
 
 describe("errorMessage", () => {
+  it("ActionBusyError ແປເປັນຂໍ້ຄວາມ 'ກຳລັງດຳເນີນການອື່ນຢູ່'", () => {
+    expect(errorMessage(new ActionBusyError(), t)).toBe(t("common.busy"));
+  });
+
   it("ແປຈາກ code ທີ່ຮູ້ຈັກ (ບໍ່ສົນ message ພາສາອັງກິດຂອງ API)", () => {
     const error = new ApiError(409, "Warehouse is inactive", [], "WAREHOUSE_INACTIVE");
     expect(errorMessage(error, t)).toBe(t("error.WAREHOUSE_INACTIVE"));

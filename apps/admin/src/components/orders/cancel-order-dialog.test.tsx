@@ -1,18 +1,30 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
+import { ActionBusyError } from "@/lib/errors";
 import { renderWithProviders } from "@/test/render";
 import { CancelOrderDialog } from "./cancel-order-dialog";
 
-function Harness({ onConfirm, onOpenChange }: { onConfirm: (reason?: string) => Promise<void>; onOpenChange?: (open: boolean) => void }) {
+function Harness({
+  onConfirm,
+  onOpenChange,
+  disabled,
+}: {
+  onConfirm: (reason?: string) => Promise<void>;
+  onOpenChange?: (open: boolean) => void;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)}>
+      <button ref={trigger} type="button" onClick={() => setOpen(true)}>
         trigger
       </button>
       <CancelOrderDialog
+        disabled={disabled}
+        restoreFocus={() => trigger.current?.focus()}
         open={open}
         onOpenChange={(next) => {
           onOpenChange?.(next);
@@ -105,5 +117,35 @@ describe("CancelOrderDialog", () => {
     await user.click(screen.getByRole("button", { name: "Keep order" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("ປຸ່ມເປີດບໍ່ໄດ້ຮັບ focus ຕອນກົດ (Safari/Firefox macOS): ປິດແລ້ວ focus ຍັງຄືນໃຫ້ປຸ່ມເປີດ", async () => {
+    const { user } = renderWithProviders(<Harness onConfirm={vi.fn()} />);
+    const trigger = screen.getByRole("button", { name: "trigger" });
+    fireEvent.click(trigger); // ບໍ່ຍ້າຍ focus ໄປທີ່ປຸ່ມ ຄືກັບ Safari
+    expect(document.activeElement).not.toBe(trigger);
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Keep order" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("disabled: ປຸ່ມຢືນຢັນຖືກປິດ ບໍ່ສົ່ງ", async () => {
+    const onConfirm = vi.fn();
+    const { user } = renderWithProviders(<Harness onConfirm={onConfirm} disabled />);
+    await user.click(screen.getByRole("button", { name: "trigger" }));
+    await screen.findByRole("dialog");
+    expect(confirmButton()).toBeDisabled();
+    await user.click(confirmButton());
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("ActionBusyError: ສະແດງ 'ກຳລັງດຳເນີນການອື່ນຢູ່' ແລະ dialog ຍັງເປີດ", async () => {
+    const onConfirm = vi.fn().mockRejectedValue(new ActionBusyError());
+    const { user } = renderWithProviders(<Harness onConfirm={onConfirm} />);
+    await user.click(screen.getByRole("button", { name: "trigger" }));
+    await user.click(confirmButton());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Another action is still in progress");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });

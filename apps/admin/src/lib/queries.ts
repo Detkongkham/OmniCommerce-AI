@@ -358,17 +358,31 @@ export function useOrders(params: OrderListParams, options: { enabled?: boolean 
 }
 
 /**
- * ບິນທີ່ຍັງ PENDING_PAYMENT ແຕ່ນັບຖອຍຮອດ 0 (worker ຍັງບໍ່ໄດ້ expire) → poll ທຸກ 15 ວິ ຈົນສະຖານະປ່ຽນ.
+ * ບິນທີ່ຍັງ PENDING_PAYMENT ແຕ່ນັບຖອຍຮອດ 0 (worker ຍັງບໍ່ໄດ້ expire) → poll ຈົນສະຖານະປ່ຽນ:
+ * API ບອກ 0 = ທຸກ 15 ວິ; `clientExpired` (client ນັບຮອດ 0 ແຕ່ API ຍັງບອກເຫຼືອ) = ທຸກ 5 ວິ.
+ * interval ລອງໃໝ່ເອງເມື່ອ refetch ລົ້ມ ແລະ ມີຂອບເຂດ (ບໍ່ຍິງທຸກວິ ເຖິງ server ຍັງບອກເຫຼືອ ≥1).
  */
-export function useOrder(id: string) {
+export function useOrder(id: string, options: { clientExpired?: boolean } = {}) {
+  const { clientExpired = false } = options;
   return useQuery({
     queryKey: [...queryKeys.orders, "detail", id],
     queryFn: () => apiFetch<OrderDetailDto>(`/orders/${id}`),
     refetchInterval: (query) => {
       const order = query.state.data;
-      return order?.status === "PENDING_PAYMENT" && order.secondsUntilExpiry === 0 ? 15_000 : false;
+      if (order?.status !== "PENDING_PAYMENT") return false;
+      if (order.secondsUntilExpiry === 0) return 15_000;
+      return clientExpired ? 5_000 : false;
     },
   });
+}
+
+/**
+ * ບິນຫຼ້າສຸດໃນ cache ແບບທັນທີ (ບໍ່ຜ່ານ render): ຫຼັງ refetch ສຳເລັດ React ອາດຍັງບໍ່ທັນ render ຂໍ້ມູນໃໝ່
+ * ຜູ້ເອີ້ນຈຶ່ງໃຊ້ອັນນີ້ ເມື່ອຕ້ອງຮູ້ສະຖານະຈິງ ທັນທີຫຼັງ await action.
+ */
+export function useOrderSnapshot(id: string) {
+  const queryClient = useQueryClient();
+  return () => queryClient.getQueryData<OrderDetailDto>([...queryKeys.orders, "detail", id]);
 }
 
 /** ບິນໃໝ່ຈອງສະຕ໋ອກ ແລະ ອາດສ້າງລູກຄ້າໃໝ່ → invalidate orders/stock/products/variants/customers */

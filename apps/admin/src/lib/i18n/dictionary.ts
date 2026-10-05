@@ -538,6 +538,10 @@ const lo = {
   "orders.detail.noNote": "ບໍ່ມີໝາຍເຫດ",
   "orders.detail.status": "ສະຖານະຂອງບິນ",
   "orders.cancel.reasonTooLong": "ເຫດຜົນຍາວເກີນໄປ (ບໍ່ເກີນ {max} ໂຕອັກສອນ)",
+  "common.busy": "ກຳລັງດຳເນີນການອື່ນຢູ່ ກະລຸນາລໍຖ້າ ແລ້ວລອງໃໝ່",
+  "orders.detail.refreshFailed": "ໂຫຼດຂໍ້ມູນລ່າສຸດບໍ່ສຳເລັດ ກຳລັງສະແດງສະຖານະເກົ່າ ຈຶ່ງປິດປຸ່ມດຳເນີນການຊົ່ວຄາວ",
+  "orders.detail.statusChanged": "ສະຖານະບິນປ່ຽນເປັນ {status} ແລ້ວ",
+  "orders.detail.countdownLabel": "ເວລາທີ່ເຫຼືອກ່ອນໝົດການຈອງ",
 } as const;
 
 export type TranslationKey = keyof typeof lo;
@@ -1085,6 +1089,10 @@ const en: Record<TranslationKey, string> = {
   "orders.detail.noNote": "No note",
   "orders.detail.status": "Order status",
   "orders.cancel.reasonTooLong": "The reason is too long (up to {max} characters)",
+  "common.busy": "Another action is still in progress, please wait and try again",
+  "orders.detail.refreshFailed": "Could not refresh, showing the last known state; actions are paused until it loads",
+  "orders.detail.statusChanged": "Order status changed to {status}",
+  "orders.detail.countdownLabel": "Time left before the reservation expires",
 };
 
 export const dictionaries: Record<Language, Record<TranslationKey, string>> = { lo, en };

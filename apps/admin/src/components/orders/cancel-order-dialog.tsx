@@ -11,14 +11,16 @@ export interface CancelOrderDialogProps {
   onOpenChange: (open: boolean) => void;
   /** ຕ້ອງ throw ເມື່ອລົ້ມ (dialog ສະແດງຂໍ້ຄວາມ ແລະ ຍັງເປີດ); ສຳເລັດ = dialog ປິດ */
   onConfirm: (reason: string | undefined) => Promise<void>;
+  /** ປິດປຸ່ມຢືນຢັນ (ເຊັ່ນ ມີ action ອື່ນກຳລັງສົ່ງ/ຂໍ້ມູນບິນເກົ່າ) */
+  disabled?: boolean;
+  /** ຄືນ focus ຫຼັງປິດ: ຜູ້ເອີ້ນຮູ້ປຸ່ມເປີດ ແລະ ທາງສຳຮອງ (Safari/Firefox ບໍ່ focus ປຸ່ມຕອນກົດ ຈຶ່ງຈັບ activeElement ບໍ່ໄດ້) */
+  restoreFocus: () => void;
 }
 
 /** ຢືນຢັນຍົກເລີກບິນ ພ້ອມເຫດຜົນ (ບໍ່ບັງຄັບ, ≤200 ໂຕ ຕາມ cancelOrderSchema) */
-export function CancelOrderDialog({ open, onOpenChange, onConfirm }: CancelOrderDialogProps) {
+export function CancelOrderDialog({ open, onOpenChange, onConfirm, disabled = false, restoreFocus }: CancelOrderDialogProps) {
   const { t } = useT();
   const [saving, setSaving] = useState(false);
-  // Radix ຄືນ focus ໃຫ້ DialogTrigger ເທົ່ານັ້ນ; ປຸ່ມເປີດຢູ່ນອກ dialog ຈຶ່ງຈື່ເອງ ແລະ ຄືນໃຫ້ຖ້າຍັງຢູ່ໃນ DOM
-  const opener = useRef<HTMLElement | null>(null);
   return (
     <Dialog
       open={open}
@@ -31,18 +33,14 @@ export function CancelOrderDialog({ open, onOpenChange, onConfirm }: CancelOrder
       <DialogContent
         className="max-w-md"
         closeLabel={t("common.close")}
-        onOpenAutoFocus={() => {
-          opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        }}
+        // Radix ຄືນ focus ໃຫ້ DialogTrigger ເທົ່ານັ້ນ; ປຸ່ມເປີດຢູ່ນອກ dialog ຈຶ່ງໃຫ້ຜູ້ເອີ້ນຄືນເອງ
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          const element = opener.current;
-          opener.current = null;
-          if (element?.isConnected && !(element as HTMLButtonElement).disabled) element.focus();
+          restoreFocus();
         }}
       >
         {open ? (
-          <CancelForm saving={saving} onSavingChange={setSaving} onConfirm={onConfirm} onDone={() => onOpenChange(false)} />
+          <CancelForm disabled={disabled} saving={saving} onSavingChange={setSaving} onConfirm={onConfirm} onDone={() => onOpenChange(false)} />
         ) : null}
       </DialogContent>
     </Dialog>
@@ -53,11 +51,13 @@ const ERROR_ID = "cancel-order-error";
 const REASON_MAX = 200;
 
 function CancelForm({
+  disabled,
   saving,
   onSavingChange,
   onConfirm,
   onDone,
 }: {
+  disabled: boolean;
   saving: boolean;
   onSavingChange: (saving: boolean) => void;
   onConfirm: CancelOrderDialogProps["onConfirm"];
@@ -121,7 +121,7 @@ function CancelForm({
         <Button type="button" variant="outline" className="h-10 rounded-xl px-5" disabled={saving} onClick={onDone}>
           {t("orders.cancel.keep")}
         </Button>
-        <Button type="submit" variant="destructive" className="h-10 rounded-xl px-6 font-bold" loading={saving}>
+        <Button type="submit" variant="destructive" className="h-10 rounded-xl px-6 font-bold" loading={saving} disabled={disabled}>
           {saving ? t("common.saving") : t("orders.cancel.confirm")}
         </Button>
       </DialogFooter>
