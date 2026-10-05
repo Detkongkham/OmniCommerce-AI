@@ -3,7 +3,7 @@ import type { CustomerDto, Shortage, VariantSearchItemDto } from "./types";
 
 export interface OrderLineDraft {
   variant: VariantSearchItemDto;
-  /** "" = default warehouse (warehouseId is not sent) */
+  /** "" = ສາງຫຼັກ (ບໍ່ສົ່ງ warehouseId) */
   warehouseId: string;
   quantity: string;
   discount: string;
@@ -41,13 +41,13 @@ export function emptyOrderForm(): OrderFormState {
 
 const MAX_QUANTITY = 1_000_000;
 
-/** Whole number typed as plain digits only ("1e3", "1.5", "-1", "0x10" are not integers here); null otherwise. */
+/** ຈຳນວນເຕັມທີ່ພິມເປັນຕົວເລກລ້ວນເທົ່ານັ້ນ ("1e3", "1.5", "-1", "0x10" ບໍ່ນັບ); ຢ່າງອື່ນ null */
 function parseDigits(value: string): number | null {
   const trimmed = value.trim();
   return /^\d{1,9}$/.test(trimmed) ? Number(trimmed) : null;
 }
 
-/** Sellable stock of a line: the chosen warehouse or the default one; no stock row = 0 (never negative). */
+/** ສະຕ໋ອກຂາຍໄດ້ຂອງແຖວ: ສາງທີ່ເລືອກ ຫຼື ສາງຫຼັກ; ບໍ່ມີແຖວສະຕ໋ອກ = 0 (ບໍ່ຕິດລົບ) */
 export function lineAvailable(line: OrderLineDraft, defaultWarehouseId: string | null): number {
   const warehouseId = line.warehouseId || defaultWarehouseId;
   if (!warehouseId) return 0;
@@ -56,9 +56,9 @@ export function lineAvailable(line: OrderLineDraft, defaultWarehouseId: string |
 }
 
 /**
- * Client-side totals (an estimate): the same formula as the API via `calculateOrderTotals`, on decimal strings.
- * Incomplete or invalid input (blank/zero/non-integer quantity, malformed or negative money, discount above the
- * line total, bad VAT rate, empty cart) -> null instead of throwing while the user types.
+ * ສະຫຼຸບເງິນຝັ່ງ client (ຄາດຄະເນ): ສູດດຽວກັບ API ຜ່ານ `calculateOrderTotals` ດ້ວຍ decimal string.
+ * ຂໍ້ມູນຍັງບໍ່ຄົບ/ຜິດ (ຈຳນວນເປົ່າ/ສູນ/ບໍ່ເຕັມ, ເງິນຜິດຮູບແບບ ຫຼື ຕິດລົບ, ສ່ວນຫຼຸດເກີນຍອດແຖວ, VAT ຜິດ, ກະຕ່າເປົ່າ)
+ * → null ແທນທີ່ຈະ throw ຂະນະພິມ.
  */
 export function computeTotals(
   state: OrderFormState,
@@ -88,7 +88,7 @@ export function computeTotals(
   }
 }
 
-/** state -> body of POST /orders (not validated here; pass it on to `createOrderSchema.safeParse`). */
+/** state → body ຂອງ POST /orders (ຍັງບໍ່ validate; ສົ່ງຕໍ່ໃຫ້ `createOrderSchema.safeParse`) */
 export function toCreateOrderInput(state: OrderFormState): unknown {
   const customer =
     state.customerMode === "existing" && state.customer
@@ -108,7 +108,7 @@ export function toCreateOrderInput(state: OrderFormState): unknown {
     items: state.lines.map((line) => ({
       variantId: line.variant.id,
       ...(line.warehouseId ? { warehouseId: line.warehouseId } : {}),
-      // 0 for blank/invalid so the schema rejects it (never NaN or an exponent form)
+      // ເປົ່າ/ຜິດ → 0 ເພື່ອໃຫ້ schema ປະຕິເສດ (ບໍ່ເປັນ NaN ຫຼື ຮູບ exponent)
       quantity: parseDigits(line.quantity) ?? 0,
       discount: line.discount.trim() || "0",
     })),
@@ -117,12 +117,12 @@ export function toCreateOrderInput(state: OrderFormState): unknown {
     ...(state.shippingPhone.trim() ? { shippingPhone: state.shippingPhone.trim() } : {}),
     ...(state.shippingAddress.trim() ? { shippingAddress: state.shippingAddress.trim() } : {}),
     ...(state.note.trim() ? { note: state.note.trim() } : {}),
-    // 0 for invalid so the schema rejects it
+    // ຜິດ → 0 ເພື່ອໃຫ້ schema ປະຕິເສດ
     ...(minutes ? { reservationMinutes: parseDigits(minutes) ?? 0 } : {}),
   };
 }
 
-/** `variantId|warehouseId` -> shortage, to mark rows whose stock was short when the API answered 409. */
+/** `variantId|warehouseId` → shortage ເພື່ອໝາຍແຖວທີ່ສະຕ໋ອກບໍ່ພໍຫຼັງ API ຕອບ 409 */
 export function shortageKeys(shortages: readonly Shortage[]): Map<string, Shortage> {
   return new Map(shortages.map((shortage) => [`${shortage.variantId}|${shortage.warehouseId}`, shortage]));
 }

@@ -6,7 +6,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("formatCountdown", () => {
-  it("mm:ss when under an hour, H:MM:SS beyond", () => {
+  it("mm:ss ເມື່ອ < 1 ຊົ່ວໂມງ; H:MM:SS ເມື່ອເກີນ", () => {
     expect(formatCountdown(0)).toBe("00:00");
     expect(formatCountdown(65)).toBe("01:05");
     expect(formatCountdown(3599)).toBe("59:59");
@@ -15,7 +15,7 @@ describe("formatCountdown", () => {
     expect(formatCountdown(7 * 24 * 3600)).toBe("168:00:00");
   });
 
-  it("clamps negative, fractional and non-finite input", () => {
+  it("ຄ່າລົບ, ທົດສະນິຍົມ ແລະ ບໍ່ແມ່ນຕົວເລກ ຖືກຕັດເປັນຄ່າທີ່ໃຊ້ໄດ້", () => {
     expect(formatCountdown(-5)).toBe("00:00");
     expect(formatCountdown(59.9)).toBe("00:59");
     expect(formatCountdown(Number.NaN)).toBe("00:00");
@@ -24,14 +24,14 @@ describe("formatCountdown", () => {
 });
 
 describe("useCountdown", () => {
-  it("null stays null", () => {
+  it("null ຄົງເປັນ null", () => {
     const { result } = renderHook(() => useCountdown(null, "a"));
     expect(result.current).toBeNull();
     act(() => vi.advanceTimersByTime(5000));
     expect(result.current).toBeNull();
   });
 
-  it("counts down every second and stops at 0", () => {
+  it("ນັບລົງທຸກວິນາທີ ແລະ ຢຸດທີ່ 0", () => {
     const { result } = renderHook(() => useCountdown(3, "a"));
     expect(result.current).toBe(3);
     act(() => vi.advanceTimersByTime(1000));
@@ -40,23 +40,23 @@ describe("useCountdown", () => {
     expect(result.current).toBe(0);
   });
 
-  it("starts at 0 for 0 or negative initial values", () => {
+  it("ຄ່າເລີ່ມຕົ້ນ 0 ຫຼື ລົບ → ເລີ່ມທີ່ 0", () => {
     expect(renderHook(() => useCountdown(0, "a")).result.current).toBe(0);
     expect(renderHook(() => useCountdown(-30, "a")).result.current).toBe(0);
   });
 
-  it("does not drift when ticks are late (uses elapsed time, not tick count)", () => {
+  it("ບໍ່ເດີນຜິດເມື່ອ tick ຊ້າ (ໃຊ້ເວລາທີ່ຜ່ານໄປ ບໍ່ນັບຈຳນວນ tick)", () => {
     const base = performance.now();
     const now = vi.spyOn(performance, "now").mockReturnValue(base);
     const { result } = renderHook(() => useCountdown(60, "a"));
-    // a throttled background tab: one late tick that fires after 10.5 seconds have really passed
+    // ແທັບ background ທີ່ຖືກ throttle: tick ດຽວທີ່ມາຊ້າ ຫຼັງຜ່ານໄປ 10.5 ວິນາທີຈິງ
     now.mockReturnValue(base + 10_500);
     act(() => vi.advanceTimersByTime(1000));
     now.mockRestore();
     expect(result.current).toBe(50);
   });
 
-  it("resets when the server value or resetKey changes (after refetch), without a stale render", () => {
+  it("ຮີເຊັດເມື່ອຄ່າຈາກ server ຫຼື resetKey ປ່ຽນ (ຫຼັງ refetch) ໂດຍບໍ່ມີ render ຄ່າເກົ່າ", () => {
     const seen: (number | null)[] = [];
     const { result, rerender } = renderHook(
       ({ seconds, key }) => {
@@ -79,7 +79,7 @@ describe("useCountdown", () => {
     expect(result.current).toBe(2);
   });
 
-  it("switching to null stops counting; back to a number restarts", () => {
+  it("ປ່ຽນເປັນ null ຢຸດນັບ; ກັບເປັນຕົວເລກເລີ່ມນັບໃໝ່", () => {
     const { result, rerender } = renderHook(({ seconds }) => useCountdown(seconds, "a"), {
       initialProps: { seconds: 5 as number | null },
     });
@@ -91,7 +91,7 @@ describe("useCountdown", () => {
     expect(result.current).toBe(6);
   });
 
-  it("clears its interval on unmount and when the value changes", () => {
+  it("ລ້າງ interval ເມື່ອ unmount ແລະ ເມື່ອຄ່າປ່ຽນ", () => {
     const { unmount, rerender } = renderHook(({ seconds }) => useCountdown(seconds, "a"), {
       initialProps: { seconds: 10 },
     });

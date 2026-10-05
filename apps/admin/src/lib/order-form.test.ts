@@ -44,17 +44,17 @@ const form = (patch: Partial<OrderFormState> = {}): OrderFormState => ({
 });
 
 describe("computeTotals", () => {
-  it("uses the API formula (VAT included): subtotal 190, shipping 5 -> total 195, VAT 17.73", () => {
+  it("ໃຊ້ສູດດຽວກັບ API (ລວມ VAT): subtotal 190, ຄ່າສົ່ງ 5 → total 195, VAT 17.73", () => {
     const totals = computeTotals(form({ shippingFee: "5" }), settings);
     expect(totals).toMatchObject({ subtotal: "190.00", discountTotal: "10.00", vatAmount: "17.73", total: "195.00" });
   });
 
-  it("VAT excluded: VAT is added on top", () => {
+  it("ບໍ່ລວມ VAT: ບວກ VAT ເພີ່ມ", () => {
     const totals = computeTotals(form({ shippingFee: "0" }), { vatRate: "10", pricesIncludeVat: false });
     expect(totals).toMatchObject({ subtotal: "190.00", vatAmount: "19.00", total: "209.00" });
   });
 
-  it("accepts vatRate '7.00' and 0 rate", () => {
+  it("ຮັບ vatRate '7.00' ແລະ ອັດຕາ 0", () => {
     expect(computeTotals(form(), { vatRate: "7.00", pricesIncludeVat: false })).toMatchObject({
       vatAmount: "13.30",
       total: "203.30",
@@ -65,7 +65,7 @@ describe("computeTotals", () => {
     });
   });
 
-  it("blank discount and shipping default to 0; discount equal to the line total is allowed", () => {
+  it("ສ່ວນຫຼຸດ/ຄ່າສົ່ງເປົ່າ = 0; ສ່ວນຫຼຸດເທົ່າຍອດແຖວອະນຸຍາດ", () => {
     expect(computeTotals(form({ lines: [lineOf({ quantity: "2" })] }), settings)).toMatchObject({
       subtotal: "200.00",
       total: "200.00",
@@ -76,12 +76,12 @@ describe("computeTotals", () => {
     });
   });
 
-  it("returns per-line totals", () => {
+  it("ຄືນຍອດຕໍ່ແຖວ", () => {
     const totals = computeTotals(form({ lines: [lineOf({ quantity: "3", discount: "50" }), lineOf({ quantity: "1" })] }), settings);
     expect(totals?.lines).toEqual([{ lineTotal: "250.00" }, { lineTotal: "100.00" }]);
   });
 
-  it("incomplete or invalid input returns null instead of throwing", () => {
+  it("ຂໍ້ມູນຍັງບໍ່ຄົບ/ຜິດ (ຈຳນວນເປົ່າ, ສ່ວນຫຼຸດເກີນ, ເງິນບໍ່ແມ່ນຕົວເລກ) → null ແທນ throw", () => {
     expect(computeTotals(form({ lines: [lineOf({ quantity: "" })] }), settings)).toBeNull();
     expect(computeTotals(form({ lines: [lineOf({ discount: "999" })] }), settings)).toBeNull();
     expect(computeTotals(form({ shippingFee: "abc" }), settings)).toBeNull();
@@ -90,13 +90,13 @@ describe("computeTotals", () => {
     expect(computeTotals(form(), { vatRate: "abc", pricesIncludeVat: true })).toBeNull();
   });
 
-  it("rejects zero, negative, fractional and exponent quantities", () => {
+  it("ປະຕິເສດຈຳນວນສູນ, ລົບ, ທົດສະນິຍົມ ແລະ exponent", () => {
     for (const quantity of ["0", "-1", "1.5", "1e3", "0x10", " ", "abc", "1000001"]) {
       expect(computeTotals(form({ lines: [lineOf({ quantity })] }), settings)).toBeNull();
     }
   });
 
-  it("rejects negative or malformed discount and shipping (would otherwise inflate the total)", () => {
+  it("ປະຕິເສດສ່ວນຫຼຸດ/ຄ່າສົ່ງທີ່ລົບ ຫຼື ຜິດຮູບແບບ (ບໍ່ດັ່ງນັ້ນຍອດຈະບວມ)", () => {
     for (const discount of ["-5", "1.234", "1e2", "5."]) {
       expect(computeTotals(form({ lines: [lineOf({ discount })] }), settings)).toBeNull();
     }
@@ -105,7 +105,7 @@ describe("computeTotals", () => {
     }
   });
 
-  it("handles huge values exactly with decimal strings (no float error)", () => {
+  it("ຄ່າໃຫຍ່ຫຼາຍຖືກຕ້ອງແນ່ນອນດ້ວຍ decimal string (ບໍ່ມີ float error)", () => {
     const big = variant({ price: "9999999999999999.99" });
     const totals = computeTotals(form({ lines: [lineOf({ variant: big, quantity: "3" })] }), {
       vatRate: "0",
@@ -115,13 +115,13 @@ describe("computeTotals", () => {
     expect(computeTotals(form({ lines: [lineOf({ variant: variant({ price: "0.10" }), quantity: "3" })] }), settings)?.subtotal).toBe("0.30");
   });
 
-  it("returns null when the variant price is not a valid decimal", () => {
+  it("ລາຄາ variant ບໍ່ເປັນ decimal ທີ່ຖືກ → null", () => {
     expect(computeTotals(form({ lines: [lineOf({ variant: variant({ price: "" }) })] }), settings)).toBeNull();
   });
 });
 
 describe("lineAvailable", () => {
-  it("uses the chosen warehouse; none -> default; missing stock row = 0", () => {
+  it("ໃຊ້ສາງທີ່ເລືອກ; ບໍ່ເລືອກ → ສາງຫຼັກ; ບໍ່ມີແຖວສະຕ໋ອກ = 0", () => {
     const line = { variant: variant(), warehouseId: "", quantity: "1", discount: "" };
     expect(lineAvailable(line, "w1")).toBe(8);
     expect(lineAvailable({ ...line, warehouseId: "w2" }, "w1")).toBe(1);
@@ -130,20 +130,20 @@ describe("lineAvailable", () => {
     expect(lineAvailable({ ...line, variant: variant({ stock: [] }) }, "w1")).toBe(0);
   });
 
-  it("never returns a negative number", () => {
+  it("ບໍ່ຄືນຄ່າລົບ", () => {
     const negative = variant({ stock: [{ warehouseId: "w1", onHand: 1, reserved: 3, available: -2 }] });
     expect(lineAvailable(lineOf({ variant: negative }), "w1")).toBe(0);
   });
 });
 
 describe("toCreateOrderInput", () => {
-  it("walk-in customer: skips empty fields and omits warehouseId for the default warehouse", () => {
+  it("ລູກຄ້າໜ້າຮ້ານ: ຂ້າມ field ເປົ່າ ແລະ ບໍ່ສົ່ງ warehouseId ເມື່ອໃຊ້ສາງຫຼັກ", () => {
     const input = toCreateOrderInput(form());
     expect(input).toEqual({ items: [{ variantId: "v1", quantity: 2, discount: "10" }] });
     expect(createOrderSchema.safeParse(input).success).toBe(true);
   });
 
-  it("existing customer -> customerId; new customer -> customer; chosen warehouse and shipping fields", () => {
+  it("ລູກຄ້າທີ່ມີ → customerId; ລູກຄ້າໃໝ່ → customer; ສາງທີ່ເລືອກ ແລະ field ຈັດສົ່ງ", () => {
     const existing = toCreateOrderInput(
       form({
         customerMode: "existing",
@@ -177,7 +177,7 @@ describe("toCreateOrderInput", () => {
     expect(createOrderSchema.safeParse(created).success).toBe(true);
   });
 
-  it("existing mode without a chosen customer sends no customer; new customer without email omits it", () => {
+  it("ໂໝດລູກຄ້າທີ່ມີແຕ່ຍັງບໍ່ເລືອກ → ບໍ່ສົ່ງລູກຄ້າ; ລູກຄ້າໃໝ່ບໍ່ມີອີເມວ → ຂ້າມ email", () => {
     const none = toCreateOrderInput(form({ customerMode: "existing", customer: null }));
     expect(none).not.toHaveProperty("customerId");
     expect(none).not.toHaveProperty("customer");
@@ -188,7 +188,7 @@ describe("toCreateOrderInput", () => {
     expect((created as { customer: object }).customer).not.toHaveProperty("email");
   });
 
-  it("switching mode away ignores stale customer data", () => {
+  it("ປ່ຽນໂໝດອອກ → ບໍ່ສົນຂໍ້ມູນລູກຄ້າທີ່ຄ້າງ", () => {
     const input = toCreateOrderInput(
       form({ customerMode: "none", customer: { id: "c1", name: "A", phone: "1", email: null }, newCustomer: { name: "x", phone: "1", email: "" } }),
     );
@@ -196,18 +196,18 @@ describe("toCreateOrderInput", () => {
     expect(input).not.toHaveProperty("customer");
   });
 
-  it("empty or invalid quantity -> 0 (schema rejects); never NaN/exponent/float quirks", () => {
+  it("ຈຳນວນເປົ່າ/ຜິດ → 0 (schema ປະຕິເສດ); ບໍ່ເປັນ NaN/exponent/float", () => {
     for (const quantity of ["", "abc", "1e3", "1.5", "-2", "0"]) {
       const input = toCreateOrderInput(form({ lines: [lineOf({ quantity })] }));
       expect(createOrderSchema.safeParse(input).success).toBe(false);
     }
   });
 
-  it("empty cart is rejected by the schema", () => {
+  it("ກະຕ່າເປົ່າ → schema ປະຕິເສດ", () => {
     expect(createOrderSchema.safeParse(toCreateOrderInput(form({ lines: [] }))).success).toBe(false);
   });
 
-  it("invalid reservation minutes are rejected by the schema", () => {
+  it("ນາທີຈອງທີ່ຜິດ → schema ປະຕິເສດ", () => {
     for (const reservationMinutes of ["0", "abc", "1.5", "99999"]) {
       expect(createOrderSchema.safeParse(toCreateOrderInput(form({ reservationMinutes }))).success).toBe(false);
     }
@@ -215,7 +215,7 @@ describe("toCreateOrderInput", () => {
 });
 
 describe("shortageKeys", () => {
-  it("maps API shortages to `variantId|warehouseId` keys to mark rows", () => {
+  it("ແມັບ shortage ຂອງ API ເປັນ key `variantId|warehouseId` ເພື່ອໝາຍແຖວ", () => {
     const keys = shortageKeys([{ variantId: "v1", warehouseId: "w1", sku: "TEE-R", requested: 9, available: 2 }]);
     expect(keys.get("v1|w1")).toMatchObject({ requested: 9, available: 2 });
     expect(shortageKeys([]).size).toBe(0);

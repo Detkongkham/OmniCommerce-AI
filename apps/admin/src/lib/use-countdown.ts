@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** mm:ss when under an hour, H:MM:SS beyond (reservation can last up to 7 days). Negative / non-finite -> 00:00. */
+/** mm:ss ເມື່ອ < 1 ຊົ່ວໂມງ, H:MM:SS ເມື່ອເກີນ (ເວລາຈອງສູງສຸດ 7 ວັນ); ຄ່າລົບ/ບໍ່ແມ່ນຕົວເລກ → 00:00 */
 export function formatCountdown(totalSeconds: number): string {
   const seconds = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0;
   const h = Math.floor(seconds / 3600);
@@ -20,10 +20,10 @@ interface CountdownState {
 }
 
 /**
- * Counts down from `initialSeconds` (the value the API returned; the client wall clock is never compared with the
- * server). null = no countdown. Restarts when `initialSeconds` or `resetKey` changes (e.g. after a refetch).
- * The remaining value is derived from the elapsed monotonic time since the (re)start, so late ticks (throttled
- * background tabs) do not make it drift. The first render after a change already returns the new value.
+ * ນັບລົງຈາກ `initialSeconds` (ຄ່າທີ່ API ຄືນ ບໍ່ອີງນາຬິກາຂອງ client); null = ບໍ່ມີການນັບ.
+ * ເລີ່ມໃໝ່ເມື່ອ `initialSeconds` ຫຼື `resetKey` ປ່ຽນ (ເຊັ່ນ ຫຼັງ refetch).
+ * ຄ່າທີ່ເຫຼືອຄິດຈາກເວລາທີ່ຜ່ານໄປ (monotonic) ນັບແຕ່ເລີ່ມ ດັ່ງນັ້ນ tick ທີ່ຊ້າ (ແທັບ background ຖືກ throttle) ບໍ່ເຮັດໃຫ້ເວລາເດີນຜິດ.
+ * render ທຳອິດຫຼັງຄ່າປ່ຽນກໍໄດ້ຄ່າໃໝ່ທັນທີ.
  */
 export function useCountdown(initialSeconds: number | null, resetKey: unknown): number | null {
   const initial = normalize(initialSeconds);
@@ -46,6 +46,6 @@ export function useCountdown(initialSeconds: number | null, resetKey: unknown): 
     return () => clearInterval(id);
   }, [initial, resetKey]);
 
-  // state not yet synced with the latest props (the render before the effect runs) -> use the fresh value
+  // state ຍັງບໍ່ຕາມ props ລ່າສຸດ (render ກ່ອນ effect ເຮັດວຽກ) → ໃຊ້ຄ່າໃໝ່ທັນທີ
   return state.initial === initial && Object.is(state.resetKey, resetKey) ? state.remaining : initial;
 }
