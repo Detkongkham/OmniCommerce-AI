@@ -6,6 +6,7 @@ import {
   activeOptions,
   combinations,
   countCombinations,
+  renameOptionKeys,
   suggestSku,
   syncVariants,
 } from "./variant-matrix";
@@ -182,5 +183,29 @@ describe("syncVariants: edge cases", () => {
   it("isActive=false ຂອງແຖວທີ່ຮັກສາໄວ້ບໍ່ຖືກຣີເຊັດ", () => {
     const base = syncVariants([color], [], "TEE").map((row) => ({ ...row, isActive: false }));
     expect(syncVariants([color], base, "TEE").every((row) => !row.isActive)).toBe(true);
+  });
+});
+
+describe("renameOptionKeys", () => {
+  const color: OptionDraft = { name: "Color", values: ["Red", "Blue"] };
+  const size: OptionDraft = { name: "Size", values: ["S"] };
+  const rows = syncVariants([color, size], [], "T");
+
+  it("renames the optionValues keys by option index and keeps every edited field", () => {
+    const edited = rows.map((row, i) => (i === 1 ? { ...row, sku: "MINE", price: "9" } : row));
+    const renamed = renameOptionKeys([color, size], [{ ...color, name: "Colors" }, size], edited);
+    expect(renamed?.map((row) => row.optionValues)).toEqual([
+      { Colors: "Red", Size: "S" },
+      { Colors: "Blue", Size: "S" },
+    ]);
+    expect(renamed?.[1]).toMatchObject({ sku: "MINE", price: "9" });
+  });
+
+  it("returns null when nothing is renamed, values change, or a name becomes blank/duplicate", () => {
+    expect(renameOptionKeys([color, size], [color, size], rows)).toBeNull();
+    expect(renameOptionKeys([color], [{ name: "Colors", values: ["Red"] }], rows)).toBeNull();
+    expect(renameOptionKeys([color, size], [{ ...color, name: "" }, size], rows)).toBeNull();
+    expect(renameOptionKeys([color, size], [color, { ...size, name: "Color" }], rows)).toBeNull();
+    expect(renameOptionKeys([], [color], rows)).toBeNull();
   });
 });

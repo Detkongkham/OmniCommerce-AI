@@ -11,7 +11,14 @@ import { errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
 import { type ProductFormState, emptyProductForm, validateProductForm } from "@/lib/product-form";
 import { useCategories, useCreateProduct } from "@/lib/queries";
-import { MAX_VARIANTS, type OptionDraft, countCombinations, syncVariants } from "@/lib/variant-matrix";
+import {
+  MAX_VARIANTS,
+  type OptionDraft,
+  comboKey,
+  countCombinations,
+  renameOptionKeys,
+  syncVariants,
+} from "@/lib/variant-matrix";
 import { ImageListEditor } from "./image-list-editor";
 import { OptionEditor } from "./option-editor";
 import { VariantGrid } from "./variant-grid";
@@ -24,16 +31,33 @@ const sameValues = (a: OptionDraft | undefined, b: OptionDraft) =>
 /**
  * Re-sync the variant rows with the options and drop image links to rows that no longer exist
  * (otherwise state would keep a stale key that silently re-links if the combination comes back).
+ * `synced` is the option set the current rows were built from: a name-only edit renames the rows'
+ * optionValues keys (and image links) instead of regenerating, so edited rows survive.
  * More than MAX_VARIANTS combinations: keep the current rows (the grid shows the warning).
  */
-function withSyncedVariants(form: ProductFormState, options: OptionDraft[], skuPrefix: string): ProductFormState {
+function withSyncedVariants(
+  form: ProductFormState,
+  options: OptionDraft[],
+  synced: OptionDraft[],
+  skuPrefix: string,
+): ProductFormState {
   if (countCombinations(options) > MAX_VARIANTS) return { ...form, options };
-  const variants = syncVariants(options, form.variants, skuPrefix);
+  let base = form;
+  const renamed = renameOptionKeys(synced, options, form.variants);
+  if (renamed) {
+    const keyMap = new Map(form.variants.map((variant, i) => [variant.key, comboKey(options, renamed[i]?.optionValues ?? {})]));
+    base = {
+      ...form,
+      variants: renamed,
+      images: form.images.map((image) => ({ ...image, variantKey: keyMap.get(image.variantKey) ?? image.variantKey })),
+    };
+  }
+  const variants = syncVariants(options, base.variants, skuPrefix);
   const keys = new Set(variants.map((variant) => variant.key));
-  const images = form.images.map((image) =>
+  const images = base.images.map((image) =>
     image.variantKey && !keys.has(image.variantKey) ? { ...image, variantKey: "" } : image,
   );
-  return { ...form, options, variants, images };
+  return { ...base, options, variants, images };
 }
 
 export function ProductCreateForm() {
@@ -45,6 +69,8 @@ export function ProductCreateForm() {
   const create = useCreateProduct();
 
   const [form, setForm] = useState<ProductFormState>(emptyProductForm);
+  // the option set the current variant rows were built from
+  const [synced, setSynced] = useState<OptionDraft[]>([]);
   const [skuPrefix, setSkuPrefix] = useState("");
   const [problem, setProblem] = useState<Problem | null>(null);
   const [saving, setSaving] = useState(false);
@@ -57,19 +83,23 @@ export function ProductCreateForm() {
 
   const patch = (change: Partial<ProductFormState>) => setForm((current) => ({ ...current, ...change }));
 
+  function applySync(options: OptionDraft[]) {
+    setForm(withSyncedVariants(form, options, synced, skuPrefix));
+    if (countCombinations(options) <= MAX_VARIANTS) setSynced(options);
+  }
+
   // rows are regenerated when the SET of options/values changes, not per keystroke of a name
   function changeOptions(options: OptionDraft[]) {
-    setForm((current) => {
-      const structural =
-        options.length !== current.options.length || options.some((option, i) => !sameValues(current.options[i], option));
-      return structural ? withSyncedVariants(current, options, skuPrefix) : { ...current, options };
-    });
+    const structural =
+      options.length !== form.options.length || options.some((option, i) => !sameValues(form.options[i], option));
+    if (structural) applySync(options);
+    else setForm({ ...form, options });
   }
 
   // option names are committed on blur (focusout bubbles to the wrapper)
   function syncOnNameBlur(event: React.FocusEvent<HTMLDivElement>) {
     if (!(event.target instanceof HTMLInputElement) || !event.target.id.startsWith("option-name-")) return;
-    setForm((current) => withSyncedVariants(current, current.options, skuPrefix));
+    applySync(form.options);
   }
 
   // focus after the commit that un-hides the region (focus() on a display:none element is a no-op)
@@ -80,12 +110,16 @@ export function ProductCreateForm() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (submitting.current) return;
-    const result = validateProductForm(form, canSetCost);
+    // Enter inside an option-name field submits before that field's blur sync: sync here first
+    const current = withSyncedVariants(form, form.options, synced, skuPrefix);
+    const result = validateProductForm(current, canSetCost);
     if (!result.ok) {
       setProblem({ kind: "validation", messages: result.messages });
       return;
     }
     setProblem(null);
+    setForm(current);
+    if (countCombinations(current.options) <= MAX_VARIANTS) setSynced(current.options);
     submitting.current = true;
     setSaving(true);
     try {
@@ -115,7 +149,18 @@ export function ProductCreateForm() {
             <Link href="/products" className={cn(buttonVariants({ variant: "outline" }), "rounded-xl")}>
               {t("common.cancel")}
             </Link>
-            <Button type="submit" className="rounded-xl font-bold" loading={saving} disabled={tooMany}>
+            {tooMany ? (
+              <span id="product-save-blocked" className="text-xs text-warning-ink">
+                {t("products.variants.tooMany")}
+              </span>
+            ) : null}
+            <Button
+              type="submit"
+              className="rounded-xl font-bold"
+              loading={saving}
+              disabled={tooMany}
+              aria-describedby={tooMany ? "product-save-blocked" : undefined}
+            >
               {saving ? t("common.saving") : t("common.save")}
             </Button>
           </>
@@ -136,8 +181,8 @@ export function ProductCreateForm() {
             <>
               <p className="font-semibold">{t("products.form.issues")}</p>
               <ul className="mt-1 list-inside list-disc">
-                {problem.messages.map((line) => (
-                  <li key={line}>{line}</li>
+                {problem.messages.map((line, index) => (
+                  <li key={`${index}-${line}`}>{line}</li>
                 ))}
               </ul>
             </>

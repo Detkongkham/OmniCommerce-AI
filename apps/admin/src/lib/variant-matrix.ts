@@ -95,3 +95,31 @@ export function syncVariants(
     };
   });
 }
+
+/**
+ * Name-only edit of the option set: when the ACTIVE options keep the same count and the same values
+ * at every index but some names changed, return the rows with `optionValues` keys renamed by option
+ * index (so edited rows survive). Anything else (value/option added or removed, a name that became
+ * blank or duplicate) returns `null` and the caller regenerates rows with `syncVariants`.
+ */
+export function renameOptionKeys(
+  previous: readonly OptionDraft[],
+  next: readonly OptionDraft[],
+  variants: VariantDraft[],
+): VariantDraft[] | null {
+  const before = activeOptions(previous);
+  const after = activeOptions(next);
+  if (before.length === 0 || before.length !== after.length) return null;
+  const sameValues = before.every(
+    (option, i) =>
+      option.values.length === after[i]?.values.length && option.values.every((value, j) => value === after[i]?.values[j]),
+  );
+  if (!sameValues || before.every((option, i) => option.name === after[i]?.name)) return null;
+  const names = new Map(before.map((option, i) => [option.name, after[i]?.name ?? option.name]));
+  return variants.map((variant) => ({
+    ...variant,
+    optionValues: Object.fromEntries(
+      Object.entries(variant.optionValues).map(([name, value]) => [names.get(name) ?? name, value]),
+    ),
+  }));
+}

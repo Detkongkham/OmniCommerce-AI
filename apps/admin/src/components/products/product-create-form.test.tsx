@@ -151,6 +151,68 @@ describe("ProductCreateForm", () => {
     expect(rows()).toHaveLength(2);
   });
 
+  it("pressing Enter in the option name field syncs the rows first and posts the correct body", async () => {
+    const { user } = renderWithProviders(<ProductCreateForm />);
+    await user.type(screen.getByLabelText("Product name"), "Tee");
+    await user.type(field(0, /^Price/), "100");
+    await user.click(screen.getByRole("button", { name: "Add option" }));
+    await user.type(valueInputs()[0] as HTMLElement, "Red{Enter}Blue{Enter}");
+    await user.type(screen.getByLabelText("Option name 1"), "Color{Enter}");
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/products/new-id"));
+    expect(posts()[0]?.[1]).toEqual({
+      method: "POST",
+      body: {
+        name: "Tee",
+        status: "DRAFT",
+        options: [{ name: "Color", values: ["Red", "Blue"] }],
+        variants: [
+          { sku: "Red", price: "100", isActive: true, optionValues: { Color: "Red" }, costPrice: "0" },
+          { sku: "Blue", price: "100", isActive: true, optionValues: { Color: "Blue" }, costPrice: "0" },
+        ],
+        images: [],
+      },
+    });
+  });
+
+  it("renaming an option keeps edited rows and image links, and posts the new name", async () => {
+    const { user } = renderWithProviders(<ProductCreateForm />);
+    await user.type(screen.getByLabelText("Product name"), "Tee");
+    await user.type(field(0, /^Price/), "100");
+    await user.click(screen.getByRole("button", { name: "Add option" }));
+    await user.type(valueInputs()[0] as HTMLElement, "Red{Enter}Blue{Enter}");
+    await user.type(screen.getByLabelText("Option name 1"), "Color");
+    await user.tab();
+    await user.clear(field(1, /^SKU/));
+    await user.type(field(1, /^SKU/), "MINE");
+    await user.click(screen.getByRole("button", { name: "Add image" }));
+    await user.type(screen.getByLabelText("Image URL (http/https) 1"), "https://x/y.png");
+    await user.selectOptions(screen.getByLabelText("Linked variant 1"), "Blue");
+
+    await user.type(screen.getByLabelText("Option name 1"), "s");
+    await user.tab();
+    expect(field(1, /^SKU/)).toHaveValue("MINE");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalled());
+    const body = (posts()[0]?.[1] as { body: { variants: unknown[]; images: unknown[]; options: unknown[] } }).body;
+    expect(body.options).toEqual([{ name: "Colors", values: ["Red", "Blue"] }]);
+    expect(body.variants[1]).toMatchObject({ sku: "MINE", optionValues: { Colors: "Blue" } });
+    expect(body.images).toEqual([{ url: "https://x/y.png", variantSku: "MINE" }]);
+  });
+
+  it("explains why Save is disabled when there are too many combinations", async () => {
+    const { user } = renderWithProviders(<ProductCreateForm />);
+    for (let i = 0; i < 3; i += 1) await user.click(screen.getByRole("button", { name: "Add option" }));
+    for (let i = 0; i < 3; i += 1) await user.type(valueInputs()[i] as HTMLElement, "a{Enter}b{Enter}c{Enter}d{Enter}e{Enter}");
+    for (const n of [1, 2, 3]) {
+      await user.type(screen.getByLabelText(`Option name ${n}`), `O${n}`);
+      await user.tab();
+    }
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    const note = document.getElementById(save.getAttribute("aria-describedby") ?? "none");
+    expect(note).toHaveTextContent(/more than 100 variants/);
+  });
+
   it("indents child categories in the category select", async () => {
     renderWithProviders(<ProductCreateForm />);
     expect(await screen.findByRole("option", { name: "— Shirts" })).toBeInTheDocument();
@@ -305,12 +367,12 @@ describe("ProductCreateForm", () => {
     await user.type(screen.getByLabelText("Option name 3"), "C");
     await user.tab();
 
-    expect(screen.getByText(/more than 100 variants/)).toBeInTheDocument();
+    expect(screen.getAllByText(/more than 100 variants/).length).toBeGreaterThan(0);
     expect(rows()).toHaveLength(25);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await user.click(screen.getAllByRole("button", { name: "Remove value e" })[2] as HTMLElement);
-    expect(screen.queryByText(/more than 100 variants/)).toBeNull();
+    expect(screen.queryAllByText(/more than 100 variants/)).toHaveLength(0);
     expect(rows()).toHaveLength(100);
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
