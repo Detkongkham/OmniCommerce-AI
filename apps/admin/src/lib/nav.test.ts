@@ -9,10 +9,10 @@ describe("visibleNavGroups", () => {
     expect(groups[0]?.items.map((item) => item.href)).toEqual(["/staff", "/roles"]);
   });
 
-  it("ຜູ້ມີ inventory:read ເຫັນກຸ່ມສະຕ໊ອກ (ສາງ, ໝວດໝູ່) ແລະ ຕັ້ງຄ່າຮ້ານ", () => {
+  it("ຜູ້ມີ inventory:read ເຫັນກຸ່ມສະຕ໊ອກ (ສິນຄ້າ, ສາງ, ໝວດໝູ່) ແລະ ຕັ້ງຄ່າຮ້ານ", () => {
     const groups = visibleNavGroups(["inventory:read"]);
     expect(groups.map((group) => group.id)).toEqual(["inventory", "settings"]);
-    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/warehouses", "/categories"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/products", "/warehouses", "/categories"]);
     expect(groups[1]?.items.map((item) => item.href)).toEqual(["/settings"]);
   });
 

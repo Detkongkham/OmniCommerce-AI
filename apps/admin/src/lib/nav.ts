@@ -1,5 +1,5 @@
 import { type Permission, hasPermission } from "@oca/shared";
-import { FolderTree, type LucideIcon, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import { FolderTree, type LucideIcon, Package, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 
 export interface NavItem {
@@ -20,6 +20,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "inventory",
     labelKey: "nav.group.inventory",
     items: [
+      { href: "/products", labelKey: "nav.products", icon: Package, permission: "inventory:read" },
       { href: "/warehouses", labelKey: "nav.warehouses", icon: Warehouse, permission: "inventory:read" },
       { href: "/categories", labelKey: "nav.categories", icon: FolderTree, permission: "inventory:read" },
     ],
