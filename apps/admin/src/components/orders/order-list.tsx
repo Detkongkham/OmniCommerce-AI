@@ -1,6 +1,6 @@
 "use client";
 
-import { ORDER_STATUSES } from "@oca/shared";
+import { ORDER_STATUSES, type OrderStatus } from "@oca/shared";
 import {
   Button,
   Card,
@@ -43,11 +43,11 @@ const HEADERS: { key: TranslationKey; right?: boolean }[] = [
   { key: "orders.col.created" },
 ];
 
-export function OrderList({ initialQuery, initialStatus }: { initialQuery: string; initialStatus: string }) {
+export function OrderList({ initialQuery, initialStatus }: { initialQuery: string; initialStatus: OrderStatus | "" }) {
   const { t } = useT();
   const canWrite = useCan("orders:write");
   const [search, setSearch] = useState(initialQuery);
-  const [status, setStatus] = useState(initialStatus);
+  const [status, setStatus] = useState<OrderStatus | "">(initialStatus);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
@@ -126,7 +126,7 @@ export function OrderList({ initialQuery, initialStatus }: { initialQuery: strin
               className="w-48"
               value={status}
               onChange={(event) => {
-                setStatus(event.target.value);
+                setStatus(event.target.value as OrderStatus | "");
                 reset();
               }}
             >
@@ -238,9 +238,7 @@ export function OrderList({ initialQuery, initialStatus }: { initialQuery: strin
                         <Button variant="outlinePrimary" className="rounded-lg" onClick={clearFilters}>
                           {t("common.clearSearch")}
                         </Button>
-                      ) : (
-                        addButton
-                      )
+                      ) : undefined
                     }
                   />
                 </div>
