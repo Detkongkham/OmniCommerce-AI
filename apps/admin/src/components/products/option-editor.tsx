@@ -2,7 +2,7 @@
 
 import { Button, Field, Input } from "@oca/ui";
 import { Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 import { useT } from "@/lib/i18n/language-provider";
 import { MAX_OPTIONS, type OptionDraft } from "@/lib/variant-matrix";
@@ -38,6 +38,17 @@ function warningFor(options: OptionDraft[], index: number): TranslationKey | nul
 export function OptionEditor({ options, onChange }: OptionEditorProps) {
   const { t } = useT();
   const atLimit = options.length >= MAX_OPTIONS;
+  const addRef = useRef<HTMLButtonElement>(null);
+  // focus target requested by an action; applied after the re-render that makes it focusable
+  const pendingFocus = useRef<"add" | number | null>(null);
+
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (target === null) return;
+    pendingFocus.current = null;
+    if (target === "add") addRef.current?.focus();
+    else document.getElementById(`option-name-${target}`)?.focus();
+  });
 
   const patch = (index: number, next: OptionDraft) => onChange(options.map((option, i) => (i === index ? next : option)));
 
@@ -52,7 +63,10 @@ export function OptionEditor({ options, onChange }: OptionEditorProps) {
           option={option}
           warning={warningFor(options, index)}
           onChange={(next) => patch(index, next)}
-          onRemove={() => onChange(options.filter((_, i) => i !== index))}
+          onRemove={() => {
+            pendingFocus.current = "add";
+            onChange(options.filter((_, i) => i !== index));
+          }}
         />
       ))}
       <div className="flex items-center gap-3">
@@ -60,8 +74,12 @@ export function OptionEditor({ options, onChange }: OptionEditorProps) {
           type="button"
           variant="outlinePrimary"
           className="rounded-lg"
+          ref={addRef}
           disabled={atLimit}
-          onClick={() => onChange([...options, { name: "", values: [] }])}
+          onClick={() => {
+            pendingFocus.current = options.length;
+            onChange([...options, { name: "", values: [] }]);
+          }}
         >
           <Plus aria-hidden="true" />
           {t("products.option.add")}
@@ -87,6 +105,8 @@ function OptionRow({
 }) {
   const { t } = useT();
   const [draft, setDraft] = useState("");
+  const valuesRef = useRef<HTMLInputElement>(null);
+  const label = option.name.trim() || String(index + 1);
 
   function commit() {
     const value = draft.trim();
@@ -98,9 +118,10 @@ function OptionRow({
   return (
     <div data-testid={`option-${index}`} className="rounded-xl border border-line p-3">
       <div className="flex items-end gap-3">
-        <Field label={t("products.option.name")} htmlFor={`option-name-${index}`} className="flex-1">
+        <Field label={`${t("products.option.name")} ${index + 1}`} htmlFor={`option-name-${index}`} className="flex-1">
           <Input
             id={`option-name-${index}`}
+            aria-describedby={`option-warning-${index}`}
             value={option.name}
             placeholder={t("products.option.namePlaceholder")}
             onChange={(event) => onChange({ ...option, name: event.target.value })}
@@ -111,7 +132,7 @@ function OptionRow({
           variant="ghost"
           size="icon"
           className="size-9 rounded-lg"
-          aria-label={t("products.option.remove")}
+          aria-label={`${t("products.option.remove")} ${label}`}
           title={t("products.option.remove")}
           onClick={onRemove}
         >
@@ -129,15 +150,20 @@ function OptionRow({
               type="button"
               aria-label={`${t("products.option.removeValue")} ${value}`}
               className="rounded-full hover:bg-brand/10"
-              onClick={() => onChange({ ...option, values: option.values.filter((item) => item !== value) })}
+              onClick={() => {
+                onChange({ ...option, values: option.values.filter((item) => item !== value) });
+                valuesRef.current?.focus();
+              }}
             >
               <X className="size-3" aria-hidden="true" />
             </button>
           </span>
         ))}
         <input
+          ref={valuesRef}
+          id={`option-values-${index}`}
           value={draft}
-          aria-label={t("products.option.values")}
+          aria-label={`${t("products.option.values")} ${label}`}
           placeholder={t("products.option.valuesPlaceholder")}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -154,18 +180,19 @@ function OptionRow({
           variant="ghost"
           size="icon"
           className="size-8 rounded-lg"
-          aria-label={t("products.option.addValue")}
+          aria-label={`${t("products.option.addValue")} ${label}`}
           title={t("products.option.addValue")}
-          onClick={commit}
+          onClick={() => {
+            commit();
+            valuesRef.current?.focus();
+          }}
         >
           <Plus aria-hidden="true" />
         </Button>
       </div>
-      {warning ? (
-        <p role="status" className="mt-2 text-xs text-warning-ink">
-          {t(warning)}
-        </p>
-      ) : null}
+      <p id={`option-warning-${index}`} role="status" aria-live="polite" className="mt-2 text-xs text-warning-ink empty:hidden">
+        {warning ? t(warning) : null}
+      </p>
     </div>
   );
 }
