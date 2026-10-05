@@ -1,10 +1,11 @@
 import { createOrderSchema } from "@oca/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type OrderFormState,
   computeTotals,
   emptyOrderForm,
   lineAvailable,
+  newIdempotencyKey,
   shortageKeys,
   toCreateOrderInput,
 } from "./order-form";
@@ -233,5 +234,22 @@ describe("shortageKeys", () => {
     const keys = shortageKeys([{ variantId: "v1", warehouseId: "w1", sku: "TEE-R", requested: 9, available: 2 }]);
     expect(keys.get("v1|w1")).toMatchObject({ requested: 9, available: 2 });
     expect(shortageKeys([]).size).toBe(0);
+  });
+});
+
+describe("newIdempotencyKey", () => {
+  it("ຮູບແບບທີ່ API ຍອມຮັບ (ASCII ພິມໄດ້ 1-128, ບໍ່ມີຍະຫວ່າງ) ແລະ ບໍ່ຊ້ຳກັນ", () => {
+    const a = newIdempotencyKey();
+    expect(a).toMatch(/^[\x21-\x7e]{1,128}$/);
+    expect(newIdempotencyKey()).not.toBe(a);
+  });
+
+  it("ຕອນບໍ່ມີ crypto.randomUUID (http ທີ່ບໍ່ປອດໄພ) ຍັງໄດ້ key ທີ່ຖືກຮູບແບບ", () => {
+    vi.stubGlobal("crypto", { getRandomValues: (bytes: Uint8Array) => bytes.fill(171) });
+    try {
+      expect(newIdempotencyKey()).toMatch(/^[\x21-\x7e]{1,128}$/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

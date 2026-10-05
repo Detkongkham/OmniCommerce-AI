@@ -132,3 +132,12 @@ export function toCreateOrderInput(state: OrderFormState): unknown {
 export function shortageKeys(shortages: readonly Shortage[]): Map<string, Shortage> {
   return new Map(shortages.map((shortage) => [`${shortage.variantId}|${shortage.warehouseId}`, shortage]));
 }
+
+/**
+ * Idempotency-Key ຂອງ POST /orders (ASCII ພິມໄດ້ 1-128). `crypto.randomUUID` ມີສະເພາະ secure context
+ * (https/localhost) ຈຶ່ງມີທາງສຳຮອງຜ່ານ `getRandomValues` ສຳລັບ admin ທີ່ເປີດຜ່ານ http ໃນ LAN.
+ */
+export function newIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
