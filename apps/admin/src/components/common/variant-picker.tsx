@@ -17,10 +17,13 @@ export interface VariantPickerProps {
   /** variant ທີ່ເລືອກແລ້ວ (ບໍ່ສະແດງໃນຜົນ) */
   excludeIds?: string[];
   disabled?: boolean;
+  required?: boolean;
+  invalid?: boolean;
+  "aria-describedby"?: string;
 }
 
 /** autocomplete variant ຜ່ານ GET /variants (SKU / barcode / ຊື່) ພ້ອມລາຄາ ແລະ ສະຕ໋ອກຂາຍໄດ້ */
-export function VariantPicker({ id, label, onSelect, includeInactive, excludeIds = [], disabled }: VariantPickerProps) {
+export function VariantPicker({ id, label, onSelect, includeInactive, excludeIds = [], disabled, required, invalid, "aria-describedby": describedBy }: VariantPickerProps) {
   const { t } = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
@@ -57,10 +60,7 @@ export function VariantPicker({ id, label, onSelect, includeInactive, excludeIds
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Escape") {
-      setDismissed(true);
-      return;
-    }
+    // Escape ຈັດການທີ່ window capture ຂ້າງເທິງ (ຕອນລາຍການເປີດເທົ່ານັ້ນ)
     if (!showList) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -76,7 +76,7 @@ export function VariantPicker({ id, label, onSelect, includeInactive, excludeIds
 
   return (
     <div className="relative">
-      <Field label={label} htmlFor={id}>
+      <Field label={label} htmlFor={id} required={required}>
         <Input
           ref={inputRef}
           id={id}
@@ -84,6 +84,9 @@ export function VariantPicker({ id, label, onSelect, includeInactive, excludeIds
           aria-expanded={showList}
           aria-controls={listboxId}
           aria-autocomplete="list"
+          aria-describedby={describedBy}
+          invalid={invalid}
+          required={required}
           aria-activedescendant={activeItem ? optionId(activeItem.id) : undefined}
           value={text}
           disabled={disabled}

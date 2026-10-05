@@ -7,11 +7,10 @@ import {
   transferStockSchema,
 } from "@oca/shared";
 import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Field, Input, Select, toast } from "@oca/ui";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { VariantPicker } from "@/components/common/variant-picker";
 import { errorMessage, shortageLines } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
-import { formatIssues } from "@/lib/product-form";
 import { type StockOpMode, useStockOperation, useWarehouses } from "@/lib/queries";
 
 /** variant + ສາງ ທີ່ກຳນົດໄວ້ກ່ອນ (ກົດຈາກແຖວຂອງຕາຕະລາງ). null = ໃຫ້ເລືອກ variant ເອງ (ຮັບສະຕ໋ອກຄັ້ງທຳອິດ) */
@@ -30,13 +29,23 @@ export interface StockOpDialogProps {
 
 export function StockOpDialog({ open, onOpenChange, mode, target }: StockOpDialogProps) {
   const { t } = useT();
+  const [saving, setSaving] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      // ຂະນະບັນທຶກ ຫ້າມປິດ (Escape / overlay / X) ຈົນກວ່າຄຳຂໍຈະຈົບ
+      onOpenChange={(next) => {
+        if (!next && saving) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="max-w-lg" closeLabel={t("common.close")}>
         <StockOpForm
           key={`${mode}:${target?.variantId ?? "none"}:${target?.warehouseId ?? ""}`}
           mode={mode}
           target={target}
+          saving={saving}
+          onSavingChange={setSaving}
           onDone={() => onOpenChange(false)}
         />
       </DialogContent>
@@ -58,29 +67,94 @@ const SUCCESS_KEYS = {
   return: "stock.toast.returned",
 } as const;
 
-function StockOpForm({ mode, target, onDone }: { mode: StockOpMode; target: StockOpTarget | null; onDone: () => void }) {
+type FieldKey = "variant" | "warehouse" | "to" | "amount" | "note";
+
+const PATH_FIELD: Record<string, FieldKey> = {
+  variantId: "variant",
+  warehouseId: "warehouse",
+  fromWarehouseId: "warehouse",
+  toWarehouseId: "to",
+  quantity: "amount",
+  delta: "amount",
+  note: "note",
+};
+
+interface FormIssues {
+  messages: string[];
+  fields: FieldKey[];
+}
+
+const NO_ISSUES: FormIssues = { messages: [], fields: [] };
+const ERRORS_ID = "stock-op-errors";
+const MAX_AMOUNT = 1_000_000;
+
+function StockOpForm({
+  mode,
+  target,
+  saving,
+  onSavingChange,
+  onDone,
+}: {
+  mode: StockOpMode;
+  target: StockOpTarget | null;
+  saving: boolean;
+  onSavingChange: (saving: boolean) => void;
+  onDone: () => void;
+}) {
   const { t } = useT();
   const warehouses = useWarehouses();
   const operate = useStockOperation();
+  const submitting = useRef(false);
   const active = (warehouses.data ?? []).filter((warehouse) => warehouse.isActive);
 
   const [picked, setPicked] = useState<{ variantId: string; label: string } | null>(target);
-  const [warehouseId, setWarehouseId] = useState(target?.warehouseId ?? "");
+  // null = ຍັງບໍ່ໄດ້ເລືອກເອງ (ໃຊ້ຄ່າເລີ່ມຕົ້ນ); "" = ຜູ້ໃຊ້ເລືອກ placeholder ຕັ້ງໃຈ
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [toWarehouseId, setToWarehouseId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [issues, setIssues] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
+  const [issues, setIssues] = useState<FormIssues>(NO_ISSUES);
 
-  // ສາງເລີ່ມຕົ້ນ = ສາງຫຼັກ ເມື່ອບໍ່ໄດ້ກຳນົດມາ
-  const defaultWarehouse = active.find((warehouse) => warehouse.isDefault)?.id ?? "";
-  const effectiveWarehouse = warehouseId || defaultWarehouse;
+  // ສາງເລີ່ມຕົ້ນ = ສາງຂອງ target ຖ້າຍັງເປີດຢູ່, ບໍ່ດັ່ງນັ້ນ = ສາງຫຼັກ
+  const targetWarehouse = active.find((warehouse) => warehouse.id === target?.warehouseId)?.id;
+  const defaultWarehouse = targetWarehouse ?? active.find((warehouse) => warehouse.isDefault)?.id ?? "";
+  const effectiveWarehouse = warehouseId ?? defaultWarehouse;
+  const effectiveTo = toWarehouseId === effectiveWarehouse ? "" : toWarehouseId;
+
+  const invalid = (field: FieldKey) => issues.fields.includes(field);
+  const describedBy = issues.messages.length > 0 ? ERRORS_ID : undefined;
+  const edit = () => setIssues(NO_ISSUES);
+
+  const fieldLabel: Record<FieldKey, string> = {
+    variant: t("stock.field.variant"),
+    warehouse: t(mode === "transfer" ? "stock.field.fromWarehouse" : "stock.field.warehouse"),
+    to: t("stock.field.toWarehouse"),
+    amount: t(mode === "adjust" ? "stock.field.delta" : "stock.field.quantity"),
+    note: t(mode === "adjust" ? "stock.field.noteRequired" : "stock.field.note"),
+  };
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    // ການສະຕ໋ອກບໍ່ idempotent: ກັນສົ່ງຊ້ຳ
+    if (saving || operate.isPending || submitting.current) return;
     const variantId = picked?.variantId ?? "";
     const number = amount.trim() === "" ? Number.NaN : Number(amount);
     const trimmedNote = note.trim();
+
+    const found: { field: FieldKey; text: string }[] = [];
+    if (!variantId) found.push({ field: "variant", text: t("stock.err.variant") });
+    if (!effectiveWarehouse) found.push({ field: "warehouse", text: t("stock.err.warehouse") });
+    if (mode === "transfer" && !effectiveTo) found.push({ field: "to", text: t("stock.err.toWarehouse") });
+    const amountOk =
+      Number.isInteger(number) &&
+      (mode === "adjust" ? number !== 0 && Math.abs(number) <= MAX_AMOUNT : number >= 1 && number <= MAX_AMOUNT);
+    if (!amountOk) found.push({ field: "amount", text: t(mode === "adjust" ? "stock.err.delta" : "stock.err.quantity") });
+    if (mode === "adjust" && !trimmedNote) found.push({ field: "note", text: t("stock.err.reason") });
+    if (found.length > 0) {
+      setIssues({ messages: found.map((item) => item.text), fields: found.map((item) => item.field) });
+      return;
+    }
+
     const raw =
       mode === "adjust"
         ? { variantId, warehouseId: effectiveWarehouse, delta: number, note: trimmedNote }
@@ -88,37 +162,45 @@ function StockOpForm({ mode, target, onDone }: { mode: StockOpMode; target: Stoc
           ? {
               variantId,
               fromWarehouseId: effectiveWarehouse,
-              toWarehouseId,
+              toWarehouseId: effectiveTo,
               quantity: number,
               ...(trimmedNote ? { note: trimmedNote } : {}),
             }
           : { variantId, warehouseId: effectiveWarehouse, quantity: number, ...(trimmedNote ? { note: trimmedNote } : {}) };
     const parsed = SCHEMAS[mode].safeParse(raw);
     if (!parsed.success) {
-      setIssues(formatIssues(parsed.error.issues));
+      const fields = parsed.error.issues.map((issue) => PATH_FIELD[String(issue.path[0])] ?? "amount");
+      setIssues({
+        messages: fields.map((field) => t("stock.err.invalid", { field: fieldLabel[field] })),
+        fields,
+      });
       return;
     }
-    setIssues([]);
-    setSaving(true);
+    setIssues(NO_ISSUES);
+    submitting.current = true;
+    onSavingChange(true);
     try {
       await operate.mutateAsync({ mode, input: parsed.data });
       toast.success(t(SUCCESS_KEYS[mode]));
       onDone();
     } catch (error) {
-      setIssues([errorMessage(error, t), ...shortageLines(error, t)]);
+      setIssues({ messages: [errorMessage(error, t), ...shortageLines(error, t)], fields: [] });
     } finally {
-      setSaving(false);
+      submitting.current = false;
+      onSavingChange(false);
     }
   }
 
-  const warehouseOptions = (
+  const warehouseOptions = (exclude?: string) => (
     <>
       <option value="">{t("stock.field.selectWarehouse")}</option>
-      {active.map((warehouse) => (
-        <option key={warehouse.id} value={warehouse.id}>
-          {`${warehouse.code} — ${warehouse.name}`}
-        </option>
-      ))}
+      {active
+        .filter((warehouse) => warehouse.id !== exclude)
+        .map((warehouse) => (
+          <option key={warehouse.id} value={warehouse.id}>
+            {`${warehouse.code} — ${warehouse.name}`}
+          </option>
+        ))}
     </>
   );
 
@@ -126,9 +208,13 @@ function StockOpForm({ mode, target, onDone }: { mode: StockOpMode; target: Stoc
     <form onSubmit={submit} noValidate>
       <DialogHeader title={t(`stock.op.title.${mode}`)} description={t(`stock.op.desc.${mode}`)} />
       <DialogBody>
-        {issues.length > 0 ? (
-          <ul role="alert" className="list-inside list-disc rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-ink">
-            {issues.map((line) => (
+        {issues.messages.length > 0 ? (
+          <ul
+            id={ERRORS_ID}
+            role="alert"
+            className="list-inside list-disc rounded-lg border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-ink"
+          >
+            {issues.messages.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -151,50 +237,87 @@ function StockOpForm({ mode, target, onDone }: { mode: StockOpMode; target: Stoc
             id="stock-op-variant"
             label={t("stock.field.variant")}
             includeInactive
-            onSelect={(variant) =>
+            required
+            invalid={invalid("variant")}
+            aria-describedby={invalid("variant") ? describedBy : undefined}
+            onSelect={(variant) => {
+              edit();
               setPicked({
                 variantId: variant.id,
                 label: `${variant.productName}${variant.name ? ` — ${variant.name}` : ""} (${variant.sku})`,
-              })
-            }
+              });
+            }}
           />
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={t(mode === "transfer" ? "stock.field.fromWarehouse" : "stock.field.warehouse")} htmlFor="stock-op-warehouse">
-            <Select id="stock-op-warehouse" value={effectiveWarehouse} onChange={(event) => setWarehouseId(event.target.value)}>
-              {warehouseOptions}
+          <Field label={fieldLabel.warehouse} htmlFor="stock-op-warehouse" required>
+            <Select
+              id="stock-op-warehouse"
+              value={effectiveWarehouse}
+              invalid={invalid("warehouse")}
+              aria-describedby={invalid("warehouse") ? describedBy : undefined}
+              onChange={(event) => {
+                edit();
+                setWarehouseId(event.target.value);
+              }}
+            >
+              {warehouseOptions()}
             </Select>
           </Field>
           {mode === "transfer" ? (
-            <Field label={t("stock.field.toWarehouse")} htmlFor="stock-op-to">
-              <Select id="stock-op-to" value={toWarehouseId} onChange={(event) => setToWarehouseId(event.target.value)}>
-                {warehouseOptions}
+            <Field label={fieldLabel.to} htmlFor="stock-op-to" required>
+              <Select
+                id="stock-op-to"
+                value={effectiveTo}
+                invalid={invalid("to")}
+                aria-describedby={invalid("to") ? describedBy : undefined}
+                onChange={(event) => {
+                  edit();
+                  setToWarehouseId(event.target.value);
+                }}
+              >
+                {warehouseOptions(effectiveWarehouse)}
               </Select>
             </Field>
           ) : null}
-          <Field label={t(mode === "adjust" ? "stock.field.delta" : "stock.field.quantity")} htmlFor="stock-op-amount" required>
+          <Field label={fieldLabel.amount} htmlFor="stock-op-amount" required>
             <Input
               id="stock-op-amount"
               type="number"
-              inputMode="numeric"
+              // adjust ຮັບຄ່າລົບ: keypad ຕົວເລກຂອງ iOS ພິມ "-" ບໍ່ໄດ້
+              inputMode={mode === "adjust" ? undefined : "numeric"}
               step={1}
               value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              invalid={invalid("amount")}
+              aria-describedby={invalid("amount") ? describedBy : undefined}
+              onChange={(event) => {
+                edit();
+                setAmount(event.target.value);
+              }}
             />
           </Field>
           <Field
-            label={t(mode === "adjust" ? "stock.field.noteRequired" : "stock.field.note")}
+            label={fieldLabel.note}
             htmlFor="stock-op-note"
             required={mode === "adjust"}
             className={mode === "transfer" ? "sm:col-span-2" : undefined}
           >
-            <Input id="stock-op-note" value={note} onChange={(event) => setNote(event.target.value)} />
+            <Input
+              id="stock-op-note"
+              value={note}
+              invalid={invalid("note")}
+              aria-describedby={invalid("note") ? describedBy : undefined}
+              onChange={(event) => {
+                edit();
+                setNote(event.target.value);
+              }}
+            />
           </Field>
         </div>
       </DialogBody>
       <DialogFooter>
-        <Button type="button" variant="outline" className="h-10 rounded-xl px-5" onClick={onDone}>
+        <Button type="button" variant="outline" className="h-10 rounded-xl px-5" disabled={saving} onClick={onDone}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" className="h-10 rounded-xl px-6 font-bold" loading={saving}>

@@ -1,4 +1,5 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
@@ -59,20 +60,36 @@ describe("StockOpDialog", () => {
     );
   });
 
-  it("transfer: ຈາກ/ໄປ ຕ້ອງຕ່າງກັນ; ສົ່ງ fromWarehouseId/toWarehouseId", async () => {
+  it("transfer: ສາງປາຍທາງບໍ່ມີສາງຕົ້ນທາງ; ສົ່ງ fromWarehouseId/toWarehouseId", async () => {
     const { user } = renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="transfer" target={target} />);
     await screen.findByLabelText("From warehouse");
-    await user.type(screen.getByLabelText("Quantity"), "2");
-    await user.selectOptions(screen.getByLabelText("To warehouse"), "w1"); // ຊ້ຳກັບຕົ້ນທາງ
+    await waitFor(() => expect(screen.getAllByRole("option", { name: "MAIN — Main" })).toHaveLength(1));
+    await user.type(screen.getByLabelText(/^Quantity/), "2");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Select a destination warehouse");
+    expect(screen.getByLabelText(/^To warehouse/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText(/^To warehouse/)).toHaveAttribute("aria-describedby", "stock-op-errors");
     expect(posted()).toBeUndefined();
 
-    await user.selectOptions(screen.getByLabelText("To warehouse"), "w2");
+    await user.selectOptions(screen.getByLabelText(/^To warehouse/), "w2");
+    expect(screen.queryByRole("alert")).toBeNull(); // ແກ້ field ແລ້ວ ລ້າງຂໍ້ຜິດພາດເກົ່າ
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(posted()).toEqual(["/stock/transfer", { method: "POST", body: { variantId: "v1", fromWarehouseId: "w1", toWarehouseId: "w2", quantity: 2 } }]),
     );
+  });
+
+  it("transfer: ປ່ຽນສາງຕົ້ນທາງໃຫ້ເທົ່າປາຍທາງ → ປາຍທາງຖືກລ້າງ ແລະ ຕົວເລືອກຕົ້ນທາງຖືກຕັດອອກຈາກປາຍທາງ", async () => {
+    const { user } = renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="transfer" target={target} />);
+    await screen.findByLabelText("From warehouse");
+    await waitFor(() => expect(screen.getByLabelText(/^To warehouse/)).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText(/^To warehouse/), "w2");
+    await user.selectOptions(screen.getByLabelText(/^From warehouse/), "w2");
+    expect(screen.getByLabelText(/^To warehouse/)).toHaveValue("");
+    await user.type(screen.getByLabelText(/^Quantity/), "1");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Select a destination warehouse");
+    expect(posted()).toBeUndefined();
   });
 
   it("return: POST /stock/return", async () => {
@@ -143,5 +160,104 @@ describe("StockOpDialog", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
     expect(screen.getByLabelText("Item (variant)")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("ບໍ່ມີ warehouseId ໃນ target → ໃຊ້ສາງຫຼັກ; target ທີ່ສາງປິດແລ້ວ → ກັບໄປສາງຫຼັກ", async () => {
+    const first = renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="receive" target={{ variantId: "v1", label: "Tee" }} />);
+    expect(await screen.findByLabelText("Warehouse")).toHaveValue("");
+    await waitFor(() => expect(screen.getByLabelText("Warehouse")).toHaveValue("w1"));
+    first.unmount();
+    renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="receive" target={{ variantId: "v1", label: "Tee", warehouseId: "w3" }} />);
+    await waitFor(() => expect(screen.getByLabelText("Warehouse")).toHaveValue("w1"));
+  });
+
+  it("ເລືອກ placeholder ສາງ: ບໍ່ກັບໄປສາງຫຼັກແບບງຽບ ແລະ ສະແດງຂໍ້ຜິດພາດ", async () => {
+    const { user } = renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="receive" target={target} />);
+    const select = await screen.findByLabelText("Warehouse");
+    await waitFor(() => expect(screen.getByRole("option", { name: "MAIN — Main" })).toBeInTheDocument());
+    await user.selectOptions(select, "");
+    expect(select).toHaveValue("");
+    await user.type(screen.getByLabelText("Quantity"), "1");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Select a warehouse");
+    expect(alert).not.toHaveTextContent("warehouseId");
+    expect(select).toHaveAttribute("aria-invalid", "true");
+    expect(posted()).toBeUndefined();
+  });
+
+  it("ບໍ່ເລືອກ variant: ຂໍ້ຄວາມແປ (ບໍ່ມີ path ດິບ) ແລະ picker ເປັນ aria-invalid", async () => {
+    const { user } = renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="receive" target={null} />);
+    await screen.findByLabelText("Warehouse");
+    await user.type(screen.getByLabelText("Quantity"), "1");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Select an item (variant)");
+    expect(alert.textContent).not.toMatch(/variantId|Invalid/);
+    expect(screen.getByLabelText("Item (variant)")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("adjust: inputMode ບໍ່ຖືກຕັ້ງ (ພິມ − ໄດ້); receive ເປັນ numeric", async () => {
+    const adjust = renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="adjust" target={target} />);
+    expect(await screen.findByLabelText("Change (+/−)")).not.toHaveAttribute("inputmode");
+    adjust.unmount();
+    renderWithProviders(<StockOpDialog open onOpenChange={vi.fn()} mode="receive" target={target} />);
+    expect(await screen.findByLabelText("Quantity")).toHaveAttribute("inputmode", "numeric");
+  });
+
+  it("ກົດ Save ສອງເທື່ອຕິດ: POST ເທື່ອດຽວ; ຂະນະບັນທຶກ Cancel ຖືກປິດ ແລະ Escape ບໍ່ປິດ dialog", async () => {
+    let release: (value: unknown) => void = () => {};
+    vi.mocked(apiFetch).mockImplementation((async (path: string) => {
+      if (path === "/warehouses") return warehouses;
+      return new Promise<unknown>((resolve) => {
+        release = resolve;
+      });
+    }) as typeof apiFetch);
+    const onOpenChange = vi.fn();
+    const { user } = renderWithProviders(<StockOpDialog open onOpenChange={onOpenChange} mode="receive" target={target} />);
+    await screen.findByLabelText("Warehouse");
+    await waitFor(() => expect(screen.getByLabelText("Warehouse")).toHaveValue("w1"));
+    await user.type(screen.getByLabelText("Quantity"), "3");
+    const form = screen.getByRole("button", { name: /Save|Saving/ }).closest("form") as HTMLFormElement;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled());
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(vi.mocked(apiFetch).mock.calls.filter((call) => call[0] === "/stock/receive")).toHaveLength(1);
+    release({});
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("ຂໍ້ຜິດພາດທົ່ວໄປຈາກ API ສະແດງເປັນຂໍ້ຄວາມແປ ແລະ dialog ບໍ່ປິດ", async () => {
+    vi.mocked(apiFetch).mockImplementation((async (path: string) => {
+      if (path === "/warehouses") return warehouses;
+      throw new ApiError(404, "x", [], "WAREHOUSE_NOT_FOUND");
+    }) as typeof apiFetch);
+    const onOpenChange = vi.fn();
+    const { user } = renderWithProviders(<StockOpDialog open onOpenChange={onOpenChange} mode="receive" target={target} />);
+    await screen.findByLabelText("Warehouse");
+    await user.type(screen.getByLabelText("Quantity"), "1");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This warehouse was not found");
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("ເປີດຄືນໃນ mode ອື່ນ: ຟອມຖືກ reset", async () => {
+    function Harness() {
+      const [mode, setMode] = useState<"receive" | "adjust">("receive");
+      return (
+        <>
+          <button type="button" onClick={() => setMode("adjust")}>
+            switch
+          </button>
+          <StockOpDialog open onOpenChange={vi.fn()} mode={mode} target={target} />
+        </>
+      );
+    }
+    const { user } = renderWithProviders(<Harness />);
+    await user.type(await screen.findByLabelText("Quantity"), "7");
+    fireEvent.click(screen.getByText("switch"));
+    expect(await screen.findByLabelText("Change (+/−)")).toHaveValue(null);
   });
 });
