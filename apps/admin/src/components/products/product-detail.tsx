@@ -109,7 +109,8 @@ function ProductDetailBody({ product }: { product: ProductDetailDto }) {
   // once deleted the page is on its way out: nothing on it may be written any more
   const canWrite = canWriteInventory && !deleted;
 
-  const codeOf = (warehouseId: string) => warehouses.data?.find((item) => item.id === warehouseId)?.code ?? warehouseId;
+  // never show a raw id: a neutral dash while warehouses load, fail, or do not contain the id
+  const codeOf = (warehouseId: string) => warehouses.data?.find((item) => item.id === warehouseId)?.code ?? "—";
 
   async function doDelete() {
     if (deleting.current) return;
@@ -339,7 +340,7 @@ function GeneralSection({ product, canWrite }: { product: ProductDetailDto; canW
   );
 }
 
-interface RowDraft {
+export interface RowDraft {
   sku: string;
   barcode: string;
   price: string;
@@ -356,7 +357,7 @@ const rowOf = (variant: VariantDto): RowDraft => ({
 });
 
 /** Only the changed fields; `costPrice` only for someone who may write costs (never re-added by a default). */
-function rowChanges(draft: RowDraft, server: RowDraft, canEditCost: boolean): UpdateVariantInput {
+export function rowChanges(draft: RowDraft, server: RowDraft, canEditCost: boolean): UpdateVariantInput {
   const input: UpdateVariantInput = {};
   if (draft.sku.trim() !== server.sku) input.sku = draft.sku.trim();
   if (draft.barcode.trim() !== server.barcode) input.barcode = draft.barcode.trim() === "" ? null : draft.barcode.trim();

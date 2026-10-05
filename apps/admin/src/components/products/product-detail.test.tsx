@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { ProductDetailDto } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
-import { ProductDetail } from "./product-detail";
+import { type RowDraft, ProductDetail, rowChanges } from "./product-detail";
 
 const auth = vi.hoisted(() => ({ perms: new Set<string>() }));
 vi.mock("@/components/auth/auth-provider", () => ({ useCan: (permission: string) => auth.perms.has(permission) }));
@@ -106,6 +106,17 @@ describe("ProductDetail: display", () => {
     expect(await within(red).findByText("MAIN: 3 / 2")).toBeInTheDocument();
     expect(within(red).getByRole("link", { name: /^View \/ receive stock/ })).toHaveAttribute("href", "/stock?q=TEE-R");
     expect(within(row("v2")).getByText("No stock yet")).toBeInTheDocument();
+  });
+
+  it("never shows a raw warehouse id while warehouses load or when they fail", async () => {
+    override = (path) => {
+      if (path === "/warehouses") throw new ApiError(500, "boom");
+      return undefined;
+    };
+    renderWithProviders(<ProductDetail id="p1" />);
+    await screen.findByDisplayValue("Tee");
+    expect(await within(row("v1")).findByText("—: 3 / 2")).toBeInTheDocument();
+    expect(screen.queryByText(/w1/)).toBeNull();
   });
 
   it("every variant control has an accessible name that includes the variant", async () => {
@@ -459,6 +470,13 @@ describe("ProductDetail: delete", () => {
     expect(gets("/products/p1")).toHaveLength(1);
     expect(screen.queryByText("This product was not found")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
+    // while navigating away (router.push is mocked, so the page is still mounted) nothing may be written
+    for (const name of ["Delete product", "Add variant", "Save", "Save images", "Save row Red"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    expect(screen.getByLabelText("Price Red")).toBeDisabled();
+    expect(screen.getByLabelText("Product name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add image" })).toBeDisabled();
   });
 
   it("200 { archived }: informs the user, stays on the page and shows the archived status", async () => {
@@ -533,5 +551,28 @@ describe("ProductDetail: read-only (no inventory:write)", () => {
     expect(screen.getByRole("link", { name: "View / receive stock Red" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View / receive stock Blue" })).toBeInTheDocument();
     expect(writes()).toHaveLength(0);
+  });
+});
+
+describe("rowChanges", () => {
+  const server: RowDraft = { sku: "A", barcode: "", price: "10.00", cost: "6.00", isActive: true };
+
+  it("is empty when nothing changed (whitespace is ignored)", () => {
+    expect(rowChanges({ ...server, sku: " A " }, server, true)).toEqual({});
+  });
+
+  it("never includes costPrice without permission to edit costs, even if the draft cost differs", () => {
+    const result = rowChanges({ ...server, cost: "99", price: "11" }, server, false);
+    expect(result).toEqual({ price: "11" });
+    expect("costPrice" in result).toBe(false);
+  });
+
+  it("includes a changed costPrice when costs are editable", () => {
+    expect(rowChanges({ ...server, cost: "7" }, server, true)).toEqual({ costPrice: "7" });
+  });
+
+  it("includes only the changed fields, with null for a cleared barcode", () => {
+    expect(rowChanges({ ...server, barcode: "885", isActive: false }, server, true)).toEqual({ barcode: "885", isActive: false });
+    expect(rowChanges({ ...server, barcode: "" }, { ...server, barcode: "885" }, true)).toEqual({ barcode: null });
   });
 });
