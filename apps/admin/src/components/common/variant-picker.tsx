@@ -1,7 +1,7 @@
 "use client";
 
 import { Field, Input } from "@oca/ui";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
 import { useVariantSearch } from "@/lib/queries";
@@ -35,6 +35,19 @@ export function VariantPicker({ id, label, onSelect, includeInactive, excludeIds
   const listboxId = `${id}-listbox`;
   const optionId = (itemId: string) => `${id}-option-${itemId}`;
   const activeItem = showList ? results[activeIndex] : undefined;
+
+  // Escape ໃນ input ຕອນລາຍການເປີດ ປິດສະເພາະລາຍການ. dialog (Radix) ຟັງ Escape ທີ່ document ໃນ capture phase
+  // ຈຶ່ງຕ້ອງຢຸດທີ່ window capture (ມາກ່ອນ) ເທົ່ານັ້ນ; stopPropagation ຂອງ React ຊ້າເກີນໄປ.
+  useEffect(() => {
+    if (!showList) return;
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.target !== inputRef.current) return;
+      event.stopPropagation();
+      setDismissed(true);
+    };
+    window.addEventListener("keydown", onEscape, true);
+    return () => window.removeEventListener("keydown", onEscape, true);
+  }, [showList]);
 
   function select(item: VariantSearchItemDto) {
     onSelect(item);

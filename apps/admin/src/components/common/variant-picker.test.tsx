@@ -155,4 +155,23 @@ describe("VariantPicker", () => {
     await user.type(screen.getByLabelText("Item"), "tee");
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not search variants");
   });
+
+  it("Escape ຕອນລາຍການເປີດ ບໍ່ລາມໄປຫາ listener ຂອງ document (capture) ເຊັ່ນ dialog", async () => {
+    const onDocKey = vi.fn();
+    document.addEventListener("keydown", onDocKey, true);
+    try {
+      const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+      await user.type(screen.getByLabelText("Item"), "tee");
+      await screen.findByRole("option");
+      onDocKey.mockClear();
+      await user.keyboard("{Escape}");
+      expect(onDocKey).not.toHaveBeenCalled();
+      expect(screen.queryByRole("option")).toBeNull();
+      onDocKey.mockClear();
+      await user.keyboard("{Escape}"); // ລາຍການປິດແລ້ວ: Escape ຜ່ານໄປຕາມປົກກະຕິ
+      expect(onDocKey).toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("keydown", onDocKey, true);
+    }
+  });
 });
