@@ -28,7 +28,7 @@ export function useRoleList() {
   return useQuery({ queryKey: queryKeys.roles, queryFn: () => apiFetch<RoleDto[]>("/roles") });
 }
 
-/** ພະນັກງານປ່ຽນ → userCount ຂອງ role ປ່ຽນ ຈຶ່ງ refresh ທັງສອງ. */
+/** ຄືນ callback ທີ່ invalidate query key ທີ່ໃຫ້ມາທັງໝົດ (ໃຊ້ເປັນ onSuccess ຂອງ mutation). */
 function useInvalidate(...keys: (readonly string[])[]) {
   const queryClient = useQueryClient();
   return () => Promise.all(keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
