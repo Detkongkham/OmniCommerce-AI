@@ -26,7 +26,7 @@ export function formatDateTime(value: string | Date | null | undefined): string 
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false,
+      hourCycle: "h23",
     })
-    .replace(", ", " ");
+    .replace(/,\s*/, " ");
 }

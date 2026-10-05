@@ -18,6 +18,7 @@ describe("formatDateTime", () => {
   it("dd/MM/yyyy HH:mm ເວລາລາວ (UTC+7)", () => {
     expect(formatDateTime("2026-10-05T05:30:00.000Z")).toBe("05/10/2026 12:30");
     expect(formatDateTime("2026-10-04T18:00:00.000Z")).toBe("05/10/2026 01:00");
+    expect(formatDateTime("2026-10-04T17:00:00.000Z")).toBe("05/10/2026 00:00");
   });
   it("ຄ່າຫວ່າງ/ຜິດ → —", () => {
     expect(formatDateTime(null)).toBe("—");
