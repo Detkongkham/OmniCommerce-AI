@@ -75,6 +75,23 @@ describe("apiFetch", () => {
     expect(headersOf(orderCalls[1]![1]).Authorization).toBe("Bearer new");
   });
 
+  it("header ຂອງຜູ້ເອີ້ນທີ່ຊື່ຕ່າງຂະໜາດຕົວອັກສອນ (content-type/authorization) ບໍ່ຢູ່ຄຽງ header ຂອງລະບົບ", async () => {
+    setAccessToken("tok");
+    const fetchMock = mockFetch(() => json(200, {}));
+    await apiFetch("/orders", {
+      method: "POST",
+      body: {},
+      headers: { "content-type": "text/plain", AUTHORIZATION: "Bearer evil", "Idempotency-Key": "k" },
+    });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const names = Object.keys(headersOf(init)).map((name) => name.toLowerCase());
+    expect(names.filter((name) => name === "content-type")).toHaveLength(1);
+    expect(names.filter((name) => name === "authorization")).toHaveLength(1);
+    expect(headersOf(init)["Content-Type"]).toBe("application/json");
+    expect(headersOf(init).Authorization).toBe("Bearer tok");
+    expect(headersOf(init)["Idempotency-Key"]).toBe("k");
+  });
+
   it("ໄດ້ 401 → refresh → ລອງໃໝ່ດ້ວຍ token ໃໝ່", async () => {
     setAccessToken("old");
     const fetchMock = mockFetch((url, init) => {

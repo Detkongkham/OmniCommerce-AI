@@ -46,6 +46,8 @@ export interface RequestOptions {
 /** Endpoint ທີ່ບໍ່ຄວນ refresh ເມື່ອໄດ້ 401 (ຜິດ credentials ຫຼື refresh ເອງລົ້ມ). */
 const NO_REFRESH_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
 
+const SYSTEM_HEADERS = new Set(["content-type", "authorization"]);
+
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 let onSessionRefreshed: ((session: Session) => void) | null = null;
@@ -94,7 +96,10 @@ async function parse<T>(response: Response): Promise<T> {
 }
 
 function send(path: string, options: RequestOptions): Promise<Response> {
-  const headers: Record<string, string> = { ...options.headers };
+  // ຊື່ header ບໍ່ແຍກຕົວອັກສອນ: ຕັດ content-type/authorization ຂອງຜູ້ເອີ້ນອອກທຸກແບບຂຽນ ເພື່ອໃຫ້ຂອງລະບົບຊະນະສະເໝີ
+  const headers: Record<string, string> = Object.fromEntries(
+    Object.entries(options.headers ?? {}).filter(([name]) => !SYSTEM_HEADERS.has(name.toLowerCase())),
+  );
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return fetch(`${API_BASE}${path}`, {
