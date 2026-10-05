@@ -10,10 +10,12 @@ function Harness({
   onConfirm,
   onOpenChange,
   disabled,
+  disabledReason,
 }: {
   onConfirm: (reason?: string) => Promise<void>;
   onOpenChange?: (open: boolean) => void;
   disabled?: boolean;
+  disabledReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -24,6 +26,7 @@ function Harness({
       </button>
       <CancelOrderDialog
         disabled={disabled}
+        disabledReason={disabledReason}
         restoreFocus={() => trigger.current?.focus()}
         open={open}
         onOpenChange={(next) => {
@@ -147,5 +150,20 @@ describe("CancelOrderDialog", () => {
     await user.click(confirmButton());
     expect(await screen.findByRole("alert")).toHaveTextContent("Another action is still in progress");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("disabled + disabledReason: ສະແດງເຫດຜົນ (role=alert) ໃນ dialog ແລະ ຜູກກັບປຸ່ມຢືນຢັນ; ບໍ່ມີເຫດຜົນ = ບໍ່ມີ alert", async () => {
+    const { user } = renderWithProviders(<Harness onConfirm={vi.fn()} disabled disabledReason="data is stale" />);
+    await user.click(screen.getByRole("button", { name: "trigger" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("data is stale");
+    expect(confirmButton().getAttribute("aria-describedby")).toContain(alert.id);
+  });
+
+  it("disabled ໂດຍບໍ່ມີເຫດຜົນ: ບໍ່ມີ alert", async () => {
+    const { user } = renderWithProviders(<Harness onConfirm={vi.fn()} disabled />);
+    await user.click(screen.getByRole("button", { name: "trigger" }));
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

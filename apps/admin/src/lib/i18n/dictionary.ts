@@ -542,6 +542,7 @@ const lo = {
   "orders.detail.refreshFailed": "ໂຫຼດຂໍ້ມູນລ່າສຸດບໍ່ສຳເລັດ ກຳລັງສະແດງສະຖານະເກົ່າ ຈຶ່ງປິດປຸ່ມດຳເນີນການຊົ່ວຄາວ",
   "orders.detail.statusChanged": "ສະຖານະບິນປ່ຽນເປັນ {status} ແລ້ວ",
   "orders.detail.countdownLabel": "ເວລາທີ່ເຫຼືອກ່ອນໝົດການຈອງ",
+  "orders.detail.cancelUnavailable": "ບິນນີ້ຍົກເລີກບໍ່ໄດ້ແລ້ວ (ສິດຖືກປ່ຽນ)",
 } as const;
 
 export type TranslationKey = keyof typeof lo;
@@ -1093,6 +1094,7 @@ const en: Record<TranslationKey, string> = {
   "orders.detail.refreshFailed": "Could not refresh, showing the last known state; actions are paused until it loads",
   "orders.detail.statusChanged": "Order status changed to {status}",
   "orders.detail.countdownLabel": "Time left before the reservation expires",
+  "orders.detail.cancelUnavailable": "You can no longer cancel this order",
 };
 
 export const dictionaries: Record<Language, Record<TranslationKey, string>> = { lo, en };

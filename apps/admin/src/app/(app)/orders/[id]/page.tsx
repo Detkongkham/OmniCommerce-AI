@@ -10,7 +10,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (!ORDER_ID.test(id)) notFound();
   return (
     <PermissionGate permission="orders:read">
-      <OrderDetail id={id} />
+      {/* key = id: ໄປບິນອື່ນແລ້ວ state ຂອງບິນເກົ່າບໍ່ຕິດໄປ */}
+      <OrderDetail key={id} id={id} />
     </PermissionGate>
   );
 }

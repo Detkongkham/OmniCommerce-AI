@@ -3,7 +3,7 @@
 import { Button, Card, EmptyState, PageHeader, Skeleton, buttonVariants, cn, toast } from "@oca/ui";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { ApiError } from "@/lib/api";
 import { ActionBusyError, errorMessage } from "@/lib/errors";
@@ -38,9 +38,12 @@ function BackLink() {
 
 export function OrderDetail({ id }: { id: string }) {
   const { t } = useT();
-  // client ນັບຮອດ 0 ແລ້ວ (latch): ໃຫ້ useOrder poll ທຸກ 5 ວິ ຈົນ server ປ່ຽນສະຖານະ
-  const [clientExpired, setClientExpired] = useState(false);
-  const query = useOrder(id, { clientExpired });
+  // client ນັບຮອດ 0 ແລ້ວ (latch): ໃຫ້ useOrder poll ທຸກ 5 ວິ ຈົນ server ປ່ຽນສະຖານະ.
+  // ຜູກກັບ (ບິນ, ເວລາ fetch): ໄປບິນອື່ນ ຫຼື ໄດ້ຂໍ້ມູນໃໝ່ ແລ້ວ latch ໝົດໄປເອງ (ຖ້າຍັງ 0 ຢູ່ ຈະ latch ໃໝ່)
+  const [latch, setLatch] = useState<{ id: string; at: number } | null>(null);
+  const query = useOrder(id, { clientExpiredAt: latch?.id === id ? latch.at : null });
+  const { dataUpdatedAt } = query;
+  const onClientExpired = useCallback(() => setLatch({ id, at: dataUpdatedAt }), [id, dataUpdatedAt]);
 
   if (!query.data) {
     if (query.isError) {
@@ -82,7 +85,7 @@ export function OrderDetail({ id }: { id: string }) {
       stale={query.isRefetchError}
       refreshing={query.isRefetching}
       onRetry={() => void query.refetch()}
-      onClientExpired={() => setClientExpired(true)}
+      onClientExpired={onClientExpired}
     />
   );
 }
@@ -148,7 +151,11 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
     const own = inFlight.current || announcedStatus.current === order.status;
     if (!own && (changed || dialogLost)) {
       announcedStatus.current = null;
-      setAnnouncement(dialogLost ? t("orders.detail.statusChanged", { status: t(`orders.status.${order.status}`) }) : "");
+      // ບອກວ່າ "ສະຖານະປ່ຽນ" ສະເພາະເມື່ອສະຖານະປ່ຽນຈິງ; ສິດຖືກຖອນ (ສະຖານະເດີມ) ໃຊ້ຂໍ້ຄວາມອື່ນ
+      const lostMessage = changed
+        ? t("orders.detail.statusChanged", { status: t(`orders.status.${order.status}`) })
+        : t("orders.detail.cancelUnavailable");
+      setAnnouncement(dialogLost ? lostMessage : "");
       if (dialogLost) setFocusTick((n) => n + 1);
     }
     if (dialogLost) setCancelOpen(false);
@@ -335,6 +342,7 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
           onOpenChange={setCancelOpen}
           onConfirm={confirmCancel}
           disabled={locked}
+          disabledReason={stale ? t("orders.detail.refreshFailed") : undefined}
           restoreFocus={restoreFocus}
         />
       ) : null}

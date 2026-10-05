@@ -13,12 +13,14 @@ export interface CancelOrderDialogProps {
   onConfirm: (reason: string | undefined) => Promise<void>;
   /** ປິດປຸ່ມຢືນຢັນ (ເຊັ່ນ ມີ action ອື່ນກຳລັງສົ່ງ/ຂໍ້ມູນບິນເກົ່າ) */
   disabled?: boolean;
+  /** ເຫດຜົນທີ່ປຸ່ມຖືກປິດ (ສະແດງໃນ dialog ເພາະໜ້າຫຼັກ inert ຂະນະ dialog ເປີດ) */
+  disabledReason?: string;
   /** ຄືນ focus ຫຼັງປິດ: ຜູ້ເອີ້ນຮູ້ປຸ່ມເປີດ ແລະ ທາງສຳຮອງ (Safari/Firefox ບໍ່ focus ປຸ່ມຕອນກົດ ຈຶ່ງຈັບ activeElement ບໍ່ໄດ້) */
   restoreFocus: () => void;
 }
 
 /** ຢືນຢັນຍົກເລີກບິນ ພ້ອມເຫດຜົນ (ບໍ່ບັງຄັບ, ≤200 ໂຕ ຕາມ cancelOrderSchema) */
-export function CancelOrderDialog({ open, onOpenChange, onConfirm, disabled = false, restoreFocus }: CancelOrderDialogProps) {
+export function CancelOrderDialog({ open, onOpenChange, onConfirm, disabled = false, disabledReason, restoreFocus }: CancelOrderDialogProps) {
   const { t } = useT();
   const [saving, setSaving] = useState(false);
   return (
@@ -40,7 +42,7 @@ export function CancelOrderDialog({ open, onOpenChange, onConfirm, disabled = fa
         }}
       >
         {open ? (
-          <CancelForm disabled={disabled} saving={saving} onSavingChange={setSaving} onConfirm={onConfirm} onDone={() => onOpenChange(false)} />
+          <CancelForm disabled={disabled} disabledReason={disabledReason} saving={saving} onSavingChange={setSaving} onConfirm={onConfirm} onDone={() => onOpenChange(false)} />
         ) : null}
       </DialogContent>
     </Dialog>
@@ -48,16 +50,19 @@ export function CancelOrderDialog({ open, onOpenChange, onConfirm, disabled = fa
 }
 
 const ERROR_ID = "cancel-order-error";
+const DISABLED_ID = "cancel-order-disabled";
 const REASON_MAX = 200;
 
 function CancelForm({
   disabled,
+  disabledReason,
   saving,
   onSavingChange,
   onConfirm,
   onDone,
 }: {
   disabled: boolean;
+  disabledReason: string | undefined;
   saving: boolean;
   onSavingChange: (saving: boolean) => void;
   onConfirm: CancelOrderDialogProps["onConfirm"];
@@ -103,6 +108,11 @@ function CancelForm({
             {message}
           </p>
         ) : null}
+        {disabled && disabledReason ? (
+          <p id={DISABLED_ID} role="alert" className="mb-3 rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-ink">
+            {disabledReason}
+          </p>
+        ) : null}
         <Field label={t("orders.cancel.reason")} htmlFor="cancel-reason">
           <Input
             id="cancel-reason"
@@ -121,7 +131,7 @@ function CancelForm({
         <Button type="button" variant="outline" className="h-10 rounded-xl px-5" disabled={saving} onClick={onDone}>
           {t("orders.cancel.keep")}
         </Button>
-        <Button type="submit" variant="destructive" className="h-10 rounded-xl px-6 font-bold" loading={saving} disabled={disabled}>
+        <Button type="submit" variant="destructive" className="h-10 rounded-xl px-6 font-bold" loading={saving} disabled={disabled} aria-describedby={disabled && disabledReason ? DISABLED_ID : undefined}>
           {saving ? t("common.saving") : t("orders.cancel.confirm")}
         </Button>
       </DialogFooter>

@@ -19,6 +19,7 @@ import type {
   variantInputSchema,
 } from "@oca/shared";
 import type { z } from "zod";
+import { useCallback } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { toQueryString } from "./query-string";
@@ -359,11 +360,12 @@ export function useOrders(params: OrderListParams, options: { enabled?: boolean 
 
 /**
  * ບິນທີ່ຍັງ PENDING_PAYMENT ແຕ່ນັບຖອຍຮອດ 0 (worker ຍັງບໍ່ໄດ້ expire) → poll ຈົນສະຖານະປ່ຽນ:
- * API ບອກ 0 = ທຸກ 15 ວິ; `clientExpired` (client ນັບຮອດ 0 ແຕ່ API ຍັງບອກເຫຼືອ) = ທຸກ 5 ວິ.
+ * API ບອກ 0 = ທຸກ 15 ວິ; `clientExpiredAt` (client ນັບຮອດ 0 ແຕ່ API ຍັງບອກເຫຼືອ) = ທຸກ 5 ວິ.
+ * `clientExpiredAt` ຄື dataUpdatedAt ຂອງຂໍ້ມູນທີ່ນັບຮອດ 0: ໄດ້ຂໍ້ມູນໃໝ່ແລ້ວ ການ poll ຢຸດຈົນນັບຮອດ 0 ອີກ.
  * interval ລອງໃໝ່ເອງເມື່ອ refetch ລົ້ມ ແລະ ມີຂອບເຂດ (ບໍ່ຍິງທຸກວິ ເຖິງ server ຍັງບອກເຫຼືອ ≥1).
  */
-export function useOrder(id: string, options: { clientExpired?: boolean } = {}) {
-  const { clientExpired = false } = options;
+export function useOrder(id: string, options: { clientExpiredAt?: number | null } = {}) {
+  const { clientExpiredAt = null } = options;
   return useQuery({
     queryKey: [...queryKeys.orders, "detail", id],
     queryFn: () => apiFetch<OrderDetailDto>(`/orders/${id}`),
@@ -371,7 +373,7 @@ export function useOrder(id: string, options: { clientExpired?: boolean } = {}) 
       const order = query.state.data;
       if (order?.status !== "PENDING_PAYMENT") return false;
       if (order.secondsUntilExpiry === 0) return 15_000;
-      return clientExpired ? 5_000 : false;
+      return clientExpiredAt !== null && clientExpiredAt === query.state.dataUpdatedAt ? 5_000 : false;
     },
   });
 }
@@ -382,7 +384,7 @@ export function useOrder(id: string, options: { clientExpired?: boolean } = {}) 
  */
 export function useOrderSnapshot(id: string) {
   const queryClient = useQueryClient();
-  return () => queryClient.getQueryData<OrderDetailDto>([...queryKeys.orders, "detail", id]);
+  return useCallback(() => queryClient.getQueryData<OrderDetailDto>([...queryKeys.orders, "detail", id]), [queryClient, id]);
 }
 
 /** ບິນໃໝ່ຈອງສະຕ໋ອກ ແລະ ອາດສ້າງລູກຄ້າໃໝ່ → invalidate orders/stock/products/variants/customers */

@@ -1,5 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getToasts, subscribe } from "@oca/ui";
+import { useState } from "react";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { OrderDetailDto } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
@@ -562,22 +564,6 @@ describe("OrderDetail: ແກ້ຕາມ review (ຂໍ້ມູນເກົ່
     await waitFor(() => expect(posts()).toHaveLength(2));
   });
 
-  it("unmount ຂະນະ action ກຳລັງສົ່ງ: ຈົບແລ້ວບໍ່ມີ error", async () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    let resolve!: (value: OrderDetailDto) => void;
-    vi.mocked(apiFetch).mockImplementation(((_path: string, options?: { method?: string }) =>
-      options?.method === "POST" ? new Promise<OrderDetailDto>((r) => (resolve = r)) : Promise.resolve(base)) as typeof apiFetch);
-    const { user, unmount } = renderWithProviders(<OrderDetail id="o1" />);
-    await heading();
-    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
-    unmount();
-    await act(async () => {
-      resolve(withStatus("PAID"));
-    });
-    expect(errors).not.toHaveBeenCalled();
-    errors.mockRestore();
-  });
-
   it("alert ຂອງ network error ຫາຍເມື່ອສະຖານະປ່ຽນຈາກພາຍນອກ", async () => {
     let current = base;
     vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
@@ -594,5 +580,109 @@ describe("OrderDetail: ແກ້ຕາມ review (ຂໍ້ມູນເກົ່
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "Start packing" })).toBeInTheDocument());
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("unmount ຂະນະ POST ຄ້າງ: ຈົບແລ້ວ toast.success ອອກເທື່ອດຽວ, ບໍ່ມີ error/unhandled rejection", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    let resolve!: (value: OrderDetailDto) => void;
+    vi.mocked(apiFetch).mockImplementation(((_path: string, options?: { method?: string }) =>
+      options?.method === "POST" ? new Promise<OrderDetailDto>((r) => (resolve = r)) : Promise.resolve(base)) as typeof apiFetch);
+    const { user, unmount } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    // store ຕັດເຫຼືອ 5 ອັນ ຈຶ່ງນັບຈາກ id ໃໝ່ທີ່ເກີດຂຶ້ນ ບໍ່ແມ່ນຈຳນວນໃນ store
+    const old = new Set(getToasts().map((item) => item.id));
+    const seen = new Set<string>();
+    const unsubscribe = subscribe(() => {
+      for (const item of getToasts()) if (item.title === "Payment confirmed" && !old.has(item.id)) seen.add(item.id);
+    });
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    unmount();
+    await act(async () => {
+      resolve(withStatus("PAID"));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    unsubscribe();
+    expect(seen.size).toBe(1);
+    expect(errors).not.toHaveBeenCalled();
+    expect(unhandled).not.toHaveBeenCalled();
+    process.off("unhandledRejection", unhandled);
+    errors.mockRestore();
+  });
+
+  it("ເປີດ dialog ແລ້ວຂໍ້ມູນກາຍເປັນເກົ່າ: dialog ສະແດງເຫດຜົນ (role=alert) ຂ້າງປຸ່ມຢືນຢັນທີ່ຖືກປິດ", async () => {
+    let fail = false;
+    vi.mocked(apiFetch).mockImplementation((async () => {
+      if (fail) throw new ApiError(500, "", [], "INTERNAL_ERROR");
+      return base;
+    }) as typeof apiFetch);
+    const { user, queryClient } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    await screen.findByRole("dialog");
+    expect(within(screen.getByRole("dialog")).queryByRole("alert")).toBeNull();
+    fail = true;
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveTextContent("Could not refresh, showing the last known state"));
+    expect(within(dialog).getByRole("button", { name: "Cancel order" })).toBeDisabled();
+  });
+
+  it("ຍົກເລີກບໍ່ໄດ້ແລ້ວ ເພາະສິດຖືກຖອນ (ສະຖານະເດີມ): ບໍ່ປະກາດວ່າສະຖານະປ່ຽນ ແຕ່ບອກວ່າຍົກເລີກບໍ່ໄດ້ແລ້ວ", async () => {
+    const { user, queryClient } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    await screen.findByRole("dialog");
+    auth.perms = new Set(["orders:read", "payments:write"]);
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const announce = screen.getByTestId("order-announce");
+    expect(announce).not.toHaveTextContent("status changed");
+    expect(announce).toHaveTextContent("You can no longer cancel this order");
+  });
+
+  it("ໄປບິນອື່ນ (ບໍ່ remount): latch ຂອງບິນ A ບໍ່ຕິດໄປ poll ບິນ B ທຸກ 5 ວິ", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(apiFetch).mockImplementation((async (path: string) =>
+      path === "/orders/o2"
+        ? { ...base, id: "o2", orderNumber: "SO-000002", secondsUntilExpiry: 300 }
+        : { ...base, secondsUntilExpiry: 1 }) as typeof apiFetch);
+    function Harness() {
+      const [id, setId] = useState("o1");
+      return (
+        <>
+          <button type="button" onClick={() => setId("o2")}>
+            go B
+          </button>
+          <OrderDetail id={id} />
+        </>
+      );
+    }
+    renderWithProviders(<Harness />);
+    await heading();
+    for (let i = 0; i < 3; i++) await advance(1000); // A ນັບຮອດ 0 (latch)
+    fireEvent.click(screen.getByRole("button", { name: "go B" }));
+    await screen.findByRole("heading", { level: 1, name: "SO-000002" });
+    for (let i = 0; i < 30; i++) await advance(1000);
+    expect(vi.mocked(apiFetch).mock.calls.filter((call) => call[0] === "/orders/o2")).toHaveLength(1);
+  });
+
+  it("latch ຖືກລ້າງເມື່ອ fetch ໃໝ່ບອກວ່າເຫຼືອເວລາ >0: ເຊົາ poll", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(apiFetch).mockImplementation((async () => ({ ...base, secondsUntilExpiry: gets().length <= 1 ? 1 : 300 })) as typeof apiFetch);
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    for (let i = 0; i < 8; i++) await advance(1000); // latch → poll ຄັ້ງທີ 2 ບອກ 300
+    const afterReset = gets().length;
+    expect(afterReset).toBe(2);
+    for (let i = 0; i < 30; i++) await advance(1000);
+    expect(gets()).toHaveLength(afterReset);
   });
 });
