@@ -26,6 +26,10 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly issues: ApiIssue[] = [],
+    /** ລະຫັດຄົງທີ່ຈາກ API (spec §6.2); undefined ຖ້າ response ບໍ່ມີ */
+    readonly code?: string,
+    /** body ທັງກ້ອນ ເພື່ອອ່ານ field ສະເພາະ ເຊັ່ນ `shortages` ຂອງ INSUFFICIENT_STOCK */
+    readonly body?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -66,15 +70,19 @@ export function setSessionRefreshedHandler(handler: ((session: Session) => void)
 async function toApiError(response: Response): Promise<ApiError> {
   let message = response.statusText || `HTTP ${response.status}`;
   let issues: ApiIssue[] = [];
+  let code: string | undefined;
+  let parsed: Record<string, unknown> | undefined;
   try {
-    const body = (await response.json()) as { message?: unknown; issues?: unknown };
+    const body = (await response.json()) as Record<string, unknown>;
+    parsed = body;
     if (typeof body.message === "string") message = body.message;
     else if (Array.isArray(body.message)) message = body.message.join(", ");
     if (Array.isArray(body.issues)) issues = body.issues as ApiIssue[];
+    if (typeof body.code === "string") code = body.code;
   } catch {
     // body ບໍ່ແມ່ນ JSON: ໃຊ້ statusText
   }
-  return new ApiError(response.status, message, issues);
+  return new ApiError(response.status, message, issues, code, parsed);
 }
 
 async function parse<T>(response: Response): Promise<T> {

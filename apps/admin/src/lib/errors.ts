@@ -1,7 +1,20 @@
-import type { Translate } from "@/lib/i18n/dictionary";
+import { isErrorCode } from "@oca/shared";
+import type { Translate, TranslationKey } from "@/lib/i18n/dictionary";
 import { ApiError } from "./api";
 
-/** ຂໍ້ຄວາມ error ທີ່ສະແດງຜູ້ໃຊ້: ໃຊ້ message ຈາກ API ຖ້າມີ, ບໍ່ດັ່ງນັ້ນຂໍ້ຄວາມກາງ. */
+/** code ທົ່ວໄປທີ່ message ຂອງ API ໃຫ້ລາຍລະອຽດຫຼາຍກວ່າຂໍ້ຄວາມແປ ຈຶ່ງໃຊ້ message ກ່ອນ */
+const GENERIC_CODES = new Set(["BAD_REQUEST", "CONFLICT", "NOT_FOUND", "FORBIDDEN", "INTERNAL_ERROR"]);
+
+/**
+ * ຂໍ້ຄວາມ error ທີ່ສະແດງຜູ້ໃຊ້ (spec §6.2): ແປຈາກ `code` ຄົງທີ່; code ທົ່ວໄປໃຊ້ message ຂອງ API;
+ * ບໍ່ມີ code ໃຊ້ message; ບໍ່ມີຫຍັງ → ຂໍ້ຄວາມກາງ.
+ */
 export function errorMessage(error: unknown, t: Translate): string {
-  return error instanceof ApiError && error.message ? error.message : t("common.error.generic");
+  if (error instanceof ApiError) {
+    if (isErrorCode(error.code) && !(GENERIC_CODES.has(error.code) && error.message)) {
+      return t(`error.${error.code}` as TranslationKey);
+    }
+    if (error.message) return error.message;
+  }
+  return t("common.error.generic");
 }
