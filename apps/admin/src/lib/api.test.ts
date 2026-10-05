@@ -57,6 +57,24 @@ describe("apiFetch", () => {
     expect(headersOf(init)["Content-Type"]).toBe("application/json");
   });
 
+  it("headers ເພີ່ມເຕີມ (ເຊັ່ນ Idempotency-Key) ຖືກສົ່ງພ້ອມ Authorization; ແລະ ຢູ່ຄົບຕອນ retry ຫຼັງ refresh", async () => {
+    setAccessToken("old");
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/auth/refresh") return json(200, session("new"));
+      return headersOf(init).Authorization === "Bearer new" ? json(201, { id: "o1" }) : json(401, {});
+    });
+
+    await apiFetch("/orders", { method: "POST", body: {}, headers: { "Idempotency-Key": "k-1" } });
+
+    const orderCalls = fetchMock.mock.calls.filter((call) => call[0] === "/api/orders") as [string, RequestInit][];
+    expect(orderCalls).toHaveLength(2);
+    for (const [, init] of orderCalls) {
+      expect(headersOf(init)["Idempotency-Key"]).toBe("k-1");
+      expect(headersOf(init)["Content-Type"]).toBe("application/json");
+    }
+    expect(headersOf(orderCalls[1]![1]).Authorization).toBe("Bearer new");
+  });
+
   it("ໄດ້ 401 → refresh → ລອງໃໝ່ດ້ວຍ token ໃໝ່", async () => {
     setAccessToken("old");
     const fetchMock = mockFetch((url, init) => {

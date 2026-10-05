@@ -77,8 +77,10 @@ describe("order hooks", () => {
     const { client, Wrapper } = wrapper();
     const spy = vi.spyOn(client, "invalidateQueries");
     const create = renderHook(() => useCreateOrder(), { wrapper: Wrapper });
-    await act(() => create.result.current.mutateAsync({ items: [{ variantId: "v", quantity: 1, discount: "0" }], shippingFee: "0" }));
-    expect(apiFetch).toHaveBeenCalledWith("/orders", expect.objectContaining({ method: "POST" }));
+    const input = { items: [{ variantId: "v", quantity: 1, discount: "0" }], shippingFee: "0" };
+    await act(() => create.result.current.mutateAsync({ input, idempotencyKey: "key-1" }));
+    // ສົ່ງ Idempotency-Key ເປັນ header ແລະ body ເປັນ input ລ້ວນ
+    expect(apiFetch).toHaveBeenCalledWith("/orders", { method: "POST", body: input, headers: { "Idempotency-Key": "key-1" } });
     // ບິນໃໝ່ອາດສ້າງລູກຄ້າໃໝ່ → ລາຍການລູກຄ້າຕ້ອງຖືກ invalidate ນຳ
     for (const key of ["orders", "stock", "products", "variants", "customers"]) expect(spy).toHaveBeenCalledWith({ queryKey: [key] });
 

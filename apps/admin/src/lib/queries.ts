@@ -375,7 +375,9 @@ export function useOrder(id: string) {
 export function useCreateOrder() {
   const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants, queryKeys.customers);
   return useMutation({
-    mutationFn: (input: CreateOrderInput) => apiFetch<OrderDetailDto>("/orders", { method: "POST", body: input }),
+    // idempotencyKey: ຄີດຽວກັນ + body ດຽວກັນ = API ຄືນບິນເດີມ (ລອງໃໝ່ຫຼັງ network ລົ້ມໄດ້ໂດຍບໍ່ສ້າງບິນຊ້ຳ)
+    mutationFn: ({ input, idempotencyKey }: { input: CreateOrderInput; idempotencyKey: string }) =>
+      apiFetch<OrderDetailDto>("/orders", { method: "POST", body: input, headers: { "Idempotency-Key": idempotencyKey } }),
     onSuccess: invalidate,
   });
 }

@@ -39,6 +39,8 @@ export class ApiError extends Error {
 export interface RequestOptions {
   method?: string;
   body?: unknown;
+  /** header ເພີ່ມເຕີມ (ເຊັ່ນ `Idempotency-Key`); Content-Type/Authorization ຂອງລະບົບຊະນະເມື່ອຊ້ຳ */
+  headers?: Record<string, string>;
 }
 
 /** Endpoint ທີ່ບໍ່ຄວນ refresh ເມື່ອໄດ້ 401 (ຜິດ credentials ຫຼື refresh ເອງລົ້ມ). */
@@ -92,7 +94,7 @@ async function parse<T>(response: Response): Promise<T> {
 }
 
 function send(path: string, options: RequestOptions): Promise<Response> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return fetch(`${API_BASE}${path}`, {
