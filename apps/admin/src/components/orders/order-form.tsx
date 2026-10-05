@@ -1,6 +1,5 @@
 "use client";
 
-import { createOrderSchema } from "@oca/shared";
 import { Button, Card, Field, Input, PageHeader, Select, toast } from "@oca/ui";
 import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -11,14 +10,16 @@ import { formatMoney } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
 import {
   type CustomerMode,
+  type FormIssues,
   type OrderFormState,
   type OrderLineDraft,
   computeTotals,
   emptyOrderForm,
   lineAvailable,
+  lineQuantity,
   newIdempotencyKey,
   shortageKeys,
-  toCreateOrderInput,
+  validateOrderForm,
 } from "@/lib/order-form";
 import { useCreateOrder, useStoreSettings, useWarehouses } from "@/lib/queries";
 import type { Shortage, VariantSearchItemDto } from "@/lib/types";
@@ -28,11 +29,6 @@ const ERRORS_ID = "order-form-errors";
 const EMPTY_ID = "order-items-empty";
 const PICKER_ID = "order-variant";
 
-/** ລະຫັດຊ່ອງທີ່ຜິດ: ຊ່ອງຕໍ່ແຖວໃຊ້ `qty:<variantId>` ແລະ ຄ້າຍກັນ; ຊ່ອງອື່ນໃຊ້ຊື່ຄົງທີ່ */
-interface FormIssues {
-  messages: string[];
-  fields: string[];
-}
 const NO_ISSUES: FormIssues = { messages: [], fields: [] };
 
 const qtyId = (variantId: string) => `line-qty-${variantId}`;
@@ -56,7 +52,16 @@ export function OrderForm() {
   const [shortages, setShortages] = useState<Shortage[]>([]);
   const [saving, setSaving] = useState(false);
   const submitting = useRef(false);
-  // key ຂອງຊຸດການລອງສົ່ງ: ໃຊ້ key ເດີມຕາບໃດ payload ບໍ່ປ່ຽນ (ລອງໃໝ່ຫຼັງ network ລົ້ມ ບໍ່ສ້າງບິນຊ້ຳ)
+  // ປ້າຍບອກວ່າ component ຍັງຢູ່: ຄຳຂໍທີ່ຈົບຫຼັງຜູ້ໃຊ້ອອກຈາກໜ້າ ບໍ່ຕັ້ງ state / ບໍ່ພາໄປໜ້າບິນ
+  const mounted = useRef(true);
+  // ຂໍ້ຄວາມສຳລັບ screen reader ເມື່ອເພີ່ມ/ລຶບແຖວ (role=status ທີ່ເບິ່ງບໍ່ເຫັນ)
+  const [announcement, setAnnouncement] = useState("");
+  // ເພີ່ມຄ່າທຸກຄັ້ງທີ່ສົ່ງບໍ່ຜ່ານ ເພື່ອ focus ກັບ alert ແມ່ນແຕ່ຂໍ້ຄວາມຄືເກົ່າ
+  const [alertTick, setAlertTick] = useState(0);
+  const alertRef = useRef<HTMLDivElement>(null);
+  // key ຂອງຊຸດການລອງສົ່ງ: ໃຊ້ key ເດີມຕາບໃດ payload ບໍ່ປ່ຽນ (ລອງໃໝ່ຫຼັງ network ລົ້ມ ບໍ່ສ້າງບິນຊ້ຳ).
+  // ຂໍ້ຈຳກັດທີ່ຍອມຮັບ: key ຢູ່ໃນ ref ເທົ່ານັ້ນ ຖ້າ remount/reload ຫຼັງການລອງທີ່ໝົດເວລາ key ຫາຍ
+  // ແລະ ການສ້າງບິນດຽວກັນຊ້ຳອາດໄດ້ບິນຊ້ຳ
   const attempt = useRef<{ fingerprint: string; key: string } | null>(null);
   // ແຖວທີ່ຕ້ອງ focus ຊ່ອງຈຳນວນຫຼັງ render (ຫຼັງເພີ່ມສິນຄ້າ)
   const focusQty = useRef<string | null>(null);
@@ -70,6 +75,18 @@ export function OrderForm() {
 
   const invalid = (field: string) => issues.fields.includes(field);
   const errorsRef = (field: string) => (invalid(field) ? ERRORS_ID : undefined);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // ສົ່ງບໍ່ຜ່ານ: ເອົາ focus ໄປທີ່ alert (ຂໍ້ຄວາມຖືກອ່ານ ແລະ ຜູ້ໃຊ້ເຫັນວ່າຜິດຫຍັງ)
+  useEffect(() => {
+    if (alertTick > 0) alertRef.current?.focus();
+  }, [alertTick]);
 
   useEffect(() => {
     if (!focusQty.current) return;
@@ -97,6 +114,7 @@ export function OrderForm() {
   function addVariant(variant: VariantSearchItemDto) {
     edit();
     focusQty.current = variant.id;
+    setAnnouncement(t("orders.items.added", { sku: variant.sku, count: form.lines.length + 1 }));
     setForm((current) => ({
       ...current,
       lines: [...current.lines, { variant, warehouseId: "", quantity: "1", discount: "" }],
@@ -104,67 +122,12 @@ export function OrderForm() {
   }
 
   function removeLine(variantId: string) {
+    const removed = form.lines.find((line) => line.variant.id === variantId);
+    if (removed) setAnnouncement(t("orders.items.removed", { sku: removed.variant.sku, count: form.lines.length - 1 }));
     edit();
     setForm((current) => ({ ...current, lines: current.lines.filter((line) => line.variant.id !== variantId) }));
     // ແຖວທີ່ກົດຫາຍໄປ: ສົ່ງ focus ກັບຊ່ອງຄົ້ນຫາສິນຄ້າ (ບໍ່ໃຫ້ຕົກໄປ body)
     document.getElementById(PICKER_ID)?.focus();
-  }
-
-  /** ກວດຂໍ້ມູນ ແລະ ແປເປັນຂໍ້ຄວາມຂອງລະບົບເອງ (ບໍ່ສະແດງ path/ຂໍ້ຄວາມດິບຈາກ zod) */
-  function validate() {
-    const found = new Map<string, string>(); // ຂໍ້ຄວາມ → ຊ່ອງ (ຂໍ້ຄວາມຊ້ຳບໍ່ຊ້ອນ)
-    const flag = (field: string, text: string) => {
-      if (!found.has(text)) found.set(text, field);
-    };
-    const flagged = new Set<string>();
-    const mark = (field: string, text: string) => {
-      flagged.add(field);
-      flag(field, text);
-    };
-    const invalidText = (label: string) => t("orders.err.invalid", { field: label });
-
-    if (form.customerMode === "existing" && !form.customer) mark("customer", t("orders.err.customer"));
-
-    const parsed = createOrderSchema.safeParse(toCreateOrderInput(form));
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        const [head, index, leaf] = issue.path;
-        if (head === "items" && typeof index === "number") {
-          const line = form.lines[index];
-          const id = line?.variant.id ?? "";
-          const sku = line?.variant.sku ?? "";
-          if (leaf === "quantity") mark(`qty:${id}`, t("orders.err.quantity", { sku }));
-          else if (leaf === "discount") mark(`discount:${id}`, t("orders.err.discount", { sku }));
-          else mark(`warehouse:${id}`, invalidText(`${t("orders.items.warehouse")} ${sku}`.trim()));
-        } else if (head === "items") mark("items", t("orders.err.items"));
-        else if (head === "shippingFee") mark("fee", invalidText(t("orders.shipping.fee")));
-        else if (head === "reservationMinutes") mark("reservation", invalidText(t("orders.reservation")));
-        else if (head === "customerId") mark("customer", t("orders.err.customer"));
-        else if (head === "customer") {
-          if (index === "name") mark("newName", invalidText(t("orders.customer.name")));
-          else if (index === "phone") mark("newPhone", invalidText(t("orders.customer.phone")));
-          else if (index === "email") mark("newEmail", invalidText(t("orders.customer.email")));
-          else mark("newName", invalidText(t("orders.section.customer")));
-        } else mark("form", t("common.error.generic"));
-      }
-    }
-
-    for (const line of form.lines) {
-      const id = line.variant.id;
-      const sku = line.variant.sku;
-      if (!line.warehouseId && noDefault) mark(`warehouse:${id}`, t("orders.err.warehouse", { sku }));
-      // ສ່ວນຫຼຸດເກີນຍອດແຖວ schema ຈັບບໍ່ໄດ້: ໃຊ້ສູດດຽວກັບສະຫຼຸບເງິນ (decimal string) ກັບແຖວນີ້ແຖວດຽວ
-      if (settings.data && !flagged.has(`qty:${id}`) && !flagged.has(`discount:${id}`)) {
-        if (computeTotals({ ...form, lines: [line], shippingFee: "" }, settings.data) === null) {
-          mark(`discount:${id}`, t("orders.err.discount", { sku }));
-        }
-      }
-    }
-    if (found.size > 0) {
-      return { ok: false as const, issues: { messages: [...found.keys()], fields: [...found.values()] } };
-    }
-    if (!parsed.success) return { ok: false as const, issues: NO_ISSUES };
-    return { ok: true as const, data: parsed.data };
   }
 
   async function submit(event: React.FormEvent) {
@@ -172,9 +135,10 @@ export function OrderForm() {
     // ສ້າງບິນຈອງສະຕ໋ອກ: ກັນສົ່ງຊ້ຳ (ຕໍ່ໃຫ້ມີ Idempotency-Key ກໍ່ບໍ່ຍິງຂະນະຄຳຂໍເດີມຍັງແລ່ນ)
     if (saving || create.isPending || submitting.current) return;
     setShortages([]);
-    const result = validate();
+    const result = validateOrderForm(form, { noDefaultWarehouse: noDefault, settings: settings.data }, t);
     if (!result.ok) {
       setIssues(result.issues);
+      setAlertTick((tick) => tick + 1);
       return;
     }
     setIssues(NO_ISSUES);
@@ -185,14 +149,18 @@ export function OrderForm() {
     try {
       const order = await create.mutateAsync({ input: result.data, idempotencyKey: attempt.current.key });
       attempt.current = null; // ສຳເລັດແນ່ນອນ: ການສົ່ງຄັ້ງຕໍ່ໄປເປັນບິນໃໝ່
+      // toast ສະແດງສະເໝີ (ບິນຖືກສ້າງ ແລະ ຈອງສະຕ໋ອກແລ້ວ ແມ່ນແຕ່ຜູ້ໃຊ້ອອກຈາກໜ້າ); ການພາໄປໜ້າບິນສະເພາະຕອນຍັງຢູ່
       toast.success(t("orders.toast.created", { number: order.orderNumber }));
-      router.push(`/orders/${order.id}`);
+      if (mounted.current) router.push(`/orders/${order.id}`);
     } catch (error) {
-      setShortages(extractShortages(error));
-      setIssues({ messages: [errorMessage(error, t), ...shortageLines(error, t)], fields: [] });
+      if (mounted.current) {
+        setShortages(extractShortages(error));
+        setIssues({ messages: [errorMessage(error, t), ...shortageLines(error, t)], fields: [] });
+        setAlertTick((tick) => tick + 1);
+      }
     } finally {
       submitting.current = false;
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   }
 
@@ -221,7 +189,7 @@ export function OrderForm() {
         description={t("orders.form.description")}
         actions={
           <>
-            <Button type="button" variant="outline" className="rounded-xl" onClick={() => router.push("/orders")}>
+            <Button type="button" variant="outline" className="rounded-xl" disabled={saving} onClick={() => router.push("/orders")}>
               {t("common.cancel")}
             </Button>
             <Button
@@ -237,10 +205,16 @@ export function OrderForm() {
           </>
         }
       />
-      <div className="space-y-6 px-3 pb-10 sm:px-6">
+      {/* ຂະນະບັນທຶກລັອກທຸກຊ່ອງ: ແກ້ຂໍ້ມູນກາງຄັນບໍ່ໄດ້ ຈຶ່ງບໍ່ຕ່າງຈາກ payload ທີ່ສົ່ງໄປແລ້ວ */}
+      <fieldset disabled={saving} className="m-0 min-w-0 space-y-6 border-0 px-3 pb-10 sm:px-6">
+        <div role="status" className="sr-only" data-testid="order-announce">
+          {announcement}
+        </div>
         {issues.messages.length > 0 ? (
           <div
             id={ERRORS_ID}
+            ref={alertRef}
+            tabIndex={-1}
             role="alert"
             className="rounded-xl border border-danger-line bg-danger-soft p-4 text-sm text-danger-ink"
           >
@@ -297,7 +271,7 @@ export function OrderForm() {
                     const available = lineAvailable(line, defaultWarehouse?.id ?? null);
                     const effectiveWarehouse = line.warehouseId || defaultWarehouse?.id || "";
                     const shortage = shortageByLine.get(`${id}|${effectiveWarehouse}`);
-                    const quantity = /^\d{1,9}$/.test(line.quantity.trim()) ? Number(line.quantity.trim()) : null;
+                    const quantity = lineQuantity(line.quantity);
                     const exceeds = quantity !== null && quantity > available;
                     const message = shortage
                       ? t("orders.items.shortage", { requested: shortage.requested, available: shortage.available })
@@ -527,7 +501,7 @@ export function OrderForm() {
           </dl>
           <p className="mt-3 text-xs text-ink-muted">{t("orders.summary.estimate")}</p>
         </Card>
-      </div>
+      </fieldset>
     </form>
   );
 }

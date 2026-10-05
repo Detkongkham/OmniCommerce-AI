@@ -352,4 +352,93 @@ describe("OrderForm", () => {
     await user.click(submitButton());
     await waitFor(() => expect(orderCalls()).toHaveLength(1));
   });
+
+  it("ຂະນະບັນທຶກ: ປຸ່ມຍົກເລີກ ແລະ ທຸກຊ່ອງຖືກລັອກ; ສຳເລັດແລ້ວປົດລັອກ", async () => {
+    let resolve: (value: unknown) => void = () => {};
+    mockApi({ "/orders": new Promise((r) => { resolve = r; }) });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByLabelText("Qty TEE-R")).toBeDisabled();
+    expect(screen.getByLabelText("Note")).toBeDisabled();
+    resolve({ id: "new-order", orderNumber: "SO-000001" });
+    await waitFor(() => expect(screen.getByLabelText("Note")).toBeEnabled());
+  });
+
+  it("ອອກຈາກໜ້າ (unmount) ຂະນະກຳລັງບັນທຶກ: ບໍ່ພາໄປໜ້າບິນ ແລະ ບໍ່ເກີດ error ຂອງ React", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let resolve: (value: unknown) => void = () => {};
+    mockApi({ "/orders": new Promise((r) => { resolve = r; }) });
+    const { user, unmount } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(1));
+    unmount();
+    resolve({ id: "new-order", orderNumber: "SO-000001" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("ສົ່ງບໍ່ຜ່ານ: focus ໄປທີ່ alert (ແມ່ນແຕ່ຂໍ້ຄວາມຄືເກົ່າຊ້ຳ), ຊ່ອງຍັງຊີ້ alert ດ້ວຍ aria-describedby", async () => {
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await setQty(user, "TEE-R", "");
+    await user.click(submitButton());
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveAttribute("tabindex", "-1");
+    await waitFor(() => expect(alert).toHaveFocus());
+    expect(screen.getByLabelText("Qty TEE-R")).toHaveAccessibleDescription(/Please fix the following/);
+
+    // ຍ້າຍ focus ໄປບ່ອນອື່ນ (ບໍ່ແກ້ຂໍ້ມູນ) ແລ້ວສົ່ງຊ້ຳ ໄດ້ຂໍ້ຄວາມເດີມ → ຕ້ອງ focus ກັບ alert ອີກ
+    await user.click(screen.getByLabelText("Note"));
+    expect(screen.getByLabelText("Note")).toHaveFocus();
+    await user.click(submitButton());
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveFocus());
+  });
+
+  it("ເພີ່ມ/ລຶບແຖວ: ປະກາດຜ່ານ role=status ທີ່ເບິ່ງບໍ່ເຫັນ (SKU + ຈຳນວນແຖວ)", async () => {
+    const { user } = renderWithProviders(<OrderForm />);
+    const region = screen.getByTestId("order-announce");
+    expect(region).toHaveAttribute("role", "status");
+    expect(region).toHaveClass("sr-only");
+    await addTee(user);
+    expect(region).toHaveTextContent("TEE-R added (1 items)");
+    await addVariant(user, "mug", "MUG-1");
+    expect(region).toHaveTextContent("MUG-1 added (2 items)");
+    await user.click(screen.getByRole("button", { name: "Remove row TEE-R" }));
+    expect(region).toHaveTextContent("TEE-R removed (1 items left)");
+  });
+
+  it("Idempotency: ຫຼັງ 409 INSUFFICIENT_STOCK ລອງ payload ເດີມ → ໃຊ້ key ເດີມ", async () => {
+    mockApi({
+      "/orders": new ApiError(409, "x", [], "INSUFFICIENT_STOCK", {
+        shortages: [{ variantId: "v1", warehouseId: "w1", sku: "TEE-R", requested: 1, available: 0 }],
+      }),
+    });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await user.click(submitButton());
+    await screen.findByRole("alert");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveFocus());
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(2));
+    expect(keyOf(orderCalls()[1])).toBe(keyOf(orderCalls()[0]));
+  });
+
+  it("Idempotency: ຫຼັງສຳເລັດ key ຖືກລ້າງ — ສົ່ງ payload ເດີມອີກ (ບິນໃໝ່) ໄດ້ key ໃໝ່", async () => {
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await user.click(submitButton());
+    await waitFor(() => expect(router.push).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(submitButton()).toBeEnabled());
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(2));
+    expect(keyOf(orderCalls()[1])).toBeTruthy();
+    expect(keyOf(orderCalls()[1])).not.toBe(keyOf(orderCalls()[0]));
+  });
 });

@@ -5,10 +5,13 @@ import {
   computeTotals,
   emptyOrderForm,
   lineAvailable,
+  lineQuantity,
   newIdempotencyKey,
   shortageKeys,
   toCreateOrderInput,
+  validateOrderForm,
 } from "./order-form";
+import { translate } from "./i18n/dictionary";
 import type { VariantSearchItemDto } from "./types";
 
 const variant = (patch: Partial<VariantSearchItemDto> = {}): VariantSearchItemDto => ({
@@ -251,5 +254,79 @@ describe("newIdempotencyKey", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("lineQuantity", () => {
+  it("ຮັບສະເພາະຕົວເລກລ້ວນ 1-9 ຫຼັກ; ຢ່າງອື່ນ null", () => {
+    expect(lineQuantity(" 12 ")).toBe(12);
+    for (const bad of ["", "1e3", "1.5", "-1", "0x10", "1234567890", "abc"]) expect(lineQuantity(bad)).toBeNull();
+  });
+});
+
+describe("validateOrderForm", () => {
+  const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("en", key, params);
+  const ctx = { noDefaultWarehouse: false, settings };
+  const run = (state: OrderFormState, over: Partial<typeof ctx> = {}) => validateOrderForm(state, { ...ctx, ...over }, t);
+  const failed = (state: OrderFormState, over: Partial<typeof ctx> = {}) => {
+    const result = run(state, over);
+    if (result.ok) throw new Error("expected failure");
+    return result.issues;
+  };
+
+  it("ຖືກຕ້ອງ: ຄືນ payload ທີ່ parse ແລ້ວ", () => {
+    const result = run(form());
+    expect(result).toMatchObject({ ok: true, data: { items: [{ variantId: "v1", quantity: 2, discount: "10" }] } });
+  });
+
+  it("ກະຕ່າເປົ່າ: ຂໍ້ຄວາມແປແລ້ວ ບໍ່ແມ່ນ path ຂອງ zod", () => {
+    const issues = failed(form({ lines: [] }));
+    expect(issues.messages).toEqual(["Add at least one item"]);
+    expect(issues.fields).toEqual(["items"]);
+  });
+
+  it("ຈຳນວນ/ເງິນ/ເວລາຈອງຜິດ: ຂໍ້ຄວາມແປ + ລະຫັດຊ່ອງ", () => {
+    const issues = failed(
+      form({ lines: [lineOf({ quantity: "", discount: "abc" })], shippingFee: "-1", reservationMinutes: "1e3" }),
+    );
+    expect(issues.messages).toEqual(
+      expect.arrayContaining([
+        "TEE-R: quantity must be a whole number of 1 or more",
+        "TEE-R: discount is invalid or larger than the line amount",
+        "Shipping fee is not valid",
+        "Reservation time (minutes) is not valid",
+      ]),
+    );
+    expect(issues.fields).toEqual(expect.arrayContaining(["qty:v1", "discount:v1", "fee", "reservation"]));
+    expect(issues.messages.join(" ")).not.toMatch(/items\.|shippingFee|Invalid|Too small/);
+  });
+
+  it("ເລືອກ 'ລູກຄ້າທີ່ມີ' ແຕ່ບໍ່ເລືອກ; ລູກຄ້າໃໝ່ເບີຜິດ", () => {
+    expect(failed(form({ customerMode: "existing" })).fields).toEqual(["customer"]);
+    const issues = failed(form({ customerMode: "new", newCustomer: { name: "Mali", phone: "abc", email: "" } }));
+    expect(issues.fields).toEqual(["newPhone"]);
+  });
+
+  it("ບໍ່ມີສາງຫຼັກ: ແຖວທີ່ຍັງເປັນ 'ສາງຫຼັກ' ຜິດ; ເລືອກສາງແລ້ວຜ່ານ", () => {
+    expect(failed(form(), { noDefaultWarehouse: true }).fields).toEqual(["warehouse:v1"]);
+    expect(run(form({ lines: [lineOf({ warehouseId: "w2" })] }), { noDefaultWarehouse: true }).ok).toBe(true);
+  });
+
+  it("ສ່ວນຫຼຸດເກີນຍອດແຖວ: ຂໍ້ຄວາມສ່ວນຫຼຸດ", () => {
+    const issues = failed(form({ lines: [lineOf({ quantity: "1", discount: "500" })] }));
+    expect(issues.messages).toEqual(["TEE-R: discount is invalid or larger than the line amount"]);
+    expect(issues.fields).toEqual(["discount:v1"]);
+  });
+
+  it("VAT ຂອງຮ້ານຜິດຮູບແບບ: ຂໍ້ຄວາມ VAT (ບໍ່ໂທດສ່ວນຫຼຸດ)", () => {
+    const issues = failed(form(), { settings: { vatRate: "abc", pricesIncludeVat: true } });
+    expect(issues.messages).toEqual(["The store VAT setting is not valid. Please fix it in store settings"]);
+    expect(issues.messages.join(" ")).not.toMatch(/discount/);
+  });
+
+  it("ຍອດເກີນ 16 ຫຼັກ: ຂໍ້ຄວາມຍອດໃຫຍ່ເກີນ (ບໍ່ໂທດສ່ວນຫຼຸດ)", () => {
+    const issues = failed(form({ lines: [lineOf({ variant: variant({ price: "9999999999999999.00" }), quantity: "10", discount: "" })] }));
+    expect(issues.messages).toEqual(["The order amount is too large to calculate"]);
+    expect(issues.messages.join(" ")).not.toMatch(/discount/);
   });
 });
