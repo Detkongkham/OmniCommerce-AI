@@ -80,13 +80,28 @@ export function syncVariants(
     if (!byKey.has(key)) byKey.set(key, variant);
   }
   const template = previous[0];
-  return combinations(active).map((optionValues, index) => {
+  const combos = combinations(active);
+  // SKUs of preserved rows (incl. user-typed) are never changed; new rows must not collide with them
+  // nor with each other (trimmed, case-sensitive like the API).
+  const taken = new Set<string>();
+  for (const optionValues of combos) {
+    const existing = byKey.get(comboKey(active, optionValues));
+    if (existing) taken.add(existing.sku.trim());
+  }
+  const uniqueSku = (candidate: string): string => {
+    if (candidate.trim() === "") return candidate;
+    let sku = candidate;
+    for (let n = 2; taken.has(sku.trim()); n += 1) sku = `${candidate}-${n}`;
+    taken.add(sku.trim());
+    return sku;
+  };
+  return combos.map((optionValues, index) => {
     const key = comboKey(active, optionValues);
     const existing = byKey.get(key);
     if (existing) return { ...existing, key, optionValues };
     return {
       key,
-      sku: suggestSku(skuPrefix, active.map((option) => optionValues[option.name] ?? ""), index + 1),
+      sku: uniqueSku(suggestSku(skuPrefix, active.map((option) => optionValues[option.name] ?? ""), index + 1)),
       barcode: "",
       price: template?.price ?? "",
       costPrice: template?.costPrice ?? "",

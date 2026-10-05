@@ -405,4 +405,30 @@ describe("ProductCreateForm", () => {
     }
     expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute("href", "/products");
   });
+
+  it("incremental typing of Lao option values yields unique SKUs and Save posts", async () => {
+    const { user } = renderWithProviders(<ProductCreateForm />);
+    await user.type(screen.getByLabelText("Product name"), "Smoke");
+    await user.type(screen.getByLabelText("SKU prefix"), "SMK");
+    await user.type(field(0, /^Price/), "100");
+    await user.type(field(0, /^Cost/), "40");
+
+    await user.click(screen.getByRole("button", { name: "Add option" }));
+    await user.type(screen.getByLabelText("Option name 1"), "ສີ");
+    await user.type(valueInputs()[0] as HTMLElement, "ແດງ{Enter}");
+    await user.type(valueInputs()[0] as HTMLElement, "ຟ້າ{Enter}");
+    await user.click(screen.getByRole("button", { name: "Add option" }));
+    await user.type(screen.getByLabelText("Option name 2"), "ໄຊສ໌");
+    await user.type(valueInputs()[1] as HTMLElement, "S{Enter}");
+    await user.type(valueInputs()[1] as HTMLElement, "M{Enter}");
+
+    expect(rows()).toHaveLength(4);
+    const skus = [0, 1, 2, 3].map((index) => (field(index, /^SKU/) as HTMLInputElement).value);
+    expect(new Set(skus).size).toBe(4);
+    expect(skus.every((sku) => sku !== "")).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/products/new-id"));
+    expect(posts()).toHaveLength(1);
+  });
 });

@@ -209,3 +209,56 @@ describe("renameOptionKeys", () => {
     expect(renameOptionKeys([], [color], rows)).toBeNull();
   });
 });
+
+describe("syncVariants: SKU uniqueness across incremental syncs", () => {
+  const skus = (rows: VariantDraft[]) => rows.map((row) => row.sku);
+
+  it("replays incremental typing (Lao values) and ends with 4 unique non-empty SKUs", () => {
+    const steps: OptionDraft[][] = [
+      [{ name: "ສີ", values: ["ແດງ"] }],
+      [{ name: "ສີ", values: ["ແດງ", "ຟ້າ"] }],
+      [{ name: "ສີ", values: ["ແດງ", "ຟ້າ"] }, { name: "ໄຊສ໌", values: [] }],
+      [{ name: "ສີ", values: ["ແດງ", "ຟ້າ"] }, { name: "ໄຊສ໌", values: ["S"] }],
+      [{ name: "ສີ", values: ["ແດງ", "ຟ້າ"] }, { name: "ໄຊສ໌", values: ["S", "M"] }],
+    ];
+    let rows = syncVariants([], [], "SMK");
+    for (const step of steps) {
+      rows = syncVariants(step, rows, "SMK");
+      const all = skus(rows);
+      expect(new Set(all).size).toBe(all.length);
+      expect(all.every((sku) => sku.trim() !== "")).toBe(true);
+    }
+    expect(rows).toHaveLength(4);
+  });
+
+  it("never gives a new row a SKU the user typed into another row, and keeps preserved SKUs", () => {
+    const two = syncVariants([{ name: "C", values: ["ແດງ", "ຟ້າ"] }], [], "T");
+    const typed = two.map((row, index) => (index === 0 ? { ...row, sku: "T-3" } : row));
+    const kept = typed[1]?.sku;
+    const rows = syncVariants([{ name: "C", values: ["ແດງ", "ຟ້າ", "ດຳ"] }], typed, "T");
+    expect(rows[0]?.sku).toBe("T-3");
+    expect(rows[1]?.sku).toBe(kept);
+    const all = skus(rows);
+    expect(new Set(all).size).toBe(3);
+  });
+
+  it("compares trimmed and case-sensitively", () => {
+    const base = syncVariants([{ name: "C", values: ["ແດງ"] }], [], "T");
+    const typed = base.map((row) => ({ ...row, sku: " T-2 " }));
+    const rows = syncVariants([{ name: "C", values: ["ແດງ", "ຟ້າ"] }], typed, "T");
+    expect(rows[1]?.sku.trim()).not.toBe("T-2");
+    const lower = base.map((row) => ({ ...row, sku: "t-2" }));
+    expect(syncVariants([{ name: "C", values: ["ແດງ", "ຟ້າ"] }], lower, "T")[1]?.sku).toBe("T-2");
+  });
+
+  it("all-Latin values still give readable SKUs", () => {
+    let rows = syncVariants([], [], "SMK");
+    rows = syncVariants([{ name: "Color", values: ["Red", "Blue"] }], rows, "SMK");
+    rows = syncVariants(
+      [{ name: "Color", values: ["Red", "Blue"] }, { name: "Size", values: ["S", "M"] }],
+      rows,
+      "SMK",
+    );
+    expect(skus(rows)).toEqual(["SMK-Red-S", "SMK-Red-M", "SMK-Blue-S", "SMK-Blue-M"]);
+  });
+});
