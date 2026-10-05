@@ -1,5 +1,6 @@
 import { Decimal } from "decimal.js";
 import { z } from "zod";
+import { STORE_UTC_OFFSET } from "../constants";
 import { SLUG_PATTERN } from "../slug";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,12 @@ export const slugSchema = z
   .max(100)
   .regex(SLUG_PATTERN, "slug ໃຊ້ໄດ້ສະເພາະ a-z 0-9 ແລະ - ຄັ່ນ");
 
+/** ອັດຕາ VAT ເປັນ string ("7" ຫຼື "7.00") ຄືກັບຈຳນວນເງິນ; 0–100, ≤2 ທົດສະນິຍົມ. API ຕອບກັບເປັນ "7.00". */
+export const vatRateSchema = z
+  .string()
+  .regex(/^\d{1,3}(\.\d{1,2})?$/, "ອັດຕາ VAT ບໍ່ຖືກຕ້ອງ")
+  .refine((value) => Number(value) <= 100, "ອັດຕາ VAT ຕ້ອງບໍ່ເກີນ 100");
+
 const reservationMinutesSchema = z.number().int().min(1).max(MAX_RESERVATION_MINUTES);
 
 const requireNonEmpty = <T extends object>(value: T) => Object.keys(value).length > 0;
@@ -79,7 +86,31 @@ const pageShape = {
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 };
 const boolQuery = z.enum(["true", "false"]).transform((value) => value === "true");
-const optionalDate = z.coerce.date().optional();
+
+/** ວັນທີ date-only (`2026-10-05`) ຖືເປັນເວລາຂອງຮ້ານ (ລາວ, UTC+7); ມີເວລາມາດ້ວຍກໍໃຊ້ຕາມທີ່ສົ່ງ. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function dateBound(edge: "from" | "to") {
+  return z
+    .string()
+    .trim()
+    .transform((value, ctx) => {
+      const dateOnly = DATE_ONLY.test(value);
+      const parsed = new Date(dateOnly ? `${value}T00:00:00.000${STORE_UTC_OFFSET}` : value);
+      // ວັນທີທີ່ເປັນໄປບໍ່ໄດ້ (2026-02-30) ບາງ engine ເລື່ອນເປັນມື້ອື່ນ -> ກວດວ່າແປງກັບຄືນໄດ້ຄືເກົ່າ
+      const valid =
+        !Number.isNaN(parsed.getTime()) &&
+        (!dateOnly || new Date(parsed.getTime() + 7 * 60 * 60 * 1000).toISOString().startsWith(value));
+      if (!valid) {
+        ctx.addIssue({ code: "custom", message: "Invalid date" });
+        return z.NEVER;
+      }
+      // `to` ເປັນຂອບເທິງແບບ exclusive: date-only = ຕົ້ນມື້ຖັດໄປ ເພື່ອໃຫ້ມື້ສຸດທ້າຍຮວມຢູ່ນຳ
+      return dateOnly && edge === "to" ? new Date(parsed.getTime() + DAY_MS) : parsed;
+    })
+    .optional();
+}
 const optionalText = z.string().trim().max(100).optional();
 
 export const productListQuerySchema = z.object({
@@ -103,8 +134,8 @@ export const stockMovementQuerySchema = z.object({
   warehouseId: idSchema.optional(),
   orderId: idSchema.optional(),
   type: z.enum(STOCK_MOVEMENT_TYPES).optional(),
-  from: optionalDate,
-  to: optionalDate,
+  from: dateBound("from"),
+  to: dateBound("to"),
 });
 
 export const orderListQuerySchema = z.object({
@@ -112,10 +143,24 @@ export const orderListQuerySchema = z.object({
   q: optionalText,
   status: z.enum(ORDER_STATUSES).optional(),
   channel: z.enum(SALES_CHANNELS).optional(),
-  from: optionalDate,
-  to: optionalDate,
+  from: dateBound("from"),
+  to: dateBound("to"),
 });
 
+/** ຄົ້ນຫາ variant ສຳລັບ /orders/new ແລະ ຮັບສະຕ໋ອກຄັ້ງທຳອິດ. ຄ່າເລີ່ມຕົ້ນ: ສະເພາະ variant/ສິນຄ້າທີ່ ACTIVE. */
+export const variantSearchQuerySchema = z.object({
+  ...pageShape,
+  q: optionalText,
+  includeInactive: boolQuery.optional(),
+});
+
+export const customerListQuerySchema = z.object({
+  ...pageShape,
+  q: optionalText,
+});
+
+export type VariantSearchQuery = z.infer<typeof variantSearchQuerySchema>;
+export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 export type ProductListQuery = z.infer<typeof productListQuerySchema>;
 export type StockListQuery = z.infer<typeof stockListQuerySchema>;
 export type StockMovementQuery = z.infer<typeof stockMovementQuerySchema>;
@@ -424,7 +469,7 @@ export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export const updateStoreSettingsSchema = z
   .strictObject({
     name: text(100).optional(),
-    vatRate: z.number().min(0).max(100).multipleOf(0.01).optional(),
+    vatRate: vatRateSchema.optional(),
     pricesIncludeVat: z.boolean().optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
   })

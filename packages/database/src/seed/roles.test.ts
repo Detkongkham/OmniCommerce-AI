@@ -35,4 +35,17 @@ describe("ROLE_DEFINITIONS", () => {
     expect(get("ACCOUNTANT")).toEqual(expect.arrayContaining(["analytics:read"]));
     expect(get("ACCOUNTANT").some((p) => p.endsWith(":write"))).toBe(false);
   });
+
+  it("ແບ່ງໜ້າທີ່ບິນ: CHAT_ADMIN ສ້າງບິນໄດ້ ແຕ່ບໍ່ຢືນຢັນຊຳລະ; WAREHOUSE ແພັກ/ສົ່ງໄດ້ ແຕ່ບໍ່ຢືນຢັນຊຳລະ; ມີແຕ່ຜູ້ຈັດການ+ເຈົ້າຂອງທີ່ຢືນຢັນຊຳລະ/ແກ້ຕົ້ນທຶນ", () => {
+    const get = (name: string) => ROLE_DEFINITIONS.find((r) => r.name === name)?.permissions ?? [];
+    expect(get("CHAT_ADMIN")).toEqual(expect.arrayContaining(["orders:read", "orders:write"]));
+    expect(get("WAREHOUSE")).toEqual(expect.arrayContaining(["orders:read", "logistics:write"]));
+    expect(get("WAREHOUSE")).not.toContain("orders:write");
+    for (const name of ["CHAT_ADMIN", "WAREHOUSE"]) {
+      expect(get(name)).not.toContain("payments:write");
+      expect(get(name)).not.toContain("costs:read");
+    }
+    expect(get("MANAGER")).toEqual(expect.arrayContaining(["payments:write", "costs:read", "costs:write"]));
+    expect(get("ACCOUNTANT")).toEqual(expect.arrayContaining(["costs:read", "payments:read"]));
+  });
 });

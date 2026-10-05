@@ -7,7 +7,10 @@ import {
   createWarehouseSchema,
   deltaSchema,
   moneySchema,
+  customerListQuerySchema,
   orderListQuerySchema,
+  stockMovementQuerySchema,
+  variantSearchQuerySchema,
   productListQuerySchema,
   quantitySchema,
   stockListQuerySchema,
@@ -248,18 +251,51 @@ describe("query schemas", () => {
   });
 });
 
+describe("date range ຂອງ filter (ເວລາຮ້ານ UTC+7)", () => {
+  it("from date-only = ຕົ້ນມື້ເວລາລາວ", () => {
+    expect(orderListQuerySchema.parse({ from: "2026-10-05" }).from?.toISOString()).toBe("2026-10-04T17:00:00.000Z");
+  });
+  it("to date-only = ຕົ້ນມື້ຖັດໄປ (exclusive) ເພື່ອໃຫ້ມື້ສຸດທ້າຍຮວມຢູ່ນຳ", () => {
+    expect(orderListQuerySchema.parse({ to: "2026-10-05" }).to?.toISOString()).toBe("2026-10-05T17:00:00.000Z");
+    expect(orderListQuerySchema.parse({ to: "2026-12-31" }).to?.toISOString()).toBe("2026-12-31T17:00:00.000Z");
+  });
+  it("ມີເວລາມາດ້ວຍ ໃຊ້ຕາມທີ່ສົ່ງ", () => {
+    expect(orderListQuerySchema.parse({ to: "2026-10-05T12:00:00Z" }).to?.toISOString()).toBe("2026-10-05T12:00:00.000Z");
+  });
+  it.each(["2026-02-30", "2026-13-01", "nope", "2026-10-05T25:00:00Z"])("%s ຜິດ", (value) => {
+    expect(orderListQuerySchema.safeParse({ from: value }).success).toBe(false);
+    expect(stockMovementQuerySchema.safeParse({ to: value }).success).toBe(false);
+  });
+  it("ບໍ່ໃສ່ = undefined", () => {
+    const parsed = stockMovementQuerySchema.parse({});
+    expect(parsed.from).toBeUndefined();
+    expect(parsed.to).toBeUndefined();
+  });
+});
+
+describe("variantSearchQuerySchema / customerListQuerySchema", () => {
+  it("includeInactive ເປັນ true/false string", () => {
+    expect(variantSearchQuerySchema.parse({ includeInactive: "true" }).includeInactive).toBe(true);
+    expect(variantSearchQuerySchema.safeParse({ includeInactive: "yes" }).success).toBe(false);
+  });
+  it("pagination ເລີ່ມຕົ້ນ", () => {
+    expect(customerListQuerySchema.parse({})).toMatchObject({ page: 1, pageSize: 20 });
+  });
+});
+
 describe("updateStoreSettingsSchema", () => {
   it("vatRate 0-100, reservationMinutes 1-10080, ບໍ່ມີ baseCurrency", () => {
-    expect(updateStoreSettingsSchema.safeParse({ vatRate: 10 }).success).toBe(true);
-    expect(updateStoreSettingsSchema.safeParse({ vatRate: 101 }).success).toBe(false);
+    expect(updateStoreSettingsSchema.safeParse({ vatRate: "10" }).success).toBe(true);
+    expect(updateStoreSettingsSchema.safeParse({ vatRate: "101" }).success).toBe(false);
+    expect(updateStoreSettingsSchema.safeParse({ vatRate: 10 }).success).toBe(false); // ຕ້ອງເປັນ string
     expect(updateStoreSettingsSchema.safeParse({ reservationMinutes: 0 }).success).toBe(false);
     expect(updateStoreSettingsSchema.safeParse({ baseCurrency: "USD" }).success).toBe(false);
     expect(updateStoreSettingsSchema.safeParse({}).success).toBe(false);
   });
-  it.each([0, 7, 10, 12.5, 0.01, 0.3, 33.33, 99.99, 100])("vatRate %s ຖືກຕ້ອງ (multipleOf 0.01)", (vatRate) => {
+  it.each(["0", "7", "10", "12.5", "0.01", "0.3", "33.33", "99.99", "100", "100.00"])("vatRate %s ຖືກຕ້ອງ (≤2 ທົດສະນິຍົມ)", (vatRate) => {
     expect(updateStoreSettingsSchema.safeParse({ vatRate }).success).toBe(true);
   });
-  it.each([0.015, 1.005, 5.555])("vatRate %s ມີເກີນ 2 ທົດສະນິຍົມ ຜິດ", (vatRate) => {
+  it.each(["0.015", "1.005", "5.555", "100.01", "-1", "abc", ""])("vatRate %s ຜິດ", (vatRate) => {
     expect(updateStoreSettingsSchema.safeParse({ vatRate }).success).toBe(false);
   });
 });

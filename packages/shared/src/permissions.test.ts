@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { ACTIONS, MODULES, PERMISSIONS, hasPermission, isPermission } from "./permissions";
 
 describe("permissions", () => {
-  it("ມີ 12 module ແລະ 2 action", () => {
-    expect(MODULES).toHaveLength(12);
+  it("ມີ 15 module ແລະ 2 action", () => {
+    expect(MODULES).toHaveLength(15);
     expect(ACTIONS).toEqual(["read", "write"]);
   });
 
   it("PERMISSIONS ແມ່ນ module x action ທັງໝົດ ບໍ່ຊ້ຳ", () => {
-    expect(PERMISSIONS).toHaveLength(24);
-    expect(new Set(PERMISSIONS).size).toBe(24);
+    expect(PERMISSIONS).toHaveLength(30);
+    expect(new Set(PERMISSIONS).size).toBe(30);
     expect(PERMISSIONS).toContain("staff:write");
     expect(PERMISSIONS).toContain("inventory:read");
   });

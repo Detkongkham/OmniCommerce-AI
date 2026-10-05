@@ -27,20 +27,20 @@ export const ROLE_DEFINITIONS: readonly RoleDefinition[] = [
   },
   {
     name: "CHAT_ADMIN",
-    description: "ແອດມິນແຊັດ: ຕອບແຊັດ, ດູແລ Live/CF",
+    description: "ແອດມິນແຊັດ: ຕອບແຊັດ, ດູແລ Live/CF, ສ້າງ/ຍົກເລີກບິນ (ບໍ່ຢືນຢັນຊຳລະ, ບໍ່ເຫັນຕົ້ນທຶນ)",
     isSystem: false,
-    permissions: [...readWrite("inbox", "live-cf"), ...readOnly("crm", "inventory", "promotion")],
+    permissions: [...readWrite("inbox", "live-cf", "orders"), ...readOnly("crm", "inventory", "promotion")],
   },
   {
     name: "WAREHOUSE",
-    description: "ພະນັກງານສາງ: ສະຕ໋ອກ ແລະ ການຈັດສົ່ງ",
+    description: "ພະນັກງານສາງ: ສະຕ໋ອກ, ແພັກ/ສົ່ງບິນ (ເບິ່ງບິນໄດ້ ແຕ່ບໍ່ຢືນຢັນຊຳລະ, ບໍ່ເຫັນຕົ້ນທຶນ)",
     isSystem: false,
-    permissions: readWrite("inventory", "logistics"),
+    permissions: [...readWrite("inventory", "logistics"), ...readOnly("orders")],
   },
   {
     name: "ACCOUNTANT",
     description: "ບັນຊີ: ເບິ່ງລາຍງານ ແລະ ຂໍ້ມູນທີ່ກ່ຽວຂ້ອງ (ອ່ານຢ່າງດຽວ)",
     isSystem: false,
-    permissions: readOnly("analytics", "inventory", "crm", "logistics"),
+    permissions: readOnly("analytics", "inventory", "crm", "logistics", "orders", "payments", "costs"),
   },
 ];
