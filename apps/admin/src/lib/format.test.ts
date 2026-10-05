@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatMoney } from "./format";
+import { formatDateTime, formatMoney, formatMovementQuantity } from "./format";
 
 describe("formatMoney", () => {
   it("ໃສ່ comma ຂັ້ນພັນ ແລະ ຮັກສາ 2 ທົດສະນິຍົມຈາກ string", () => {
@@ -23,5 +23,20 @@ describe("formatDateTime", () => {
   it("ຄ່າຫວ່າງ/ຜິດ → —", () => {
     expect(formatDateTime(null)).toBe("—");
     expect(formatDateTime("nope")).toBe("—");
+  });
+});
+
+describe("formatMovementQuantity", () => {
+  it("ປະເພດທີ່ເພີ່ມ onHand ມີ +; ທີ່ລົດ onHand ມີ −; ADJUST ໃຊ້ເຄື່ອງໝາຍຂອງຄ່າ; RESERVE/RELEASE ເປັນຈຳນວນລ້ວນ", () => {
+    expect(formatMovementQuantity("RECEIVE", 5)).toBe("+5");
+    expect(formatMovementQuantity("RETURN", 1)).toBe("+1");
+    expect(formatMovementQuantity("TRANSFER_IN", 2)).toBe("+2");
+    expect(formatMovementQuantity("SHIP", 3)).toBe("−3");
+    expect(formatMovementQuantity("TRANSFER_OUT", 4)).toBe("−4");
+    expect(formatMovementQuantity("ADJUST", -7)).toBe("−7");
+    expect(formatMovementQuantity("ADJUST", 7)).toBe("+7");
+    expect(formatMovementQuantity("RESERVE", 2)).toBe("2");
+    expect(formatMovementQuantity("RELEASE", 2)).toBe("2");
+    expect(formatMovementQuantity("RECEIVE", 1200)).toBe("+1,200");
   });
 });

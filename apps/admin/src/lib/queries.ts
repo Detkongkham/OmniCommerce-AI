@@ -284,8 +284,9 @@ export interface StockMovementParams {
   pageSize: number;
 }
 
-export function useStockMovements(params: StockMovementParams) {
+export function useStockMovements(params: StockMovementParams, options: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: [...queryKeys.stock, "movements", params],
     queryFn: () => apiFetch<Page<StockMovementDto>>(`/stock/movements${toQueryString({ ...params })}`),
     placeholderData: keepPreviousData,
