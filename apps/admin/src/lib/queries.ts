@@ -1,16 +1,32 @@
 import type {
   CreateCategoryInput,
+  CreateProductInput,
   CreateStaffInput,
   CreateWarehouseInput,
+  PutProductImagesInput,
   RoleInput,
   UpdateCategoryInput,
+  UpdateProductInput,
   UpdateStaffInput,
   UpdateStoreSettingsInput,
+  UpdateVariantInput,
   UpdateWarehouseInput,
+  VariantInput,
 } from "@oca/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
-import type { CategoryDto, RoleDto, StaffDto, StoreSettingsDto, WarehouseDto } from "./types";
+import { toQueryString } from "./query-string";
+import type {
+  CategoryDto,
+  Page,
+  ProductDetailDto,
+  ProductListItemDto,
+  RoleDto,
+  StaffDto,
+  StoreSettingsDto,
+  VariantDto,
+  WarehouseDto,
+} from "./types";
 
 export const queryKeys = {
   staff: ["staff"] as const,
@@ -18,6 +34,7 @@ export const queryKeys = {
   warehouses: ["warehouses"] as const,
   categories: ["categories"] as const,
   storeSettings: ["store-settings"] as const,
+  products: ["products"] as const,
 };
 
 export function useStaffList() {
@@ -134,6 +151,86 @@ export function useUpdateStoreSettings() {
   return useMutation({
     mutationFn: (input: UpdateStoreSettingsInput) =>
       apiFetch<StoreSettingsDto>("/settings/store", { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ສິນຄ້າ
+// ---------------------------------------------------------------------------
+export interface ProductListParams {
+  q?: string;
+  status?: string;
+  categoryId?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useProducts(params: ProductListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.products, "list", params],
+    queryFn: () => apiFetch<Page<ProductListItemDto>>(`/products${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useProduct(id: string) {
+  return useQuery({
+    queryKey: [...queryKeys.products, "detail", id],
+    queryFn: () => apiFetch<ProductDetailDto>(`/products/${id}`),
+  });
+}
+
+// ສ້າງ/ແກ້/ລຶບສິນຄ້າປ່ຽນ CategoryDto.productCount ຈຶ່ງ invalidate categories ນຳ
+export function useCreateProduct() {
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
+  return useMutation({
+    mutationFn: (input: CreateProductInput) => apiFetch<ProductDetailDto>("/products", { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateProduct() {
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateProductInput }) =>
+      apiFetch<ProductDetailDto>(`/products/${id}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+/** 204 → undefined (ລຶບແທ້); 200 → { archived: true } (ຖືກ archive ເພາະເຄີຍຖືກຂາຍ) */
+export function useDeleteProduct() {
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<{ archived: true } | undefined>(`/products/${id}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddVariant() {
+  const invalidate = useInvalidate(queryKeys.products);
+  return useMutation({
+    mutationFn: ({ productId, input }: { productId: string; input: VariantInput }) =>
+      apiFetch<VariantDto>(`/products/${productId}/variants`, { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateVariant() {
+  const invalidate = useInvalidate(queryKeys.products);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateVariantInput }) =>
+      apiFetch<VariantDto>(`/variants/${id}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function usePutImages() {
+  const invalidate = useInvalidate(queryKeys.products);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: PutProductImagesInput }) =>
+      apiFetch<ProductDetailDto>(`/products/${id}/images`, { method: "PUT", body: input }),
     onSuccess: invalidate,
   });
 }

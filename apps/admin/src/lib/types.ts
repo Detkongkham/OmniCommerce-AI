@@ -1,4 +1,4 @@
-import type { Permission } from "@oca/shared";
+import type { Permission, ProductStatus } from "@oca/shared";
 
 export interface StaffDto {
   id: string;
@@ -53,4 +53,68 @@ export interface StoreSettingsDto {
   vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
+}
+
+export interface ProductListItemDto {
+  id: string;
+  name: string;
+  slug: string;
+  status: ProductStatus;
+  category: { id: string; name: string } | null;
+  imageUrl: string | null;
+  variantCount: number;
+  priceMin: string | null;
+  priceMax: string | null;
+  availableTotal: number;
+}
+
+export interface StockCellDto {
+  warehouseId: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+}
+
+export interface VariantDto {
+  id: string;
+  sku: string;
+  barcode: string | null;
+  name: string | null;
+  price: string;
+  compareAtPrice: string | null;
+  /** ບໍ່ມີເມື່ອຜູ້ໃຊ້ບໍ່ມີ costs:read */
+  costPrice?: string;
+  weightGrams: number | null;
+  isActive: boolean;
+  optionValues: Record<string, string>;
+  stock: StockCellDto[];
+}
+
+export interface ProductDetailDto {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  status: ProductStatus;
+  categoryId: string | null;
+  options: { id: string; name: string; position: number; values: { id: string; value: string; position: number }[] }[];
+  variants: VariantDto[];
+  images: { id: string; url: string; alt: string | null; position: number; variantId: string | null }[];
+}
+
+/** ຜົນຂອງ GET /variants (ຄົ້ນຫາ variant ພ້ອມລາຄາ ແລະ ສະຕ໋ອກ) */
+export interface VariantSearchItemDto {
+  id: string;
+  sku: string;
+  barcode: string | null;
+  name: string | null;
+  productId: string;
+  productName: string;
+  productStatus: ProductStatus;
+  imageUrl: string | null;
+  price: string;
+  costPrice?: string;
+  isActive: boolean;
+  availableTotal: number;
+  stock: StockCellDto[];
 }
