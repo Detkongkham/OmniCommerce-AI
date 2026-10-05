@@ -326,4 +326,30 @@ describe("OrderForm", () => {
     expect(keyOf(orderCalls()[3])).toBe(keyOf(third));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/orders/new-order"));
   });
+
+  it("Enter ໃນຊ່ອງໃດໆ (ຊ່ອງຄົ້ນຫາສິນຄ້າ/ໝາຍເຫດ/ຊື່/ເບີ/ຄ່າສົ່ງ/ເວລາຈອງ/ທີ່ຢູ່) ຕອນກະຕ່າບໍ່ເປົ່າ ບໍ່ສ້າງບິນ; ກົດປຸ່ມຈຶ່ງສ້າງເທື່ອດຽວ", async () => {
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    // ເຄື່ອງສະແກນບາໂຄດ: ພິມລະຫັດ + Enter ໃນຊ່ອງຄົ້ນຫາ
+    await user.type(screen.getByLabelText("Add item (search SKU/name)"), "mug{Enter}");
+    await user.type(screen.getByLabelText("Note"), "x{Enter}");
+    await user.type(screen.getByLabelText("Recipient name"), "x{Enter}");
+    await user.type(screen.getByLabelText("Recipient phone"), "1{Enter}");
+    await user.type(screen.getByLabelText("Shipping address"), "x{Enter}");
+    await user.type(screen.getByLabelText("Shipping fee"), "5{Enter}");
+    await user.type(screen.getByLabelText("Reservation time (minutes)"), "45{Enter}");
+    await user.type(screen.getByLabelText("Discount TEE-R"), "1{Enter}");
+    await user.type(screen.getByLabelText("Qty TEE-R"), "{Enter}");
+    await user.click(screen.getByRole("radio", { name: "New customer" }));
+    await user.type(screen.getByLabelText(/^Customer name/), "Mali{Enter}");
+    await user.type(screen.getByLabelText(/^Phone/), "02055550001{Enter}");
+    await user.type(screen.getByLabelText(/^Email/), "a@b.co{Enter}");
+    // radio ຕ້ອງບໍ່ submit ດ້ວຍ Enter ເຊັ່ນກັນ
+    screen.getByRole("radio", { name: "New customer" }).focus();
+    await user.keyboard("{Enter}");
+    expect(orderCalls()).toHaveLength(0);
+
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(1));
+  });
 });

@@ -202,4 +202,21 @@ describe("CustomerPicker", () => {
       document.removeEventListener("keydown", onDocKey, true);
     }
   });
+
+  it("Enter ໃນຊ່ອງຄົ້ນຫາບໍ່ submit form ທີ່ຫໍ່ຢູ່ (ເຄື່ອງສະແກນບາໂຄດສົ່ງ Enter) ບໍ່ວ່າລາຍການຍັງບໍ່ເປີດ ຫຼື ບໍ່ມີຕົວເລືອກທີ່ເນັ້ນ", async () => {
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+    const { user } = renderWithProviders(
+      <form onSubmit={onSubmit}>
+        <CustomerPicker value={null} onSelect={vi.fn()} />
+        <button type="submit">go</button>
+      </form>,
+    );
+    const input = screen.getByLabelText("Search name or phone");
+    // ກ່ອນ debounce ຄົບ (ລາຍການຍັງບໍ່ເປີດ)
+    await user.type(input, "tee{Enter}");
+    // ລາຍການເປີດແລ້ວ ແຕ່ຍັງບໍ່ໄດ້ເນັ້ນຕົວເລືອກ (activeIndex -1)
+    await screen.findByRole("option");
+    await user.keyboard("{Enter}");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

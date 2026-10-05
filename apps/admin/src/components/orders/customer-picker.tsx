@@ -81,6 +81,9 @@ export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPicker
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    // Enter ຕ້ອງບໍ່ submit form ທີ່ຫໍ່ຢູ່ ເດັດຂາດ (ເຄື່ອງສະແກນບາໂຄດສົ່ງ Enter ຕາມຫຼັງລະຫັດ): ກັນທຸກກໍລະນີ
+    // ລວມຕອນລາຍການຍັງບໍ່ເປີດ (debounce) ຫຼື ຍັງບໍ່ໄດ້ເນັ້ນຕົວເລືອກ
+    if (event.key === "Enter") event.preventDefault();
     // Escape ຈັດການທີ່ window capture ຂ້າງເທິງ (ຕອນລາຍການເປີດເທົ່ານັ້ນ)
     if (!showList) return;
     if (event.key === "ArrowDown") {
@@ -90,7 +93,6 @@ export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPicker
       event.preventDefault();
       setActiveIndex((i) => (i <= 0 ? results.length - 1 : i - 1));
     } else if (event.key === "Enter" && activeItem) {
-      event.preventDefault();
       select(activeItem);
     }
   }
