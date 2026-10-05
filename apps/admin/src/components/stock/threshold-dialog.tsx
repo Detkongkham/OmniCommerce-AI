@@ -42,6 +42,7 @@ export function ThresholdDialog({ level, onOpenChange }: ThresholdDialogProps) {
 }
 
 const ERROR_ID = "threshold-error";
+const HINT_ID = "threshold-hint";
 
 function ThresholdForm({
   level,
@@ -60,14 +61,18 @@ function ThresholdForm({
   const [value, setValue] = useState(level.lowStockThreshold === null ? "" : String(level.lowStockThreshold));
   const [message, setMessage] = useState<string | null>(null);
   const [fieldInvalid, setFieldInvalid] = useState(false);
+  // <input type="number"> ລາຍງານ value "" ເມື່ອພິມຂໍ້ຄວາມທີ່ parse ບໍ່ໄດ້ ("e", "-"): ຕ້ອງແຍກຈາກຊ່ອງວ່າງຈິງ
+  const [badInput, setBadInput] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (saving || save.isPending || submitting.current) return;
     // ເວັ້ນວ່າງ = null (ບໍ່ເຕືອນ); 0 ເປັນຄ່າຖືກຕ້ອງ ແຕກຕ່າງຈາກ null
     const trimmed = value.trim();
-    const parsed = stockThresholdSchema.safeParse({ lowStockThreshold: trimmed === "" ? null : Number(trimmed) });
-    if (!parsed.success) {
+    const parsed = badInput
+      ? null
+      : stockThresholdSchema.safeParse({ lowStockThreshold: trimmed === "" ? null : Number(trimmed) });
+    if (!parsed?.success) {
       setFieldInvalid(true);
       setMessage(t("stock.err.threshold"));
       return;
@@ -113,14 +118,15 @@ function ThresholdForm({
             step={1}
             value={value}
             invalid={fieldInvalid}
-            aria-describedby={message ? ERROR_ID : undefined}
+            aria-describedby={message ? `${ERROR_ID} ${HINT_ID}` : HINT_ID}
             onChange={(event) => {
               setMessage(null);
               setFieldInvalid(false);
+              setBadInput(event.target.validity.badInput);
               setValue(event.target.value);
             }}
           />
-          <p className="mt-1 text-xs text-ink-muted">{t("stock.field.thresholdHint")}</p>
+          <p id={HINT_ID} className="mt-1 text-xs text-ink-muted">{t("stock.field.thresholdHint")}</p>
         </Field>
       </DialogBody>
       <DialogFooter>
