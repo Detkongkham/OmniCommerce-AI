@@ -1,6 +1,7 @@
 import { type ErrorCode, isErrorCode } from "@oca/shared";
 import type { Translate, TranslationKey } from "@/lib/i18n/dictionary";
 import { ApiError } from "./api";
+import type { Shortage } from "./types";
 
 /** code ທົ່ວໄປທີ່ message ຂອງ API ໃຫ້ລາຍລະອຽດຫຼາຍກວ່າຂໍ້ຄວາມແປ ຈຶ່ງໃຊ້ message ກ່ອນ */
 const GENERIC_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
@@ -24,4 +25,21 @@ export function errorMessage(error: unknown, t: Translate): string {
     if (error.message) return error.message;
   }
   return t("common.error.generic");
+}
+
+/** ລາຍການທີ່ສະຕ໋ອກບໍ່ພໍ ຈາກ body ຂອງ 409 INSUFFICIENT_STOCK; ຢ່າງອື່ນ = [] */
+export function extractShortages(error: unknown): Shortage[] {
+  if (!(error instanceof ApiError) || error.code !== "INSUFFICIENT_STOCK") return [];
+  const shortages = error.body?.shortages;
+  return Array.isArray(shortages) ? (shortages as Shortage[]) : [];
+}
+
+export function shortageLines(error: unknown, t: Translate): string[] {
+  return extractShortages(error).map((shortage) =>
+    t("stock.shortage", {
+      sku: shortage.sku ?? shortage.variantId,
+      requested: shortage.requested,
+      available: shortage.available,
+    }),
+  );
 }

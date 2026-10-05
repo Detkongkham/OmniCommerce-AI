@@ -1,4 +1,4 @@
-import type { Permission, ProductStatus } from "@oca/shared";
+import type { Permission, ProductStatus, StockMovementType } from "@oca/shared";
 
 export interface StaffDto {
   id: string;
@@ -117,4 +117,44 @@ export interface VariantSearchItemDto {
   isActive: boolean;
   availableTotal: number;
   stock: StockCellDto[];
+}
+
+export interface StockLevelDto {
+  id: string;
+  variantId: string;
+  sku: string;
+  variantName: string | null;
+  productName: string;
+  warehouseId: string;
+  warehouseCode: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  lowStockThreshold: number | null;
+  isLow: boolean;
+}
+
+export interface StockMovementDto {
+  id: string;
+  type: StockMovementType;
+  quantity: number;
+  variantId: string;
+  sku: string;
+  warehouseId: string;
+  warehouseCode: string;
+  orderId: string | null;
+  orderNumber: string | null;
+  note: string | null;
+  actorId: string | null;
+  actorName: string | null;
+  createdAt: string;
+}
+
+/** ສ່ວນຂອງ body 409 INSUFFICIENT_STOCK */
+export interface Shortage {
+  variantId: string;
+  warehouseId: string;
+  sku: string | null;
+  requested: number;
+  available: number;
 }

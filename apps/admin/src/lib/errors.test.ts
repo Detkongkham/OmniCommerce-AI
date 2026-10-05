@@ -1,7 +1,7 @@
 import { ERROR_CODES } from "@oca/shared";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { errorMessage } from "./errors";
+import { errorMessage, extractShortages, shortageLines } from "./errors";
 import { type TranslationKey, dictionaries, translate } from "./i18n/dictionary";
 
 const t = (key: TranslationKey, params?: Record<string, string | number>) => translate("en", key, params);
@@ -43,5 +43,27 @@ describe("errorMessage", () => {
       expect(dictionaries.lo[key], `lo ${key}`).toBeTruthy();
       expect(dictionaries.en[key], `en ${key}`).toBeTruthy();
     }
+  });
+});
+
+describe("shortages", () => {
+  const shortage = { variantId: "v1", warehouseId: "w1", sku: "TEE-R", requested: 5, available: 2 };
+
+  it("extractShortages ອ່ານ body.shortages ຂອງ INSUFFICIENT_STOCK; ຢ່າງອື່ນຄືນ []", () => {
+    const error = new ApiError(409, "x", [], "INSUFFICIENT_STOCK", { shortages: [shortage] });
+    expect(extractShortages(error)).toEqual([shortage]);
+    expect(extractShortages(new ApiError(409, "x", [], "CONFLICT"))).toEqual([]);
+    expect(extractShortages(new Error("x"))).toEqual([]);
+    expect(extractShortages(new ApiError(409, "x", [], "INSUFFICIENT_STOCK", { shortages: "bad" }))).toEqual([]);
+  });
+
+  it("shortageLines ແປເປັນຂໍ້ຄວາມ (ໃຊ້ variantId ຖ້າ sku ເປັນ null)", () => {
+    const error = new ApiError(409, "x", [], "INSUFFICIENT_STOCK", {
+      shortages: [shortage, { ...shortage, sku: null, variantId: "v9" }],
+    });
+    expect(shortageLines(error, t)).toEqual([
+      "TEE-R: needs 5 but only 2 available",
+      "v9: needs 5 but only 2 available",
+    ]);
   });
 });

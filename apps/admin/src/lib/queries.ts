@@ -1,9 +1,13 @@
 import type {
+  AdjustStockInput,
   CreateCategoryInput,
   CreateStaffInput,
   CreateWarehouseInput,
   PutProductImagesInput,
+  ReceiveStockInput,
+  ReturnStockInput,
   RoleInput,
+  TransferStockInput,
   UpdateCategoryInput,
   UpdateProductInput,
   UpdateStaffInput,
@@ -24,8 +28,11 @@ import type {
   ProductListItemDto,
   RoleDto,
   StaffDto,
+  StockLevelDto,
+  StockMovementDto,
   StoreSettingsDto,
   VariantDto,
+  VariantSearchItemDto,
   WarehouseDto,
 } from "./types";
 
@@ -36,6 +43,8 @@ export const queryKeys = {
   categories: ["categories"] as const,
   storeSettings: ["store-settings"] as const,
   products: ["products"] as const,
+  stock: ["stock"] as const,
+  variants: ["variants"] as const,
 };
 
 export function useStaffList() {
@@ -242,6 +251,77 @@ export function usePutImages() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: PutProductImagesInput }) =>
       apiFetch<ProductDetailDto>(`/products/${id}/images`, { method: "PUT", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ສະຕ໋ອກ
+// ---------------------------------------------------------------------------
+export interface StockListParams {
+  q?: string;
+  warehouseId?: string;
+  lowStock?: boolean;
+  page: number;
+  pageSize: number;
+}
+
+export function useStockLevels(params: StockListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.stock, "levels", params],
+    queryFn: () => apiFetch<Page<StockLevelDto>>(`/stock${toQueryString({ ...params, lowStock: params.lowStock ? true : undefined })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export interface StockMovementParams {
+  type?: string;
+  variantId?: string;
+  warehouseId?: string;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useStockMovements(params: StockMovementParams) {
+  return useQuery({
+    queryKey: [...queryKeys.stock, "movements", params],
+    queryFn: () => apiFetch<Page<StockMovementDto>>(`/stock/movements${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** ຄົ້ນຫາ variant (autocomplete): ບໍ່ຍິງເມື່ອ q ເປົ່າ */
+export function useVariantSearch(params: { q: string; includeInactive?: boolean }) {
+  const q = params.q.trim();
+  return useQuery({
+    queryKey: [...queryKeys.variants, "search", q, params.includeInactive ?? false],
+    queryFn: () =>
+      apiFetch<Page<VariantSearchItemDto>>(
+        `/variants${toQueryString({ q, includeInactive: params.includeInactive ? true : undefined, page: 1, pageSize: 8 })}`,
+      ),
+    enabled: q !== "",
+  });
+}
+
+export type StockOpMode = "receive" | "adjust" | "transfer" | "return";
+export type StockOpInput = ReceiveStockInput | AdjustStockInput | TransferStockInput | ReturnStockInput;
+
+export function useStockOperation() {
+  const invalidate = useInvalidate(queryKeys.stock, queryKeys.products, queryKeys.variants);
+  return useMutation({
+    mutationFn: ({ mode, input }: { mode: StockOpMode; input: StockOpInput }) =>
+      apiFetch<unknown>(`/stock/${mode}`, { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetThreshold() {
+  const invalidate = useInvalidate(queryKeys.stock);
+  return useMutation({
+    mutationFn: ({ id, lowStockThreshold }: { id: string; lowStockThreshold: number | null }) =>
+      apiFetch<StockLevelDto>(`/stock/${id}/threshold`, { method: "PATCH", body: { lowStockThreshold } }),
     onSuccess: invalidate,
   });
 }
