@@ -19,6 +19,18 @@ describe("errorMessage", () => {
     );
   });
 
+  it("code ທີ່ບໍ່ຮູ້ຈັກ ແຕ່ມີ message ໃຊ້ message", () => {
+    expect(errorMessage(new ApiError(400, "Something odd", [], "SOME_FUTURE_CODE"), t)).toBe("Something odd");
+  });
+
+  it("UNAUTHORIZED ໃຊ້ message ຂອງ API (ເຊັ່ນ Invalid credentials ຕອນ login)", () => {
+    expect(errorMessage(new ApiError(401, "Invalid credentials", [], "UNAUTHORIZED"), t)).toBe("Invalid credentials");
+  });
+
+  it("code ທົ່ວໄປ ແຕ່ message ຫວ່າງ ໃຊ້ຂໍ້ຄວາມແປ", () => {
+    expect(errorMessage(new ApiError(409, "", [], "CONFLICT"), t)).toBe(t("error.CONFLICT"));
+  });
+
   it("ບໍ່ມີ code: ໃຊ້ message; ບໍ່ແມ່ນ ApiError: ຂໍ້ຄວາມກາງ", () => {
     expect(errorMessage(new ApiError(500, "boom"), t)).toBe("boom");
     expect(errorMessage(new Error("x"), t)).toBe(t("common.error.generic"));

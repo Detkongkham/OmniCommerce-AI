@@ -1,9 +1,16 @@
-import { isErrorCode } from "@oca/shared";
+import { type ErrorCode, isErrorCode } from "@oca/shared";
 import type { Translate, TranslationKey } from "@/lib/i18n/dictionary";
 import { ApiError } from "./api";
 
 /** code ທົ່ວໄປທີ່ message ຂອງ API ໃຫ້ລາຍລະອຽດຫຼາຍກວ່າຂໍ້ຄວາມແປ ຈຶ່ງໃຊ້ message ກ່ອນ */
-const GENERIC_CODES = new Set(["BAD_REQUEST", "CONFLICT", "NOT_FOUND", "FORBIDDEN", "INTERNAL_ERROR"]);
+const GENERIC_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "CONFLICT",
+  "NOT_FOUND",
+  "FORBIDDEN",
+  "INTERNAL_ERROR",
+]);
 
 /**
  * ຂໍ້ຄວາມ error ທີ່ສະແດງຜູ້ໃຊ້ (spec §6.2): ແປຈາກ `code` ຄົງທີ່; code ທົ່ວໄປໃຊ້ message ຂອງ API;
