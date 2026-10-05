@@ -250,6 +250,8 @@ pricesIncludeVat = false:  vatAmount = round(vatBase × r / 100);        total =
 
 Error ຈາກ API ສະແດງເປັນ toast ໂດຍແປຈາກ `code` (§6.2); ຖ້າບໍ່ຮູ້ຈັກ code ໃຊ້ `message`. i18n: lo/en ຕາມ dictionary ທີ່ມີ. ປຸ່ມ/ເມນູຊ່ອນຕາມສິດຈິງຂອງຜູ້ໃຊ້ (§6.1): ຄອລຳຕົ້ນທຶນສະແດງສະເພາະເມື່ອ `costs:read`; ປຸ່ມຢືນຢັນຊຳລະ = `payments:write`; ແພັກ/ສົ່ງ/ປິດ = `logistics:write`; ສ້າງ/ຍົກເລີກ = `orders:write`.
 
+ແບ່ງ 1a-ui ເປັນ 4 plan (ແຕ່ລະອັນໃຊ້ງານໄດ້ເອງ): **A4** ພື້ນຖານ + ສາງ + ໝວດໝູ່ + ຕັ້ງຄ່າຮ້ານ, **A5** ສິນຄ້າ, **A6** ສະຕ໋ອກ (ຍອດ + ປະຫວັດ), **A7** ຄຳສັ່ງຊື້ (`docs/superpowers/plans/2026-10-05-phase1-a4…a7-*.md`). ປຸ່ມ/ເມນູຜູກສິດຕາມ §6.1.
+
 ## 11. ການທົດສອບ
 **ເຄື່ອງຈັກ + e2e (Postgres ຈິງ `oca_test` ໃນ `apps/api/test`, ຕາມ pattern `staff.e2e.test.ts`; ຫ້າມແຕະ 5432 ຂອງຜູ້ໃຊ້)**
 1. `reserve` ພ້ອມກັນ 20 ຄັ້ງ ໃສ່ສະຕ໋ອກ 1 ຊິ້ນ → ສຳເລັດ 1, ທີ່ເຫຼືອ `InsufficientStockError`, `reserved = 1`, movement `RESERVE` 1 ແຖວ.
