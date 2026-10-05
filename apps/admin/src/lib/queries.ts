@@ -10,8 +10,8 @@ import type {
   UpdateStoreSettingsInput,
   UpdateVariantInput,
   UpdateWarehouseInput,
-  VariantInput,
   createProductSchema,
+  variantInputSchema,
 } from "@oca/shared";
 import type { z } from "zod";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -218,10 +218,11 @@ export function useDeleteProduct() {
   });
 }
 
+// the request side of the schema: costPrice is optional (users without costs:write must not send it)
 export function useAddVariant() {
   const invalidate = useInvalidate(queryKeys.products);
   return useMutation({
-    mutationFn: ({ productId, input }: { productId: string; input: VariantInput }) =>
+    mutationFn: ({ productId, input }: { productId: string; input: z.input<typeof variantInputSchema> }) =>
       apiFetch<VariantDto>(`/products/${productId}/variants`, { method: "POST", body: input }),
     onSuccess: invalidate,
   });

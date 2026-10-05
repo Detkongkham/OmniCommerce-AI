@@ -25,13 +25,13 @@ export function ProblemAlert({ messages, className }: { messages: string[]; clas
     >
       {messages.length === 1 ? (
         <p>{messages[0]}</p>
-      ) : (
+      ) : messages.length > 1 ? (
         <ul className="list-inside list-disc">
           {messages.map((line, index) => (
             <li key={`${index}-${line}`}>{line}</li>
           ))}
         </ul>
-      )}
+      ) : null}
     </div>
   );
 }

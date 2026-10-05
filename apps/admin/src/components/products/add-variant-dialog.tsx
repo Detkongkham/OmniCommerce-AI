@@ -3,6 +3,7 @@
 import { variantInputSchema } from "@oca/shared";
 import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Field, Input, Select, toast } from "@oca/ui";
 import { useRef, useState } from "react";
+import type { z } from "zod";
 import { useCan } from "@/components/auth/auth-provider";
 import { errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
@@ -26,6 +27,10 @@ export function AddVariantDialog({ open, onOpenChange, product }: AddVariantDial
       </DialogContent>
     </Dialog>
   );
+}
+
+function omitCost({ costPrice: _defaulted, ...rest }: z.output<typeof variantInputSchema>) {
+  return rest;
 }
 
 function AddVariantForm({ product, onDone }: { product: ProductDetailDto; onDone: () => void }) {
@@ -68,8 +73,7 @@ function AddVariantForm({ product, onDone }: { product: ProductDetailDto; onDone
       return;
     }
     // the schema fills costPrice "0" by default; without costs:write the field must not be sent at all
-    const { costPrice: _defaulted, ...withoutCost } = parsed.data;
-    const input = canSetCost ? parsed.data : withoutCost;
+    const input = canSetCost ? parsed.data : omitCost(parsed.data);
 
     setProblems([]);
     submitting.current = true;
