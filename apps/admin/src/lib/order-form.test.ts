@@ -105,14 +105,28 @@ describe("computeTotals", () => {
     }
   });
 
-  it("ຄ່າໃຫຍ່ຫຼາຍຖືກຕ້ອງແນ່ນອນດ້ວຍ decimal string (ບໍ່ມີ float error)", () => {
-    const big = variant({ price: "9999999999999999.99" });
-    const totals = computeTotals(form({ lines: [lineOf({ variant: big, quantity: "3" })] }), {
+  it("ຄ່າໃຫຍ່ທີ່ເກັບໄດ້ (≤ 16 ຫຼັກ) ຖືກຕ້ອງແນ່ນອນດ້ວຍ decimal string (ບໍ່ມີ float error)", () => {
+    const big = variant({ price: "3333333333333333.33" });
+    const totals = computeTotals(form({ lines: [lineOf({ variant: big, quantity: "3", discount: "" })] }), {
       vatRate: "0",
       pricesIncludeVat: true,
     });
-    expect(totals?.subtotal).toBe("29999999999999999.97");
-    expect(computeTotals(form({ lines: [lineOf({ variant: variant({ price: "0.10" }), quantity: "3" })] }), settings)?.subtotal).toBe("0.30");
+    expect(totals?.subtotal).toBe("9999999999999999.99");
+    expect(computeTotals(form({ lines: [lineOf({ variant: variant({ price: "0.10" }), quantity: "3", discount: "" })] }), settings)?.subtotal).toBe("0.30");
+  });
+
+  it("subtotal ຫຼື total ເກີນ 16 ຫຼັກ (ເກີນ Decimal(18,2) ຂອງ DB) → null", () => {
+    const big = variant({ price: "9999999999999999.99" });
+    const noVat = { vatRate: "0", pricesIncludeVat: true };
+    expect(computeTotals(form({ lines: [lineOf({ variant: big, quantity: "3", discount: "" })] }), noVat)).toBeNull();
+    // subtotal ພໍດີ 16 ຫຼັກ ແຕ່ຄ່າສົ່ງ ແລະ VAT ເຮັດໃຫ້ total ເກີນ
+    expect(computeTotals(form({ lines: [lineOf({ variant: big, discount: "" })], shippingFee: "1" }), noVat)).toBeNull();
+    expect(
+      computeTotals(form({ lines: [lineOf({ variant: variant({ price: "9999999999999999.00" }), discount: "" })] }), {
+        vatRate: "10",
+        pricesIncludeVat: false,
+      }),
+    ).toBeNull();
   });
 
   it("ລາຄາ variant ບໍ່ເປັນ decimal ທີ່ຖືກ → null", () => {

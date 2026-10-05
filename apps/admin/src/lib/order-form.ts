@@ -39,7 +39,11 @@ export function emptyOrderForm(): OrderFormState {
   };
 }
 
+// ຊ້ຳກັບ `quantitySchema` (1..1_000_000) ຂອງ @oca/shared ທີ່ບໍ່ export ຄ່າຄົງທີ່; ແກ້ຄູ່ກັນ
 const MAX_QUANTITY = 1_000_000;
+// ຖັນເງິນຂອງ DB ເປັນ Decimal(18,2) → ສູງສຸດ 16 ຫຼັກກ່ອນຈຸດ
+const MAX_INTEGER_DIGITS = 16;
+const fitsColumn = (value: string): boolean => (value.split(".")[0] ?? "").length <= MAX_INTEGER_DIGITS;
 
 /** ຈຳນວນເຕັມທີ່ພິມເປັນຕົວເລກລ້ວນເທົ່ານັ້ນ ("1e3", "1.5", "-1", "0x10" ບໍ່ນັບ); ຢ່າງອື່ນ null */
 function parseDigits(value: string): number | null {
@@ -57,7 +61,7 @@ export function lineAvailable(line: OrderLineDraft, defaultWarehouseId: string |
 
 /**
  * ສະຫຼຸບເງິນຝັ່ງ client (ຄາດຄະເນ): ສູດດຽວກັບ API ຜ່ານ `calculateOrderTotals` ດ້ວຍ decimal string.
- * ຂໍ້ມູນຍັງບໍ່ຄົບ/ຜິດ (ຈຳນວນເປົ່າ/ສູນ/ບໍ່ເຕັມ, ເງິນຜິດຮູບແບບ ຫຼື ຕິດລົບ, ສ່ວນຫຼຸດເກີນຍອດແຖວ, VAT ຜິດ, ກະຕ່າເປົ່າ)
+ * ຂໍ້ມູນຍັງບໍ່ຄົບ/ຜິດ (ຈຳນວນເປົ່າ/ສູນ/ບໍ່ເຕັມ, ເງິນຜິດຮູບແບບ ຫຼື ຕິດລົບ, ສ່ວນຫຼຸດເກີນຍອດແຖວ, VAT ຜິດ, ກະຕ່າເປົ່າ, ຍອດເກີນ 16 ຫຼັກ)
  * → null ແທນທີ່ຈະ throw ຂະນະພິມ.
  */
 export function computeTotals(
@@ -77,12 +81,14 @@ export function computeTotals(
       }
       return { unitPrice: line.variant.price, quantity, discount };
     });
-    return calculateOrderTotals({
+    const totals = calculateOrderTotals({
       lines,
       shippingFee,
       vatRate: settings.vatRate,
       pricesIncludeVat: settings.pricesIncludeVat,
     });
+    // ຍອດທີ່ DB ເກັບບໍ່ໄດ້ (ເກີນ 16 ຫຼັກ) ຖືວ່າບໍ່ຖືກຕ້ອງ ແທນທີ່ຈະສະແດງຕົວເລກທີ່ API ຈະປະຕິເສດ
+    return fitsColumn(totals.subtotal) && fitsColumn(totals.total) ? totals : null;
   } catch {
     return null;
   }

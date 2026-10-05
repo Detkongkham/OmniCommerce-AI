@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatCountdown, useCountdown } from "./use-countdown";
 
@@ -45,15 +46,78 @@ describe("useCountdown", () => {
     expect(renderHook(() => useCountdown(-30, "a")).result.current).toBe(0);
   });
 
-  it("ບໍ່ເດີນຜິດເມື່ອ tick ຊ້າ (ໃຊ້ເວລາທີ່ຜ່ານໄປ ບໍ່ນັບຈຳນວນ tick)", () => {
-    const base = performance.now();
-    const now = vi.spyOn(performance, "now").mockReturnValue(base);
+  it("ເວລາຈິງຜ່ານໄປໂດຍບໍ່ມີ tick (ເຊັ່ນ ເຄື່ອງ sleep) → tick ຖັດໄປສະທ້ອນເວລາທີ່ຜ່ານ", () => {
     const { result } = renderHook(() => useCountdown(60, "a"));
-    // ແທັບ background ທີ່ຖືກ throttle: tick ດຽວທີ່ມາຊ້າ ຫຼັງຜ່ານໄປ 10.5 ວິນາທີຈິງ
-    now.mockReturnValue(base + 10_500);
-    act(() => vi.advanceTimersByTime(1000));
-    now.mockRestore();
+    act(() => {
+      vi.setSystemTime(Date.now() + 10_500);
+      vi.advanceTimersByTime(250);
+    });
     expect(result.current).toBe(50);
+  });
+
+  it("ເວລາເຄື່ອງຖອຍຫຼັງ (clock step) → ບໍ່ເພີ່ມຄ່າ ແລະ ບໍ່ເກີນຄ່າເລີ່ມຕົ້ນ", () => {
+    const { result } = renderHook(() => useCountdown(10, "a"));
+    act(() => {
+      vi.setSystemTime(Date.now() - 60_000);
+      vi.advanceTimersByTime(250);
+    });
+    expect(result.current).toBe(10);
+  });
+
+  it("tick ສະເປະສະປະ: ບໍ່ຂ້າມແລ້ວຊ້າ (5,4,2) ແລະ ຮອດ 0 ທັນເວລາ", () => {
+    const { result } = renderHook(() => useCountdown(5, "a"));
+    const seen: number[] = [];
+    let elapsed = 0;
+    // ເວລາຜ່ານໄປແບບບໍ່ສະເໝີ ແຕ່ແຕ່ລະຂັ້ນບໍ່ເກີນ 300ms
+    for (const step of [250, 250, 250, 300, 250, 200, 250, 300, 250, 250, 250, 250, 300, 250, 250, 250, 250, 250, 250, 250, 250]) {
+      act(() => vi.advanceTimersByTime(step));
+      elapsed += step;
+      const value = result.current as number;
+      seen.push(value);
+      // ບໍ່ຊ້າກວ່າເວລາຈິງເກີນ 1 ວິນາທີ ແລະ ບໍ່ໄວກວ່າເວລາຈິງ
+      expect(value).toBeGreaterThanOrEqual(Math.max(0, 5 - Math.floor(elapsed / 1000) - 1));
+      expect(value).toBeLessThanOrEqual(5 - Math.floor((elapsed - 250) / 1000));
+    }
+    for (let i = 1; i < seen.length; i++) {
+      expect((seen[i - 1] as number) - (seen[i] as number)).toBeLessThanOrEqual(1);
+    }
+    expect(elapsed).toBeGreaterThanOrEqual(5250);
+    expect(result.current).toBe(0);
+  });
+
+  it("ຮອດ 0 ພໍດີ → ຢຸດ interval", () => {
+    renderHook(() => useCountdown(2, "a"));
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ຮອດ 0 ທັນເວລາ: ໜຶ່ງ tick ຫຼັງຄົບເວລາ ຕ້ອງເປັນ 0", () => {
+    const { result } = renderHook(() => useCountdown(3, "a"));
+    act(() => vi.advanceTimersByTime(2999));
+    expect(result.current).toBe(1);
+    act(() => vi.advanceTimersByTime(250));
+    expect(result.current).toBe(0);
+  });
+
+  it("rerender ດ້ວຍ props ເທົ່າເດີມ ບໍ່ຮີເຊັດການນັບ", () => {
+    const { result, rerender } = renderHook(({ seconds, key }) => useCountdown(seconds, key), {
+      initialProps: { seconds: 10, key: "t1" },
+    });
+    act(() => vi.advanceTimersByTime(4000));
+    rerender({ seconds: 10, key: "t1" });
+    expect(result.current).toBe(6);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current).toBe(5);
+  });
+
+  it("React StrictMode (effect ຮັນສອງຄັ້ງ) ຍັງນັບຖືກ ແລະ ມີ interval ດຽວ", () => {
+    const { result, unmount } = renderHook(() => useCountdown(5, "a"), { wrapper: StrictMode });
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(result.current).toBe(3);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("ຮີເຊັດເມື່ອຄ່າຈາກ server ຫຼື resetKey ປ່ຽນ (ຫຼັງ refetch) ໂດຍບໍ່ມີ render ຄ່າເກົ່າ", () => {

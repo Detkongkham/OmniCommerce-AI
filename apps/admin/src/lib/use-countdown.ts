@@ -19,30 +19,34 @@ interface CountdownState {
   remaining: number | null;
 }
 
+/** ຖີ່ກວ່າ 1 ວິນາທີ ເພື່ອບໍ່ໃຫ້ jitter ເຮັດໃຫ້ສະແດງຂ້າມ/ຊ້າ; setState ຂ້າມເມື່ອຄ່າບໍ່ປ່ຽນ ຈຶ່ງບໍ່ render ຊ້ຳ */
+const TICK_MS = 250;
+
 /**
- * ນັບລົງຈາກ `initialSeconds` (ຄ່າທີ່ API ຄືນ ບໍ່ອີງນາຬິກາຂອງ client); null = ບໍ່ມີການນັບ.
- * ເລີ່ມໃໝ່ເມື່ອ `initialSeconds` ຫຼື `resetKey` ປ່ຽນ (ເຊັ່ນ ຫຼັງ refetch).
- * ຄ່າທີ່ເຫຼືອຄິດຈາກເວລາທີ່ຜ່ານໄປ (monotonic) ນັບແຕ່ເລີ່ມ ດັ່ງນັ້ນ tick ທີ່ຊ້າ (ແທັບ background ຖືກ throttle) ບໍ່ເຮັດໃຫ້ເວລາເດີນຜິດ.
- * render ທຳອິດຫຼັງຄ່າປ່ຽນກໍໄດ້ຄ່າໃໝ່ທັນທີ.
+ * ນັບລົງຈາກ `initialSeconds`; null = ບໍ່ມີການນັບ.
+ * `initialSeconds` (ເຊັ່ນ `secondsUntilExpiry` ຂອງ API) ເປັນ snapshot ຕອນ server ຕອບ ບໍ່ແມ່ນຄ່າສົດ:
+ * ເມື່ອ refetch ຕ້ອງສົ່ງ `resetKey` ທີ່ປ່ຽນ (ເຊັ່ນ `dataUpdatedAt`) ເພື່ອເລີ່ມນັບໃໝ່ ເຖິງວ່າຄ່າວິນາທີຈະເທົ່າເດີມ.
+ * ເລີ່ມໃໝ່ເມື່ອ `initialSeconds` ຫຼື `resetKey` ປ່ຽນ; render ທຳອິດຫຼັງຄ່າປ່ຽນກໍໄດ້ຄ່າໃໝ່ທັນທີ.
+ * ຄ່າທີ່ເຫຼືອຄິດຈາກ `Date.now()` ທີ່ຜ່ານໄປນັບແຕ່ເລີ່ມ (ຮວມເວລາທີ່ເຄື່ອງ sleep; `performance.now()` ບໍ່ນັບ) ຈຶ່ງບໍ່ເດີນຜິດເມື່ອ
+ * tick ຊ້າ; ເວລາເຄື່ອງຖອຍຫຼັງຖືກຕັດເປັນ 0 ຈຶ່ງບໍ່ເກີນຄ່າເລີ່ມຕົ້ນ.
  */
 export function useCountdown(initialSeconds: number | null, resetKey: unknown): number | null {
   const initial = normalize(initialSeconds);
   const [state, setState] = useState<CountdownState>({ initial, resetKey, remaining: initial });
 
   useEffect(() => {
-    setState({ initial, resetKey, remaining: initial });
+    const matches = (current: CountdownState) => current.initial === initial && Object.is(current.resetKey, resetKey);
+    setState((current) => (matches(current) ? current : { initial, resetKey, remaining: initial }));
     if (initial === null) return;
-    const startedAt = performance.now();
+    const startedAt = Date.now();
     const id = setInterval(() => {
-      const elapsed = Math.floor((performance.now() - startedAt) / 1000);
-      const remaining = Math.max(0, initial - elapsed);
+      const elapsedSeconds = Math.floor(Math.max(0, Date.now() - startedAt) / 1000);
+      const remaining = Math.max(0, initial - elapsedSeconds);
       setState((current) =>
-        current.initial === initial && Object.is(current.resetKey, resetKey) && current.remaining !== remaining
-          ? { initial, resetKey, remaining }
-          : current,
+        matches(current) && current.remaining !== remaining ? { initial, resetKey, remaining } : current,
       );
       if (remaining === 0) clearInterval(id);
-    }, 1000);
+    }, TICK_MS);
     return () => clearInterval(id);
   }, [initial, resetKey]);
 
