@@ -19,7 +19,7 @@ import {
 } from "@oca/ui";
 import { AlertCircle, ImageOff, Package, Plus, Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { ServerPager } from "@/components/common/server-pager";
 import { flattenCategories } from "@/lib/category-tree";
@@ -51,7 +51,15 @@ export function ProductList() {
   const categories = useCategories();
   const categoryRows = useMemo(() => flattenCategories(categories.data ?? []), [categories.data]);
   const rows = query.data?.items ?? [];
+  const total = query.data?.total ?? 0;
   const filtered = q !== "" || status !== "" || categoryId !== "";
+
+  // ຂໍ້ມູນຫຼຸດລົງຈົນໜ້າປັດຈຸບັນເກີນໜ້າສຸດທ້າຍ: ກັບໄປໜ້າສຸດທ້າຍທີ່ມີ
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData && page > 1 && rows.length === 0 && total > 0) {
+      setPage(Math.max(1, Math.ceil(total / pageSize)));
+    }
+  }, [query.data, query.isPlaceholderData, page, pageSize, rows.length, total]);
 
   function resetPage<T>(setter: (value: T) => void) {
     return (value: T) => {
@@ -173,7 +181,7 @@ export function ProductList() {
                   ))}
                 </TableBody>
               </Table>
-              {!query.isPending && rows.length === 0 ? (
+              {!query.isPending && rows.length === 0 && total === 0 ? (
                 <EmptyState
                   icon={Package}
                   title={filtered ? t("products.empty.noResults") : t("products.empty.title")}
@@ -200,7 +208,7 @@ export function ProductList() {
               <ServerPager
                 page={page}
                 pageSize={pageSize}
-                total={query.data?.total ?? 0}
+                total={total}
                 onPageChange={setPage}
                 onPageSizeChange={(size) => {
                   setPageSize(size);

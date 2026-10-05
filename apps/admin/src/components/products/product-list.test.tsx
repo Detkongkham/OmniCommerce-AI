@@ -183,4 +183,37 @@ describe("ProductList", () => {
     expect(await screen.findByText("No products yet")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Add product" })).toBeNull();
   });
+
+  it.each([
+    ["ໝວດຢ່າງດຽວ", "Category", "c2", "categoryId=c2"],
+    ["ສະຖານະຢ່າງດຽວ", "Status", "DRAFT", "status=DRAFT"],
+  ])("ວ່າງ ແລະ ມີສະເພາະ filter %s: ສະແດງ 'ບໍ່ພົບ' ບໍ່ແມ່ນ 'ຍັງບໍ່ມີ'", async (_name, label, value, expected) => {
+    mockApi({ items: [], total: 0, page: 1, pageSize: 10 });
+    const { user } = renderWithProviders(<ProductList />);
+    await screen.findByText("No products yet");
+    await user.selectOptions(screen.getByLabelText(label), value);
+    await waitFor(() => expect(lastProductsUrl()).toContain(expected));
+    expect(await screen.findByText("No products match your search")).toBeInTheDocument();
+    expect(screen.queryByText("No products yet")).toBeNull();
+  });
+
+  it("ໜ້າເກີນໜ້າສຸດທ້າຍ (ຂໍ້ມູນຫຼຸດ): ໂດດໄປໜ້າສຸດທ້າຍ ແລະ ບໍ່ສະແດງ 'ຍັງບໍ່ມີສິນຄ້າ'", async () => {
+    vi.mocked(apiFetch).mockImplementation((async (path: string) => {
+      if (path.startsWith("/products")) {
+        return path.includes("page=3")
+          ? { items: [], total: 15, page: 3, pageSize: 10 }
+          : { items, total: 25, page: 1, pageSize: 10 };
+      }
+      return categories;
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<ProductList />);
+    await screen.findByTestId("row-product-p1");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(lastProductsUrl()).toContain("page=2"));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(productUrls()).toContain("/products?page=3&pageSize=10"));
+    await waitFor(() => expect(lastProductsUrl()).toBe("/products?page=2&pageSize=10"));
+    expect(screen.queryByText("No products yet")).toBeNull();
+    expect(await screen.findByTestId("row-product-p1")).toBeInTheDocument();
+  });
 });
