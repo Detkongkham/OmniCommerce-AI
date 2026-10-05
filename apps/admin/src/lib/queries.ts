@@ -1,6 +1,5 @@
 import type {
   CreateCategoryInput,
-  CreateProductInput,
   CreateStaffInput,
   CreateWarehouseInput,
   PutProductImagesInput,
@@ -12,7 +11,9 @@ import type {
   UpdateVariantInput,
   UpdateWarehouseInput,
   VariantInput,
+  createProductSchema,
 } from "@oca/shared";
+import type { z } from "zod";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { toQueryString } from "./query-string";
@@ -185,7 +186,8 @@ export function useProduct(id: string) {
 export function useCreateProduct() {
   const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
   return useMutation({
-    mutationFn: (input: CreateProductInput) => apiFetch<ProductDetailDto>("/products", { method: "POST", body: input }),
+    // the request side of the schema: costPrice is optional (defaults to "0" server-side)
+    mutationFn: (input: z.input<typeof createProductSchema>) => apiFetch<ProductDetailDto>("/products", { method: "POST", body: input }),
     onSuccess: invalidate,
   });
 }
