@@ -128,4 +128,23 @@ describe("product mutation hooks", () => {
     expect(await act(() => result.current.mutateAsync("p2"))).toBeUndefined();
     expect(apiFetch).toHaveBeenCalledWith("/products/p2", { method: "DELETE" });
   });
+
+  it("useDeleteProduct: 204 ລຶບ detail query ຂອງ id ນັ້ນອອກຈາກ cache (ບໍ່ refetch ເປັນ 404) ແຕ່ 200 archived ເກັບໄວ້", async () => {
+    const { client, Wrapper } = wrapper();
+    const detailKey = (id: string) => ["products", "detail", id];
+    client.setQueryData(detailKey("p1"), { id: "p1" });
+    client.setQueryData(detailKey("p2"), { id: "p2" });
+    client.setQueryData(detailKey("p3"), { id: "p3" });
+    const { result } = renderHook(() => useDeleteProduct(), { wrapper: Wrapper });
+
+    vi.mocked(apiFetch).mockResolvedValueOnce(undefined);
+    await act(() => result.current.mutateAsync("p1"));
+    expect(client.getQueryData(detailKey("p1"))).toBeUndefined();
+    expect(client.getQueryData(detailKey("p2"))).toBeDefined();
+
+    vi.mocked(apiFetch).mockResolvedValueOnce({ archived: true });
+    await act(() => result.current.mutateAsync("p2"));
+    expect(client.getQueryData(detailKey("p2"))).toBeDefined();
+    expect(client.getQueryData(detailKey("p3"))).toBeDefined();
+  });
 });

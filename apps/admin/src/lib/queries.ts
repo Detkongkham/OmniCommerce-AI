@@ -201,12 +201,20 @@ export function useUpdateProduct() {
   });
 }
 
-/** 204 → undefined (ລຶບແທ້); 200 → { archived: true } (ຖືກ archive ເພາະເຄີຍຖືກຂາຍ) */
+/**
+ * 204 → undefined (ລຶບແທ້); 200 → { archived: true } (ຖືກ archive ເພາະເຄີຍຖືກຂາຍ).
+ * ເມື່ອລຶບແທ້ ຕ້ອງເອົາ detail query ຂອງ id ນັ້ນອອກຈາກ cache ກ່ອນ invalidate ບໍ່ດັ່ງນັ້ນໜ້າແກ້ໄຂທີ່ຍັງ mount
+ * ຢູ່ຈະ refetch ແລ້ວໄດ້ 404.
+ */
 export function useDeleteProduct() {
+  const queryClient = useQueryClient();
   const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
   return useMutation({
     mutationFn: (id: string) => apiFetch<{ archived: true } | undefined>(`/products/${id}`, { method: "DELETE" }),
-    onSuccess: invalidate,
+    onSuccess: (result, id) => {
+      if (!result) queryClient.removeQueries({ queryKey: [...queryKeys.products, "detail", id] });
+      return invalidate();
+    },
   });
 }
 
