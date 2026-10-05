@@ -109,6 +109,7 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
     }
   });
 
+  // getValues ຖືກອ່ານຕອນ render ສະເພາະເມື່ອ errors.vatRate ມີຄ່າ (ຫຼັງ submit ລົ້ມ) ຈຶ່ງບໍ່ເສຍ perf
   const vatError = errors.vatRate
     ? String(getValues("vatRate") ?? "").trim() === ""
       ? t("validation.required")

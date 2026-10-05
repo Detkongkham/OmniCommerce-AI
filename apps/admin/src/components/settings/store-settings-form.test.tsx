@@ -156,6 +156,23 @@ describe("StoreSettingsForm", () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
   });
 
+  it("ຫຼັງບັນທຶກ: ຟອມຮີເຊັດເປັນຄ່າຈາກ server (7 -> 7.00)", async () => {
+    let saved = false;
+    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+      if (options?.method === "PATCH") {
+        saved = true;
+        return { ...settings, vatRate: "7.00" };
+      }
+      return saved ? { ...settings, vatRate: "7.00" } : settings;
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<StoreSettingsForm />);
+    await screen.findByDisplayValue("OCA Store");
+    await user.clear(screen.getByLabelText("VAT (%)"));
+    await user.type(screen.getByLabelText("VAT (%)"), "7");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByLabelText("VAT (%)")).toHaveValue("7.00"));
+  });
+
   it("ບໍ່ມີ inventory:write: ທຸກ field ອ່ານຢ່າງດຽວ ແລະ ບໍ່ມີປຸ່ມບັນທຶກ", async () => {
     auth.canWrite = false;
     renderWithProviders(<StoreSettingsForm />);
