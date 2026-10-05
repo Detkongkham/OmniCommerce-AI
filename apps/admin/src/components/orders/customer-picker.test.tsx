@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { CustomerDto } from "@/lib/types";
@@ -12,6 +13,12 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 const mali: CustomerDto = { id: "c1", name: "Mali", phone: "02055550001", email: null };
 const somchai: CustomerDto = { id: "c2", name: "Somchai", phone: null, email: "s@example.com" };
+
+/** wrapper ທີ່ຖື value ຈິງ ເຫມືອນຟອມບິນ (onSelect ປ່ຽນ value ແລ້ວ input/card ສະຫຼັບກັນ) */
+function Stateful() {
+  const [value, setValue] = useState<CustomerDto | null>(null);
+  return <CustomerPicker value={value} onSelect={setValue} />;
+}
 
 beforeEach(() => {
   vi.mocked(apiFetch).mockReset();
@@ -153,5 +160,46 @@ describe("CustomerPicker", () => {
     renderWithProviders(<CustomerPicker value={somchai} disabled onSelect={vi.fn()} />);
     expect(screen.getByText("s@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Change" })).toBeDisabled();
+  });
+
+  it("focus: ກົດປ່ຽນ → focus ໄປ input; ເລືອກລູກຄ້າ → focus ໄປປຸ່ມປ່ຽນ; ຂໍ້ຄວາມເກົ່າຖືກລ້າງ", async () => {
+    const { user } = renderWithProviders(<Stateful />);
+    await user.type(screen.getByLabelText("Search name or phone"), "020");
+    await user.click(await screen.findByRole("option", { name: /Mali/ }));
+    const change = screen.getByRole("button", { name: /Change/ });
+    expect(change).toHaveFocus();
+    await user.click(change);
+    const input = screen.getByLabelText("Search name or phone");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  it("ບັດທີ່ເລືອກແລ້ວ: group ມີຊື່, ປຸ່ມປ່ຽນມີຊື່ລູກຄ້າ", () => {
+    renderWithProviders(<CustomerPicker value={mali} onSelect={vi.fn()} />);
+    expect(screen.getByRole("group", { name: "Mali" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change customer: Mali" })).toHaveTextContent("Change");
+  });
+
+  it("phone ເປັນສະຕຣິງວ່າງ: ໃຊ້ອີເມວແທນ (ທັງບັດ ແລະ ລາຍການ)", async () => {
+    const blank: CustomerDto = { id: "c3", name: "Noi", phone: "", email: "noi@example.com" };
+    vi.mocked(apiFetch).mockResolvedValue({ items: [blank], total: 1, page: 1, pageSize: 8 });
+    const { user } = renderWithProviders(<CustomerPicker value={null} onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("Search name or phone"), "noi");
+    expect(await screen.findByRole("option", { name: /Noi/ })).toHaveTextContent("noi@example.com");
+    renderWithProviders(<CustomerPicker value={blank} onSelect={vi.fn()} />);
+    expect(screen.getAllByText("noi@example.com").length).toBeGreaterThan(1);
+  });
+
+  it("ຕອນສະແດງບັດ: Escape ບໍ່ຖືກດັກ (ບໍ່ມີ listener capture)", async () => {
+    const onDocKey = vi.fn();
+    document.addEventListener("keydown", onDocKey, true);
+    try {
+      const { user } = renderWithProviders(<CustomerPicker value={mali} onSelect={vi.fn()} />);
+      await user.keyboard("{Escape}");
+      expect(onDocKey).toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("keydown", onDocKey, true);
+    }
   });
 });

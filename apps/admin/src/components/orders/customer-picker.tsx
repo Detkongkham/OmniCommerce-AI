@@ -15,12 +15,21 @@ export interface CustomerPickerProps {
   disabled?: boolean;
 }
 
+/** ຂໍ້ມູນຕິດຕໍ່ຮອງ: ໂທລະສັບ, ບໍ່ມີ/ວ່າງ ໃຊ້ອີເມວ */
+function contact(customer: CustomerDto): string {
+  return customer.phone || customer.email || "";
+}
+
 /** ຄົ້ນຫາລູກຄ້າທີ່ມີຢູ່ຕາມຊື່/ໂທລະສັບ/ອີເມວ ຜ່ານ GET /customers (ຕ້ອງ orders:read); ໂຄງສ້າງ combobox ຕາມ VariantPicker */
 export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPickerProps) {
   const { t } = useT();
   const autoId = useId();
   const baseId = id ?? `customer-search-${autoId}`;
   const inputRef = useRef<HTMLInputElement>(null);
+  const changeRef = useRef<HTMLButtonElement>(null);
+  const nameId = `${baseId}-name`;
+  // ບອກວ່າຫຼັງ value ປ່ຽນ ຕ້ອງ focus ອັນໃດ (input/card ຖືກ mount ໃໝ່ ຈຶ່ງຕ້ອງເຮັດໃນ effect)
+  const focusAfterChange = useRef<"input" | "change" | null>(null);
   const [text, setText] = useState("");
   const [activeIndex, setActiveIndex] = useState(-1);
   const [dismissed, setDismissed] = useState(false);
@@ -46,11 +55,29 @@ export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPicker
     return () => window.removeEventListener("keydown", onEscape, true);
   }, [showList]);
 
+  // ຫຼັງ value ປ່ຽນ: ເລືອກແລ້ວ → focus ປຸ່ມປ່ຽນ; ກົດປ່ຽນ → focus input (ບໍ່ຢ່າງນັ້ນ focus ຕົກໄປ body)
+  useEffect(() => {
+    const target = focusAfterChange.current;
+    if (target === "change" && value) changeRef.current?.focus();
+    else if (target === "input" && !value) inputRef.current?.focus();
+    else return;
+    focusAfterChange.current = null;
+  }, [value]);
+
   function select(customer: CustomerDto) {
+    focusAfterChange.current = "change";
     onSelect(customer);
     setText("");
     setActiveIndex(-1);
-    inputRef.current?.focus();
+  }
+
+  function change() {
+    // ລ້າງຂໍ້ຄວາມເກົ່າ ບໍ່ໃຫ້ກັບມາສະແດງຕອນ input ຖືກ mount ໃໝ່
+    setText("");
+    setActiveIndex(-1);
+    setDismissed(false);
+    focusAfterChange.current = "input";
+    onSelect(null);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -68,14 +95,29 @@ export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPicker
     }
   }
 
+  // ຕອນສະແດງບັດ input (id = baseId) ບໍ່ມີຢູ່ ຈຶ່ງໃຫ້ group ມີຊື່ເອງ ບໍ່ອີງ <label htmlFor> ຂອງ parent ເທົ່ານັ້ນ
   if (value) {
     return (
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-subtle px-3 py-2">
+      <div
+        role="group"
+        aria-labelledby={nameId}
+        className="flex items-center justify-between gap-3 rounded-xl border border-line bg-subtle px-3 py-2"
+      >
         <div>
-          <p className="text-sm font-medium text-ink">{value.name}</p>
-          {value.phone || value.email ? <p className="text-xs text-ink-secondary">{value.phone ?? value.email}</p> : null}
+          <p id={nameId} className="text-sm font-medium text-ink">
+            {value.name}
+          </p>
+          {contact(value) ? <p className="text-xs text-ink-secondary">{contact(value)}</p> : null}
         </div>
-        <Button type="button" variant="ghost" className="rounded-lg" disabled={disabled} onClick={() => onSelect(null)}>
+        <Button
+          ref={changeRef}
+          type="button"
+          variant="ghost"
+          className="rounded-lg"
+          disabled={disabled}
+          aria-label={t("orders.customer.changeNamed", { name: value.name })}
+          onClick={change}
+        >
           {t("orders.customer.change")}
         </Button>
       </div>
@@ -127,7 +169,7 @@ export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPicker
               onMouseEnter={() => setActiveIndex(index)}
             >
               <span className="font-medium text-ink">{customer.name}</span>
-              <span className="text-xs text-ink-secondary">{customer.phone ?? customer.email ?? ""}</span>
+              <span className="text-xs text-ink-secondary">{contact(customer)}</span>
             </li>
           ))}
         </ul>
