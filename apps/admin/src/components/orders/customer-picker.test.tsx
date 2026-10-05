@@ -152,14 +152,14 @@ describe("CustomerPicker", () => {
     const { user } = renderWithProviders(<CustomerPicker value={mali} onSelect={onSelect} />);
     expect(screen.getByText("Mali")).toBeInTheDocument();
     expect(screen.getByText("02055550001")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Change" }));
+    await user.click(screen.getByRole("button", { name: /Change/ }));
     expect(onSelect).toHaveBeenCalledWith(null);
   });
 
   it("ເລືອກແລ້ວ (value) ບໍ່ມີເບີໂທ: ສະແດງອີເມວ; disabled ປິດປຸ່ມປ່ຽນ", () => {
     renderWithProviders(<CustomerPicker value={somchai} disabled onSelect={vi.fn()} />);
     expect(screen.getByText("s@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Change" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Change/ })).toBeDisabled();
   });
 
   it("focus: ກົດປ່ຽນ → focus ໄປ input; ເລືອກລູກຄ້າ → focus ໄປປຸ່ມປ່ຽນ; ຂໍ້ຄວາມເກົ່າຖືກລ້າງ", async () => {
