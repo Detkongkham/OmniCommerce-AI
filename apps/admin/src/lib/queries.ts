@@ -347,8 +347,10 @@ export interface OrderListParams {
   pageSize: number;
 }
 
-export function useOrders(params: OrderListParams) {
+export function useOrders(params: OrderListParams, options: { enabled?: boolean } = {}) {
   return useQuery({
+    // ໝາຍເຫດ: ເມື່ອ enabled=false ແລະ ບໍ່ມີຂໍ້ມູນ isPending ຍັງເປັນ true (ຜູ້ໃຊ້ຕ້ອງບໍ່ສະແດງ skeleton ຈາກມັນ)
+    enabled: options.enabled ?? true,
     queryKey: [...queryKeys.orders, "list", params],
     queryFn: () => apiFetch<Page<OrderListItemDto>>(`/orders${toQueryString({ ...params })}`),
     placeholderData: keepPreviousData,

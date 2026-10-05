@@ -16,6 +16,17 @@ describe("visibleNavGroups", () => {
     expect(groups[1]?.items.map((item) => item.href)).toEqual(["/settings"]);
   });
 
+  it("ຜູ້ມີ orders:read ເຫັນ /orders ໃນກຸ່ມສະຕ໊ອກ (ແມ່ນບໍ່ມີ inventory:read ກໍເຫັນ)", () => {
+    const groups = visibleNavGroups(["orders:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["inventory"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/orders"]);
+  });
+
+  it("ຜູ້ມີ inventory:read + orders:read ເຫັນ /orders ຖັດຈາກ /stock", () => {
+    const groups = visibleNavGroups(["inventory:read", "orders:read"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/products", "/stock", "/orders", "/warehouses", "/categories"]);
+  });
+
   it("ບໍ່ມີສິດ: ບໍ່ມີກຸ່ມເລີຍ (ກຸ່ມທີ່ບໍ່ມີລາຍການບໍ່ຖືກ render)", () => {
     expect(visibleNavGroups([])).toEqual([]);
     expect(visibleNavGroups(["inbox:read"])).toEqual([]);
