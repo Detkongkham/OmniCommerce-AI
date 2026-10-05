@@ -210,6 +210,19 @@ const lo = {
   "categories.toast.created": "ເພີ່ມໝວດໝູ່ແລ້ວ",
   "categories.toast.updated": "ບັນທຶກໝວດໝູ່ແລ້ວ",
   "categories.toast.deleted": "ລຶບໝວດໝູ່ແລ້ວ",
+  "settings.title": "ຕັ້ງຄ່າຮ້ານ",
+  "settings.description": "ຂໍ້ມູນຮ້ານ, VAT ແລະ ເວລາຈອງສະຕ໋ອກ",
+  "settings.name": "ຊື່ຮ້ານ",
+  "settings.currency": "ສະກຸນເງິນຫຼັກ",
+  "settings.currencyHint": "ປ່ຽນບໍ່ໄດ້ໃນເວີຊັນນີ້",
+  "settings.vatRate": "VAT (%)",
+  "settings.vatHint": "ເຊັ່ນ 7 ຫຼື 10.5 (ສູງສຸດ 2 ທົດສະນິຍົມ)",
+  "settings.pricesIncludeVat": "ລາຄາຂາຍລວມ VAT ແລ້ວ",
+  "settings.reservationMinutes": "ເວລາຈອງສະຕ໋ອກ (ນາທີ)",
+  "settings.reservationHint": "ບິນທີ່ບໍ່ຊຳລະພາຍໃນເວລານີ້ຈະໝົດອາຍຸ ແລະ ຄືນສະຕ໋ອກ (1–10,080)",
+  "settings.toast.saved": "ບັນທຶກການຕັ້ງຄ່າແລ້ວ",
+  "settings.validation.vat": "VAT ຕ້ອງເປັນຕົວເລກ 0–100 (ສູງສຸດ 2 ທົດສະນິຍົມ)",
+  "settings.validation.minutes": "ຕ້ອງເປັນຈຳນວນເຕັມ 1–10,080",
 } as const;
 
 export type TranslationKey = keyof typeof lo;
@@ -429,6 +442,19 @@ const en: Record<TranslationKey, string> = {
   "categories.toast.created": "Category added",
   "categories.toast.updated": "Category saved",
   "categories.toast.deleted": "Category deleted",
+  "settings.title": "Store settings",
+  "settings.description": "Store details, VAT and stock reservation time",
+  "settings.name": "Store name",
+  "settings.currency": "Base currency",
+  "settings.currencyHint": "Cannot be changed in this version",
+  "settings.vatRate": "VAT (%)",
+  "settings.vatHint": "e.g. 7 or 10.5 (up to 2 decimals)",
+  "settings.pricesIncludeVat": "Selling prices include VAT",
+  "settings.reservationMinutes": "Stock reservation time (minutes)",
+  "settings.reservationHint": "Unpaid orders expire after this time and release their stock (1–10,080)",
+  "settings.toast.saved": "Settings saved",
+  "settings.validation.vat": "VAT must be a number from 0 to 100 (up to 2 decimals)",
+  "settings.validation.minutes": "Must be a whole number from 1 to 10,080",
 };
 
 export const dictionaries: Record<Language, Record<TranslationKey, string>> = { lo, en };
