@@ -1,12 +1,14 @@
 "use client";
 
 import { PageHeader, cn } from "@oca/ui";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import { useT } from "@/lib/i18n/language-provider";
 import { StockLevels } from "./stock-levels";
 import { StockMovements } from "./stock-movements";
+import { type StockTab, parseStockSearchParams } from "./stock-search-params";
 
-export type StockTab = "levels" | "movements";
+export type { StockTab };
 
 const TAB_IDS: StockTab[] = ["levels", "movements"];
 
@@ -24,14 +26,36 @@ function syncTabToUrl(tab: StockTab) {
 
 export function StockPage({ initialQuery, initialTab }: { initialQuery: string; initialTab: StockTab }) {
   const { t } = useT();
+  const baseId = `stock-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const urlParams = useSearchParams();
+  const url = parseStockSearchParams({ q: urlParams?.get("q"), tab: urlParams?.get("tab") });
   const [tab, setTab] = useState<StockTab>(initialTab);
-  // panel ທີ່ເຄີຍເປີດຖືກເກັບໄວ້ (ຊ່ອນດ້ວຍ hidden) ເພື່ອບໍ່ໃຫ້ filter ຫາຍ ແລະ ບໍ່ ຍິງ API ຂອງແຖບທີ່ຍັງບໍ່ເປີດ.
   const [visited, setVisited] = useState<Set<StockTab>>(() => new Set([initialTab]));
+  const [query, setQuery] = useState(initialQuery);
+  // ຕາມ URL ເມື່ອມີ navigation ພາຍຫຼັງ (link sidebar, ?q=, ?tab=). ປ່ຽນສະເພາະເມື່ອຄ່າໃນ URL ປ່ຽນ ເພື່ອບໍ່ທັບການກົດແຖບເອງ.
+  const [seenUrl, setSeenUrl] = useState(url);
+  if (seenUrl.tab !== url.tab || seenUrl.q !== url.q) {
+    setSeenUrl(url);
+    if (seenUrl.tab !== url.tab) {
+      setTab(url.tab);
+      setVisited((prev) => (prev.has(url.tab) ? prev : new Set(prev).add(url.tab)));
+    }
+    if (seenUrl.q !== url.q) setQuery(url.q);
+  }
+  // panel ທີ່ເຄີຍເປີດຖືກເກັບໄວ້ (ຊ່ອນດ້ວຍ hidden) ເພື່ອບໍ່ໃຫ້ filter ຫາຍ ແລະ ບໍ່ ຍິງ API ຂອງແຖບທີ່ຍັງບໍ່ເປີດ.
   const tabRefs = useRef<Record<StockTab, HTMLButtonElement | null>>({ levels: null, movements: null });
   const labels: Record<StockTab, string> = {
     levels: t("stock.tab.levels"),
     movements: t("stock.tab.movements"),
   };
+
+  const tabId = (id: StockTab) => `${baseId}-tab-${id}`;
+  const panelId = (id: StockTab) => `${baseId}-panel-${id}`;
+
+  function renderPanel(id: StockTab): ReactNode {
+    if (!visited.has(id)) return null;
+    return id === "levels" ? <StockLevels key={query} initialQuery={query} /> : <StockMovements />;
+  }
 
   function select(next: StockTab, focus = false) {
     setTab(next);
@@ -60,7 +84,7 @@ export function StockPage({ initialQuery, initialTab }: { initialQuery: string; 
         description={t("stock.description")}
       />
       <div className="space-y-6 px-3 pb-10 sm:px-6">
-        <div role="tablist" aria-label={t("stock.title")} className="flex gap-1 border-b border-line">
+        <div role="tablist" aria-label={t("stock.tabs.label")} className="flex gap-1 border-b border-line">
           {TAB_IDS.map((id, index) => (
             <button
               key={id}
@@ -69,9 +93,9 @@ export function StockPage({ initialQuery, initialTab }: { initialQuery: string; 
               }}
               type="button"
               role="tab"
-              id={`stock-tab-${id}`}
+              id={tabId(id)}
               aria-selected={tab === id}
-              aria-controls={`stock-panel-${id}`}
+              aria-controls={panelId(id)}
               tabIndex={tab === id ? 0 : -1}
               onClick={() => select(id)}
               onKeyDown={(event) => onKeyDown(event, index)}
@@ -88,11 +112,11 @@ export function StockPage({ initialQuery, initialTab }: { initialQuery: string; 
           <div
             key={id}
             role="tabpanel"
-            id={`stock-panel-${id}`}
-            aria-labelledby={`stock-tab-${id}`}
+            id={panelId(id)}
+            aria-labelledby={tabId(id)}
             hidden={tab !== id}
           >
-            {visited.has(id) ? id === "levels" ? <StockLevels initialQuery={initialQuery} /> : <StockMovements /> : null}
+            {renderPanel(id)}
           </div>
         ))}
       </div>
