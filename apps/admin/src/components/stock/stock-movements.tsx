@@ -15,19 +15,23 @@ import {
   TableHeader,
   TableRow,
   TableSkeletonRows,
+  cn,
 } from "@oca/ui";
 import { AlertCircle, History, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ServerPager } from "@/components/common/server-pager";
 import { VariantPicker } from "@/components/common/variant-picker";
 import { formatDateTime, formatMovementQuantity } from "@/lib/format";
+import type { TranslationKey } from "@/lib/i18n/dictionary";
 import { useT } from "@/lib/i18n/language-provider";
 import { useStockMovements, useWarehouses } from "@/lib/queries";
 
 const COLUMNS = 8;
-const DATE_INPUT_CLASS = "mt-1 block h-9 rounded-xl border border-input bg-background px-3 text-sm text-ink aria-[invalid=true]:border-danger";
-const HEADERS = [
+const DATE_INPUT_CLASS =
+  "mt-1 block h-9 rounded-xl border border-input bg-background px-3 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 aria-[invalid=true]:border-danger";
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const HEADERS: { key: TranslationKey; right?: boolean }[] = [
   { key: "stock.mov.col.time" },
   { key: "stock.mov.col.type" },
   { key: "stock.mov.col.item" },
@@ -60,7 +64,9 @@ export function StockMovements() {
   const [pageSize, setPageSize] = useState(10);
 
   // ວັນທີເລີ່ມຫຼັງວັນທີສິ້ນສຸດ (YYYY-MM-DD ປຽບທຽບເປັນ string ໄດ້): ບໍ່ສົ່ງ request
-  const rangeInvalid = from !== "" && to !== "" && from > to;
+  // ແລະ ຮູບແບບຕ້ອງເປັນ YYYY-MM-DD ປີ 4 ຫຼັກ (browser ອະນຸຍາດປີ 5+ ຫຼັກ)
+  const rangeInvalid =
+    (from !== "" && !DATE_PATTERN.test(from)) || (to !== "" && !DATE_PATTERN.test(to)) || (from !== "" && to !== "" && from > to);
   const query = useStockMovements({ type, warehouseId, variantId: variant?.id ?? "", from, to, page, pageSize }, { enabled: !rangeInvalid });
   const warehouses = useWarehouses();
   const rows = query.data?.items ?? [];
@@ -75,6 +81,15 @@ export function StockMovements() {
       setPage(Math.max(1, Math.ceil(total / pageSize)));
     }
   }, [query.data, query.isPlaceholderData, page, pageSize, rows.length, total]);
+
+  // ຍ້າຍ focus ຫຼັງ chip/picker ສະຫຼັບກັນ (ຕ້ອງເຮັດຫຼັງ render ເພາະ element ເກົ່າຖືກຖອດ)
+  const chipRef = useRef<HTMLButtonElement>(null);
+  const focusRequest = useRef<"chip" | "picker" | null>(null);
+  useEffect(() => {
+    if (focusRequest.current === "chip") chipRef.current?.focus();
+    else if (focusRequest.current === "picker") document.getElementById("movement-variant")?.focus();
+    focusRequest.current = null;
+  }, [variant]);
 
   const reset = () => setPage(1);
   const clearFilters = () => {
@@ -126,6 +141,7 @@ export function StockMovements() {
           <input
             type="date"
             value={from}
+            max={to || undefined}
             aria-invalid={rangeInvalid}
             aria-describedby={rangeInvalid ? "movement-range-error" : undefined}
             onChange={(event) => {
@@ -140,6 +156,7 @@ export function StockMovements() {
           <input
             type="date"
             value={to}
+            min={from || undefined}
             aria-invalid={rangeInvalid}
             aria-describedby={rangeInvalid ? "movement-range-error" : undefined}
             onChange={(event) => {
@@ -157,10 +174,12 @@ export function StockMovements() {
                 {variant.label}
               </span>
               <button
+                ref={chipRef}
                 type="button"
                 aria-label={`${t("stock.mov.filter.clear")} ${t("stock.mov.filter.variant")}: ${variant.label}`}
                 className="rounded p-0.5 hover:bg-hover"
                 onClick={() => {
+                  focusRequest.current = "picker";
                   setVariant(null);
                   reset();
                 }}
@@ -174,6 +193,7 @@ export function StockMovements() {
               label={t("stock.mov.filter.variant")}
               includeInactive
               onSelect={(item) => {
+                focusRequest.current = "chip";
                 setVariant({ id: item.id, label: `${item.sku}${item.name ? ` — ${item.name}` : ""}` });
                 reset();
               }}
@@ -205,7 +225,7 @@ export function StockMovements() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 {HEADERS.map((header) => (
-                  <TableHead key={header.key} scope="col" className={"right" in header ? "text-right" : undefined}>
+                  <TableHead key={header.key} scope="col" className={header.right ? "text-right" : undefined}>
                     {t(header.key)}
                   </TableHead>
                 ))}
@@ -219,7 +239,7 @@ export function StockMovements() {
                   <TableCell>
                     <StatusPill tone={TONES[movement.type]}>{t(`stock.type.${movement.type}`)}</StatusPill>
                   </TableCell>
-                  <th scope="row" className="px-4 py-3 text-left font-mono text-xs font-normal">
+                  <th scope="row" className={cn("px-4 py-3 text-left font-mono text-xs font-normal")}>
                     {movement.sku}
                   </th>
                   <TableCell className="font-mono text-sm">{movement.warehouseCode}</TableCell>

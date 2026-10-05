@@ -286,6 +286,7 @@ export interface StockMovementParams {
 
 export function useStockMovements(params: StockMovementParams, options: { enabled?: boolean } = {}) {
   return useQuery({
+    // ໝາຍເຫດ: ເມື່ອ enabled=false ແລະ ບໍ່ມີຂໍ້ມູນ isPending ຍັງເປັນ true (ຜູ້ໃຊ້ຕ້ອງບໍ່ສະແດງ skeleton ຈາກມັນ)
     enabled: options.enabled ?? true,
     queryKey: [...queryKeys.stock, "movements", params],
     queryFn: () => apiFetch<Page<StockMovementDto>>(`/stock/movements${toQueryString({ ...params })}`),
