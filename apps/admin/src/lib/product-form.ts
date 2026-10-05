@@ -51,7 +51,9 @@ export function toCreateProductInput(state: ProductFormState, canSetCost: boolea
       price: variant.price.trim(),
       ...(canSetCost && variant.costPrice.trim() ? { costPrice: variant.costPrice.trim() } : {}),
       isActive: variant.isActive,
-      optionValues: variant.optionValues,
+      optionValues: Object.fromEntries(
+        Object.entries(variant.optionValues).map(([name, value]) => [name.trim(), value.trim()]),
+      ),
     })),
     images: state.images
       .filter((image) => image.url.trim() !== "")
@@ -83,7 +85,8 @@ function issueMessage(issue: FormIssue): string {
   if (issue.code === "too_small" && issue.minimum !== undefined) {
     const min = Number(issue.minimum);
     if (issue.origin === "array") return `ຕ້ອງມີຢ່າງໜ້ອຍ ${min} ລາຍການ`;
-    return min <= 1 ? "ຈຳເປັນຕ້ອງໃສ່" : `ຕ້ອງມີຢ່າງໜ້ອຍ ${min} ຕົວອັກສອນ`;
+    if (issue.origin === "string" && min <= 1) return "ຈຳເປັນຕ້ອງໃສ່";
+    return `ຕ້ອງມີຢ່າງໜ້ອຍ ${min} ຕົວອັກສອນ`;
   }
   if (issue.code === "invalid_type") return "ຄ່າບໍ່ຖືກຕ້ອງ";
   return issue.message;
@@ -102,7 +105,8 @@ export function formatIssues(issues: readonly FormIssue[]): string[] {
 
 /**
  * ກວດສິ່ງທີ່ schema ບໍ່ເຫັນ ເພາະ `toCreateProductInput`/`activeOptions` ຕັດ ຫຼື ປັບກ່ອນ:
- * ຊື່ option ຊ້ຳກັນຫຼັງ trim (ຖືກຕັດຖິ້ມຢ່າງງຽບໆ) ແລະ SKU ຊ້ຳແບບບໍ່ສົນຕົວພິມ (schema ກວດແບບແຍກຕົວພິມ).
+ * ຊື່ option ຊ້ຳກັນຫຼັງ trim (ສະເພາະ option ທີ່ `activeOptions` ເກັບ; ອັນຫຼັງຖືກຕັດຖິ້ມຢ່າງງຽບໆ) ແລະ
+ * SKU ຊ້ຳ (trim ແລ້ວຕົງກັນເປ໊ະ, ແຍກຕົວພິມ ຄືກັບ API/DB) ເພື່ອໃຫ້ຂໍ້ຄວາມຊີ້ແຖວ.
  */
 function precheck(state: ProductFormState): { schemaSkuDuplicate: boolean; issues: FormIssue[] } {
   const issues: FormIssue[] = [];
@@ -110,7 +114,7 @@ function precheck(state: ProductFormState): { schemaSkuDuplicate: boolean; issue
   const optionRows = new Map<string, number[]>();
   state.options.forEach((option, index) => {
     const name = option.name.trim();
-    if (name === "") return;
+    if (name === "" || !option.values.some((value) => value.trim() !== "")) return;
     optionRows.set(name, [...(optionRows.get(name) ?? []), index + 1]);
   });
   for (const [name, rows] of optionRows) {
@@ -123,15 +127,15 @@ function precheck(state: ProductFormState): { schemaSkuDuplicate: boolean; issue
   state.variants.forEach((variant, index) => {
     const sku = variant.sku.trim();
     if (sku === "") return;
-    const entry = skuRows.get(sku.toLowerCase()) ?? { sku, rows: [] };
+    const entry = skuRows.get(sku) ?? { sku, rows: [] };
     entry.rows.push(index + 1);
-    skuRows.set(sku.toLowerCase(), entry);
+    skuRows.set(sku, entry);
   });
   let schemaSkuDuplicate = false;
   for (const { sku, rows } of skuRows.values()) {
     if (rows.length > 1) {
       schemaSkuDuplicate = true;
-      issues.push({ path: ["variants"], message: `SKU "${sku}" ຊ້ຳກັນໃນແຖວທີ ${rows.join(", ")} (ບໍ່ແຍກຕົວພິມໃຫຍ່/ນ້ອຍ)` });
+      issues.push({ path: ["variants"], message: `SKU "${sku}" ຊ້ຳກັນໃນແຖວທີ ${rows.join(", ")}` });
     }
   }
   return { schemaSkuDuplicate, issues };
@@ -142,7 +146,7 @@ export type ProductFormResult =
   | { ok: false; messages: string[] };
 
 /**
- * ກວດຟອມກ່ອນສົ່ງ: ກວດເພີ່ມ (ຊື່ option ຊ້ຳ, SKU ຊ້ຳແບບບໍ່ແຍກຕົວພິມ) ແລ້ວ `createProductSchema` (ກົດດຽວກັບ API:
+ * ກວດຟອມກ່ອນສົ່ງ: ກວດເພີ່ມ (ຊື່ option ຊ້ຳ, SKU ຊ້ຳ) ແລ້ວ `createProductSchema` (ກົດດຽວກັບ API:
  * ≤ 3 option, ≤ 100 variant, ຄວາມຍາວຊື່/ຄ່າ) ແລະ ແປງ issue ເປັນຂໍ້ຄວາມອ່ານງ່າຍ.
  */
 export function validateProductForm(state: ProductFormState, canSetCost: boolean): ProductFormResult {

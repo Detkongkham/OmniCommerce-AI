@@ -66,7 +66,7 @@ describe("toCreateProductInput", () => {
 });
 
 describe("formatIssues", () => {
-  it("แปลง path ເປັນຮູບທີ່ອ່ານງ່າຍ", () => {
+  it("ແປງ path ເປັນຮູບທີ່ອ່ານງ່າຍ", () => {
     const result = createProductSchema.safeParse(
       toCreateProductInput(base({ name: "", variants: [{ ...base().variants[0]!, price: "abc" }] }), true),
     );
@@ -96,12 +96,12 @@ describe("validateProductForm", () => {
     if (result.ok) expect(result.input.name).toBe("Tee");
   });
 
-  it("SKU ຊ້ຳ (ບໍ່ສົນຕົວພິມ/ຊ່ອງວ່າງ) → ຂໍ້ຄວາມຊີ້ແຖວ ແລະ ບໍ່ມີ 'SKU ຊ້ຳກັນ' ຊ້ຳຊ້ອນ", () => {
+  it("SKU ຊ້ຳ (trim ແລ້ວຕົງກັນເປ໊ະ) → ຂໍ້ຄວາມຊີ້ແຖວ ແລະ ບໍ່ມີ 'SKU ຊ້ຳກັນ' ຊ້ຳຊ້ອນ", () => {
     const state = base({
       options: [{ name: "Color", values: ["Red", "Blue", "Green"] }],
       variants: [
         variantRow("TEE-R", { Color: "Red" }),
-        variantRow(" tee-r ", { Color: "Blue" }),
+        variantRow(" TEE-R ", { Color: "Blue" }),
         variantRow("TEE-G", { Color: "Green" }),
       ],
     });
@@ -113,6 +113,14 @@ describe("validateProductForm", () => {
       expect(dup[0]).toContain("1, 2");
       expect(result.messages.some((line) => line === "variants: SKU ຊ້ຳກັນ")).toBe(false);
     }
+  });
+
+  it("SKU ຕ່າງກັນແຕ່ຕົວພິມ (tee vs TEE) ອະນຸຍາດ ເພາະ API ແຍກຕົວພິມ", () => {
+    const state = base({
+      options: [{ name: "Color", values: ["Red", "Blue"] }],
+      variants: [variantRow("tee", { Color: "Red" }), variantRow("TEE", { Color: "Blue" })],
+    });
+    expect(validateProductForm(state, true).ok).toBe(true);
   });
 
   it("SKU ເປົ່າຫຼາຍແຖວບໍ່ນັບເປັນຊ້ຳ (ໃຫ້ schema ລາຍງານແຖວເປົ່າ)", () => {
@@ -139,6 +147,17 @@ describe("validateProductForm", () => {
     const result = validateProductForm(state, true);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.messages.some((line) => line.includes("Color") && line.includes("ຊ້ຳ"))).toBe(true);
+  });
+
+  it("option ຊື່ຊ້ຳແຕ່ອັນທຳອິດບໍ່ມີຄ່າ (ຖືກຕັດຖິ້ມຢູ່ແລ້ວ) ບໍ່ນັບເປັນຊ້ຳ", () => {
+    const state = base({
+      options: [
+        { name: "Color", values: [] },
+        { name: "Color", values: ["Red"] },
+      ],
+      variants: [variantRow("TEE-R", { Color: "Red" })],
+    });
+    expect(validateProductForm(state, true).ok).toBe(true);
   });
 
   it("ຊື່ option ເປົ່າ 2 ອັນບໍ່ນັບເປັນຊ້ຳ", () => {
@@ -187,5 +206,49 @@ describe("validateProductForm", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.messages).toContain("name: ຈຳເປັນຕ້ອງໃສ່");
   });
+
+  it("ລາຄາ '12,500' ແລະ '1e3' ບໍ່ຜ່ານ ດ້ວຍຂໍ້ຄວາມເງິນ", () => {
+    for (const price of ["12,500", "1e3"]) {
+      const result = validateProductForm(base({ variants: [{ ...base().variants[0]!, price }] }), true);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.messages).toContain("variants[1].price: ຈຳນວນເງິນບໍ່ຖືກຕ້ອງ");
+    }
+  });
 });
 
+describe("toCreateProductInput (ເພີ່ມເຕີມ)", () => {
+  it("costPrice ເປົ່າ ແລະ canSetCost=true → ບໍ່ສົ່ງ", () => {
+    const input = toCreateProductInput(
+      base({ variants: [{ ...base().variants[0]!, costPrice: "  " }] }),
+      true,
+    ) as { variants: Record<string, unknown>[] };
+    expect(input.variants[0]).not.toHaveProperty("costPrice");
+  });
+
+  it("trim key/value ຂອງ optionValues", () => {
+    const input = toCreateProductInput(
+      base({ variants: [variantRow("S1", { " Color ": " Red " })] }),
+      true,
+    ) as { variants: { optionValues: Record<string, string> }[] };
+    expect(input.variants[0]?.optionValues).toEqual({ Color: "Red" });
+  });
+
+  it("ຮູບທີ່ variantKey ຊີ້ໄປ variant ທີ່ຖືກລຶບແລ້ວ → ກາຍເປັນຮູບຂອງສິນຄ້າ", () => {
+    const input = toCreateProductInput(
+      base({ images: [{ url: "https://x/a.png", alt: "", variantKey: '["gone"]' }] }),
+      true,
+    ) as { images: Record<string, unknown>[] };
+    expect(input.images).toEqual([{ url: "https://x/a.png" }]);
+  });
+});
+
+describe("formatIssues (ເພີ່ມເຕີມ)", () => {
+  it("path ຊ້ອນ", () => {
+    expect(formatIssues([{ path: ["variants", 3, "optionValues"], message: "m" }])).toEqual([
+      "variants[4].optionValues: m",
+    ]);
+  });
+  it("path ເປົ່າ → 'form:'", () => {
+    expect(formatIssues([{ path: [], message: "m", code: "unrecognized_keys" }])[0]).toMatch(/^form:/);
+  });
+});
