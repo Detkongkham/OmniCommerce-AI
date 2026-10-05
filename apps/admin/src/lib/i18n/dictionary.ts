@@ -531,6 +531,13 @@ const lo = {
   "orders.toast.ship": "ສົ່ງແລ້ວ (ຕັດສະຕ໋ອກອອກ)",
   "orders.toast.complete": "ປິດບິນແລ້ວ",
   "orders.toast.cancel": "ຍົກເລີກບິນແລ້ວ",
+  "orders.detail.expiredWaiting": "ກຳລັງລໍລະບົບປ່ອຍສະຕ໋ອກທີ່ຈອງ ໜ້ານີ້ຈະອັບເດດເອງ",
+  "orders.detail.expiredAt": "ໝົດເວລາຈອງ",
+  "orders.detail.back": "ກັບໄປລາຍການບິນ",
+  "orders.detail.noShipping": "ບໍ່ມີຂໍ້ມູນຈັດສົ່ງ",
+  "orders.detail.noNote": "ບໍ່ມີໝາຍເຫດ",
+  "orders.detail.status": "ສະຖານະຂອງບິນ",
+  "orders.cancel.reasonTooLong": "ເຫດຜົນຍາວເກີນໄປ (ບໍ່ເກີນ {max} ໂຕອັກສອນ)",
 } as const;
 
 export type TranslationKey = keyof typeof lo;
@@ -1071,6 +1078,13 @@ const en: Record<TranslationKey, string> = {
   "orders.toast.ship": "Shipped (stock deducted)",
   "orders.toast.complete": "Order completed",
   "orders.toast.cancel": "Order cancelled",
+  "orders.detail.expiredWaiting": "Waiting for the system to release the reserved stock; this page updates automatically",
+  "orders.detail.expiredAt": "Reservation expired",
+  "orders.detail.back": "Back to orders",
+  "orders.detail.noShipping": "No shipping details",
+  "orders.detail.noNote": "No note",
+  "orders.detail.status": "Order status",
+  "orders.cancel.reasonTooLong": "The reason is too long (up to {max} characters)",
 };
 
 export const dictionaries: Record<Language, Record<TranslationKey, string>> = { lo, en };
