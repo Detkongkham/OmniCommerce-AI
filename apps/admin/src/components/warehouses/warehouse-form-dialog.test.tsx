@@ -52,8 +52,40 @@ describe("WarehouseFormDialog", () => {
     await user.type(screen.getByLabelText("Code"), "bad code!");
     await user.type(screen.getByLabelText("Name"), "X");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("This field is required")).toBeInTheDocument();
+    expect(await screen.findByText("Use only A–Z, 0–9, _ and - (up to 20 characters)")).toBeInTheDocument();
+    expect(screen.queryByText("This field is required")).toBeNull();
+    expect(screen.getByLabelText("Code")).toHaveAccessibleDescription(/up to 20 characters/);
     expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("ຊື່ວ່າງ = required; ຊື່/ທີ່ຢູ່ຍາວເກີນ = too long (ມີ error ທີ່ address ດ້ວຍ)", async () => {
+    const { user } = renderWithProviders(<WarehouseFormDialog open onOpenChange={vi.fn()} warehouse={null} />);
+    await user.type(screen.getByLabelText("Code"), "OK");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("This field is required")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Name"), "N");
+    await user.click(screen.getByLabelText("Address"));
+    await user.paste("a".repeat(301));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Too long (up to 300 characters)")).toBeInTheDocument();
+    expect(screen.queryByText("This field is required")).toBeNull();
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("ສ້າງພ້ອມ address: ສົ່ງ address ໄປ API", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ ...existing, id: "w2" });
+    const { user } = renderWithProviders(<WarehouseFormDialog open onOpenChange={vi.fn()} warehouse={null} />);
+    await user.type(screen.getByLabelText("Code"), "b3");
+    await user.type(screen.getByLabelText("Name"), "Branch 3");
+    await user.type(screen.getByLabelText("Address"), "  Pakse  ");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith("/warehouses", {
+        method: "POST",
+        body: { code: "B3", name: "Branch 3", address: "Pakse", isActive: true },
+      }),
+    );
   });
 
   it("API ຕອບ DUPLICATE_VALUE: ສະແດງຂໍ້ຄວາມແປໃນ dialog ແລະ ບໍ່ປິດ", async () => {

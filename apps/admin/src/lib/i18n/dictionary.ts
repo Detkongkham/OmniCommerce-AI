@@ -52,6 +52,7 @@ const lo = {
   "validation.required": "ຂໍ້ມູນນີ້ຈຳເປັນ",
   "validation.email": "ອີເມວບໍ່ຖືກຕ້ອງ",
   "validation.passwordMin": "ລະຫັດຜ່ານຕ້ອງມີຢ່າງໜ້ອຍ {min} ໂຕອັກສອນ",
+  "validation.tooLong": "ຍາວເກີນໄປ (ສູງສຸດ {max} ໂຕອັກສອນ)",
 
   "status.active": "ໃຊ້ງານ",
   "status.inactive": "ປິດໃຊ້ງານ",
@@ -178,6 +179,7 @@ const lo = {
   "warehouses.form.createTitle": "ເພີ່ມສາງ",
   "warehouses.form.createDescription": "ຕັ້ງລະຫັດ ແລະ ຊື່ສາງ",
   "warehouses.form.editDescription": "ແກ້ໄຂລະຫັດ, ຊື່ ຫຼື ທີ່ຢູ່",
+  "warehouses.form.codeInvalid": "ລະຫັດໃຊ້ໄດ້ສະເພາະ A–Z, 0–9, _ ແລະ - (ສູງສຸດ 20 ໂຕ)",
   "warehouses.form.codeHint": "A–Z, 0–9, _ ແລະ - (ສູງສຸດ 20 ໂຕ)",
   "warehouses.toast.created": "ເພີ່ມສາງແລ້ວ",
   "warehouses.toast.updated": "ບັນທຶກສາງແລ້ວ",
@@ -245,6 +247,7 @@ const en: Record<TranslationKey, string> = {
   "validation.required": "This field is required",
   "validation.email": "Enter a valid email",
   "validation.passwordMin": "Password must be at least {min} characters",
+  "validation.tooLong": "Too long (up to {max} characters)",
 
   "status.active": "Active",
   "status.inactive": "Inactive",
@@ -371,6 +374,7 @@ const en: Record<TranslationKey, string> = {
   "warehouses.form.createTitle": "Add warehouse",
   "warehouses.form.createDescription": "Set a code and a name",
   "warehouses.form.editDescription": "Edit the code, name or address",
+  "warehouses.form.codeInvalid": "Use only A–Z, 0–9, _ and - (up to 20 characters)",
   "warehouses.form.codeHint": "A–Z, 0–9, _ and - (up to 20 characters)",
   "warehouses.toast.created": "Warehouse added",
   "warehouses.toast.updated": "Warehouse saved",

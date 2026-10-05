@@ -37,7 +37,9 @@ export function WarehouseList() {
   const [formOpen, setFormOpen] = useState(false);
   const [formWarehouse, setFormWarehouse] = useState<WarehouseDto | null>(null);
   const [deactivating, setDeactivating] = useState<WarehouseDto | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const rows = query.data ?? [];
+  const mutating = update.isPending || setDefault.isPending;
 
   function openForm(warehouse: WarehouseDto | null) {
     setFormWarehouse(warehouse);
@@ -51,7 +53,7 @@ export function WarehouseList() {
     } catch (error) {
       toast.error(errorMessage(error, t));
     } finally {
-      setDeactivating(null);
+      setConfirmOpen(false);
     }
   }
 
@@ -147,6 +149,7 @@ export function WarehouseList() {
                                   className="size-8 rounded-lg"
                                   aria-label={`${t("warehouses.makeDefault")} ${warehouse.code}`}
                                   title={t("warehouses.makeDefault")}
+                                  disabled={mutating}
                                   onClick={() => void makeDefault(warehouse)}
                                 >
                                   <Star aria-hidden="true" />
@@ -159,7 +162,11 @@ export function WarehouseList() {
                                   className="size-8 rounded-lg"
                                   aria-label={`${t("warehouses.deactivate")} ${warehouse.code}`}
                                   title={t("warehouses.deactivate")}
-                                  onClick={() => setDeactivating(warehouse)}
+                                  disabled={mutating}
+                                  onClick={() => {
+                                    setDeactivating(warehouse);
+                                    setConfirmOpen(true);
+                                  }}
                                 >
                                   <PowerOff aria-hidden="true" />
                                 </Button>
@@ -171,6 +178,7 @@ export function WarehouseList() {
                                   className="size-8 rounded-lg"
                                   aria-label={`${t("warehouses.activate")} ${warehouse.code}`}
                                   title={t("warehouses.activate")}
+                                  disabled={mutating}
                                   onClick={() => void setActive(warehouse, true)}
                                 >
                                   <Power aria-hidden="true" />
@@ -195,10 +203,8 @@ export function WarehouseList() {
       <WarehouseFormDialog open={formOpen} onOpenChange={setFormOpen} warehouse={formWarehouse} />
 
       <ConfirmDialog
-        open={deactivating !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeactivating(null);
-        }}
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
         title={t("warehouses.deactivateTitle")}
         description={t("warehouses.deactivateDescription", { name: deactivating?.name ?? "" })}
         confirmLabel={t("warehouses.deactivate")}

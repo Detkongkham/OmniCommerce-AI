@@ -7,10 +7,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { errorMessage } from "@/lib/errors";
+import type { Translate, TranslationKey } from "@/lib/i18n/dictionary";
 import { useT } from "@/lib/i18n/language-provider";
 import { useCreateWarehouse, useUpdateWarehouse } from "@/lib/queries";
 import type { WarehouseDto } from "@/lib/types";
-import { validationText } from "@/lib/validation-text";
 
 /** ຟອມໃຊ້ສະຕຣິງລ້ວນ (address ເປົ່າໄດ້); ແປງເປັນ payload ຂອງ API ຕອນ submit */
 const formSchema = z.object({
@@ -19,6 +19,19 @@ const formSchema = z.object({
   address: z.string().trim().max(300),
 });
 type FormValues = z.input<typeof formSchema>;
+type FormOutput = z.output<typeof formSchema>;
+
+/** ຂໍ້ຄວາມ error ຂອງ field ຕາມຊະນິດ issue ຂອງ zod (ບໍ່ແມ່ນ "required" ທຸກກໍລະນີ) */
+function fieldError(
+  error: { type?: string | undefined } | undefined,
+  t: Translate,
+  opts: { max: number; format?: TranslationKey },
+): string | undefined {
+  if (!error) return undefined;
+  if (error.type === "too_big") return t("validation.tooLong", { max: opts.max });
+  if (error.type === "invalid_format" && opts.format) return t(opts.format);
+  return t("validation.required");
+}
 
 export interface WarehouseFormDialogProps {
   open: boolean;
@@ -47,14 +60,13 @@ function WarehouseForm({ warehouse, onDone }: { warehouse: WarehouseDto | null; 
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({
+  } = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(formSchema),
     defaultValues: { code: warehouse?.code ?? "", name: warehouse?.name ?? "", address: warehouse?.address ?? "" },
   });
 
-  const submit = handleSubmit(async (raw) => {
+  const submit = handleSubmit(async (values) => {
     setFormError(null);
-    const values = formSchema.parse(raw);
     try {
       if (warehouse) {
         await update.mutateAsync({
@@ -94,21 +106,32 @@ function WarehouseForm({ warehouse, onDone }: { warehouse: WarehouseDto | null; 
             label={t("warehouses.col.code")}
             htmlFor="warehouse-code"
             required
-            error={errors.code ? validationText("code", t) : undefined}
+            error={fieldError(errors.code, t, { max: 20, format: "warehouses.form.codeInvalid" })}
           >
-            <Input id="warehouse-code" invalid={!!errors.code} placeholder="MAIN" {...register("code")} />
-            <p className="mt-1 text-xs text-ink-muted">{t("warehouses.form.codeHint")}</p>
+            <Input
+              id="warehouse-code"
+              invalid={!!errors.code}
+              placeholder="MAIN"
+              aria-describedby="warehouse-code-hint"
+              {...register("code")}
+            />
+            <p id="warehouse-code-hint" className="mt-1 text-xs text-ink-muted">{t("warehouses.form.codeHint")}</p>
           </Field>
           <Field
             label={t("warehouses.col.name")}
             htmlFor="warehouse-name"
             required
-            error={errors.name ? validationText("name", t) : undefined}
+            error={fieldError(errors.name, t, { max: 100 })}
           >
             <Input id="warehouse-name" invalid={!!errors.name} {...register("name")} />
           </Field>
-          <Field label={t("warehouses.col.address")} htmlFor="warehouse-address" className="sm:col-span-2">
-            <Input id="warehouse-address" {...register("address")} />
+          <Field
+            label={t("warehouses.col.address")}
+            htmlFor="warehouse-address"
+            className="sm:col-span-2"
+            error={fieldError(errors.address, t, { max: 300 })}
+          >
+            <Input id="warehouse-address" invalid={!!errors.address} {...register("address")} />
           </Field>
         </div>
       </DialogBody>
