@@ -42,8 +42,9 @@ describe("categories (e2e)", () => {
     await request(server()).post("/categories").set(reader).send({ name: "x" }).expect(403);
   });
 
-  it("parentId ທີ່ບໍ່ມີ → 400; ລາຍການມີ productCount ແລະ ຮຽງຕາມ position", async () => {
-    await create({ name: "X", parentId: "missing" }).expect(400);
+  it("parentId ທີ່ບໍ່ມີ → 404 CATEGORY_NOT_FOUND; ລາຍການມີ productCount ແລະ ຮຽງຕາມ position", async () => {
+    const missing = await create({ name: "X", parentId: "missing" }).expect(404);
+    expect(missing.body.code).toBe("CATEGORY_NOT_FOUND");
     const root = await create({ name: "Alpha", position: 5 }).expect(201);
     await create({ name: "Zeta", position: 0 }).expect(201);
     await db.product.create({ data: { name: "P", slug: "p", categoryId: root.body.id } });

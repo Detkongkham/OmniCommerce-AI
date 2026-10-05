@@ -6,12 +6,14 @@ import {
   type UpdateProductInput,
   type UpdateVariantInput,
   type VariantInput,
+  type VariantSearchQuery,
   createProductSchema,
   productListQuerySchema,
   putProductImagesSchema,
   updateProductSchema,
   updateVariantSchema,
   variantInputSchema,
+  variantSearchQuerySchema,
 } from "@oca/shared";
 import type { Request, Response } from "express";
 import type { AuthUser } from "../../common/auth-types";
@@ -27,6 +29,12 @@ export class ProductsController {
   @RequirePermissions("inventory:read")
   list(@Query(new ZodValidationPipe(productListQuerySchema)) query: ProductListQuery) {
     return this.products.list(query);
+  }
+
+  @Get("variants")
+  @RequirePermissions("inventory:read")
+  searchVariants(@Query(new ZodValidationPipe(variantSearchQuerySchema)) query: VariantSearchQuery) {
+    return this.products.searchVariants(query);
   }
 
   @Get("products/:id")

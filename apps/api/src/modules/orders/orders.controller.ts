@@ -13,24 +13,29 @@ import { CurrentUser, RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { OrdersService } from "./orders.service";
 
+/**
+ * ສິດຕາມໜ້າທີ່: ອ່ານ/ສ້າງ/ຍົກເລີກ = orders; ຢືນຢັນຊຳລະ = payments:write; ແພັກ/ສົ່ງ/ປິດ = logistics:write.
+ * ການເຫັນຕົ້ນທຶນ (unitCost) ຄວບຄຸມໂດຍ costs:read ທີ່ CostRedactionInterceptor.
+ */
+
 @Controller("orders")
 export class OrdersController {
   constructor(@Inject(OrdersService) private readonly orders: OrdersService) {}
 
   @Get()
-  @RequirePermissions("inventory:read")
+  @RequirePermissions("orders:read")
   list(@Query(new ZodValidationPipe(orderListQuerySchema)) query: OrderListQuery) {
     return this.orders.list(query);
   }
 
   @Get(":id")
-  @RequirePermissions("inventory:read")
+  @RequirePermissions("orders:read")
   get(@Param("id") id: string) {
     return this.orders.get(id);
   }
 
   @Post()
-  @RequirePermissions("inventory:write")
+  @RequirePermissions("orders:write")
   create(
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
     @CurrentUser() actor: AuthUser,
@@ -41,35 +46,35 @@ export class OrdersController {
 
   @Post(":id/pay")
   @HttpCode(200)
-  @RequirePermissions("inventory:write")
+  @RequirePermissions("payments:write")
   pay(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.orders.pay(id, actor, req.ip);
   }
 
   @Post(":id/pack")
   @HttpCode(200)
-  @RequirePermissions("inventory:write")
+  @RequirePermissions("logistics:write")
   pack(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.orders.pack(id, actor, req.ip);
   }
 
   @Post(":id/ship")
   @HttpCode(200)
-  @RequirePermissions("inventory:write")
+  @RequirePermissions("logistics:write")
   ship(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.orders.ship(id, actor, req.ip);
   }
 
   @Post(":id/complete")
   @HttpCode(200)
-  @RequirePermissions("inventory:write")
+  @RequirePermissions("logistics:write")
   complete(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.orders.complete(id, actor, req.ip);
   }
 
   @Post(":id/cancel")
   @HttpCode(200)
-  @RequirePermissions("inventory:write")
+  @RequirePermissions("orders:write")
   cancel(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(cancelOrderSchema)) body: CancelOrderInput,

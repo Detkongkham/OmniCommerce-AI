@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import type { RoleInput } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
@@ -6,6 +6,7 @@ import type { AuthUser } from "../../common/auth-types";
 import { PRISMA } from "../../prisma/prisma.module";
 import { type RoleDto, roleInclude, roleSnapshot, toRoleDto } from "./staff.mapper";
 import { isOwner, prismaErrorCode, uniqueViolationFields } from "./staff.service";
+import { apiError } from "../../common/api-error";
 
 @Injectable()
 export class RolesService {
@@ -21,7 +22,7 @@ export class RolesService {
 
   async get(id: string): Promise<RoleDto> {
     const role = await this.prisma.role.findUnique({ where: { id }, include: roleInclude });
-    if (!role) throw new NotFoundException("Role not found");
+    if (!role) throw apiError("ROLE_NOT_FOUND", "Role not found");
     return toRoleDto(role);
   }
 
@@ -96,7 +97,7 @@ export class RolesService {
       await this.prisma.role.delete({ where: { id } });
     } catch (error) {
       const code = prismaErrorCode(error);
-      if (code === "P2025") throw new NotFoundException("Role not found");
+      if (code === "P2025") throw apiError("ROLE_NOT_FOUND", "Role not found");
       if (code === "P2003") throw new ConflictException("Role is assigned to users");
       throw error;
     }
@@ -114,10 +115,10 @@ export class RolesService {
     const fields = uniqueViolationFields(error);
     if (fields) {
       return fields.some((f) => f.includes("name"))
-        ? new ConflictException("Role name already in use")
+        ? apiError("DUPLICATE_VALUE", "Role name already in use")
         : new ConflictException("Conflict");
     }
-    if (prismaErrorCode(error) === "P2025") return new NotFoundException("Role not found");
+    if (prismaErrorCode(error) === "P2025") return apiError("ROLE_NOT_FOUND", "Role not found");
     return error;
   }
 

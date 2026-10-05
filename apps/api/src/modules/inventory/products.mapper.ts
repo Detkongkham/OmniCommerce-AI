@@ -146,3 +146,51 @@ export function variantSnapshot(row: ProductVariant): Prisma.InputJsonObject {
     isActive: row.isActive,
   };
 }
+
+export const variantSearchInclude = {
+  product: { select: { id: true, name: true, status: true, images: { orderBy: { position: "asc" }, take: 1 } } },
+  stockLevels: { orderBy: { warehouseId: "asc" } },
+} as const satisfies Prisma.ProductVariantInclude;
+
+export type VariantSearchRow = Prisma.ProductVariantGetPayload<{ include: typeof variantSearchInclude }>;
+
+/** variant ແບນພ້ອມລາຄາ ແລະ ສະຕ໋ອກຕໍ່ສາງ: ສຳລັບ autocomplete ໃນຟອມບິນ ແລະ ການຮັບສະຕ໋ອກ */
+export interface VariantSearchItemDto {
+  id: string;
+  sku: string;
+  barcode: string | null;
+  name: string | null;
+  productId: string;
+  productName: string;
+  productStatus: ProductStatus;
+  imageUrl: string | null;
+  price: string;
+  costPrice: string;
+  isActive: boolean;
+  availableTotal: number;
+  stock: { warehouseId: string; onHand: number; reserved: number; available: number }[];
+}
+
+export function toVariantSearchItem(row: VariantSearchRow): VariantSearchItemDto {
+  const stock = row.stockLevels.map((level) => ({
+    warehouseId: level.warehouseId,
+    onHand: level.onHand,
+    reserved: level.reserved,
+    available: level.onHand - level.reserved,
+  }));
+  return {
+    id: row.id,
+    sku: row.sku,
+    barcode: row.barcode,
+    name: row.name,
+    productId: row.product.id,
+    productName: row.product.name,
+    productStatus: row.product.status,
+    imageUrl: row.product.images[0]?.url ?? null,
+    price: money(row.price),
+    costPrice: money(row.costPrice),
+    isActive: row.isActive,
+    availableTotal: stock.reduce((sum, level) => sum + level.available, 0),
+    stock,
+  };
+}

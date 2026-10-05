@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import { type CreateStaffInput, SYSTEM_ROLE_OWNER, type UpdateStaffInput } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
@@ -14,6 +7,7 @@ import type { AuthUser } from "../../common/auth-types";
 import { isUniqueViolation } from "../../common/prisma-errors";
 import { PRISMA } from "../../prisma/prisma.module";
 import { type StaffDto, staffInclude, staffSnapshot, toStaffDto } from "./staff.mapper";
+import { apiError } from "../../common/api-error";
 
 // roles.service.ts ແລະ test ເດີມ import ຈາກໄຟລ໌ນີ້
 export { isUniqueViolation, prismaErrorCode, uniqueViolationFields } from "../../common/prisma-errors";
@@ -66,7 +60,7 @@ export class StaffService {
       });
       return toStaffDto(user);
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException("Email already in use");
+      if (isUniqueViolation(error)) throw apiError("DUPLICATE_VALUE", "Email already in use");
       throw error;
     }
   }
@@ -139,7 +133,7 @@ export class StaffService {
 
   private async requireRole(roleId: string): Promise<{ id: string; name: string }> {
     const role = await this.prisma.role.findUnique({ where: { id: roleId }, select: { id: true, name: true } });
-    if (!role) throw new BadRequestException("Role not found");
+    if (!role) throw apiError("ROLE_NOT_FOUND", "Role not found");
     return role;
   }
 }

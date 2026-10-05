@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { hash } from "@node-rs/argon2";
-import type { PrismaClient } from "@oca/database";
+import { type PrismaClient, ROLE_DEFINITIONS } from "@oca/database";
 import { PERMISSIONS } from "@oca/shared";
 import request from "supertest";
 import { expect } from "vitest";
@@ -124,8 +124,9 @@ export async function seedCatalog(db: PrismaClient) {
 }
 
 /**
- * inv-write@test.local (inventory:read+write), inv-read@test.local (inventory:read),
- * noinv@test.local (staff:read ເທົ່ານັ້ນ). ຄວນເອີ້ນຫຼັງ resetDb.
+ * inv-write@test.local (ທຸກຢ່າງຂອງສາງ+ບິນ: inventory/orders rw, payments:write, logistics:write, costs rw),
+ * inv-read@test.local (inventory/orders/costs read), noinv@test.local (staff:read ເທົ່ານັ້ນ).
+ * ຄວນເອີ້ນຫຼັງ resetDb. ການທົດສອບສິດແຍກຕາມໜ້າທີ່ໃຊ້ seedRoleUsers.
  */
 export async function seedInventoryUsers(db: PrismaClient) {
   const passwordHash = await hash(TEST_PASSWORD);
@@ -135,10 +136,41 @@ export async function seedInventoryUsers(db: PrismaClient) {
     });
     return db.user.create({ data: { email, name: roleName, passwordHash, roleId: role.id } });
   };
-  const writer = await makeUser("inv-write@test.local", "INV_WRITE", ["inventory:read", "inventory:write"]);
-  const reader = await makeUser("inv-read@test.local", "INV_READ", ["inventory:read"]);
+  const writer = await makeUser("inv-write@test.local", "INV_WRITE", [
+    "inventory:read",
+    "inventory:write",
+    "orders:read",
+    "orders:write",
+    "payments:write",
+    "logistics:write",
+    "costs:read",
+    "costs:write",
+  ]);
+  const reader = await makeUser("inv-read@test.local", "INV_READ", ["inventory:read", "orders:read", "costs:read"]);
   const none = await makeUser("noinv@test.local", "NO_INV", ["staff:read"]);
   return { writer, reader, none };
+}
+
+/**
+ * ຜູ້ໃຊ້ຕໍ່ role ຕາມ seed ຈິງ (ROLE_DEFINITIONS): `<role ຕົວພິມນ້ອຍ>@role.test` (owner, manager, chat_admin, warehouse, accountant).
+ * ໃຊ້ກວດວ່າ role model ທີ່ປ່ອຍຈິງ ເຮັດໄດ້/ເຮັດບໍ່ໄດ້ ຕາມທີ່ຕັ້ງໃຈ. ຄວນເອີ້ນຫຼັງ resetDb.
+ */
+export async function seedRoleUsers(db: PrismaClient): Promise<Record<string, { email: string }>> {
+  const passwordHash = await hash(TEST_PASSWORD);
+  const users: Record<string, { email: string }> = {};
+  for (const def of ROLE_DEFINITIONS) {
+    const role = await db.role.create({
+      data: {
+        name: def.name,
+        isSystem: def.isSystem,
+        permissions: { create: def.permissions.map((permission) => ({ permission })) },
+      },
+    });
+    const email = `${def.name.toLowerCase()}@role.test`;
+    await db.user.create({ data: { email, name: def.name, passwordHash, roleId: role.id } });
+    users[def.name] = { email };
+  }
+  return users;
 }
 
 /** { Authorization: "Bearer ..." } ຂອງຜູ້ໃຊ້ */

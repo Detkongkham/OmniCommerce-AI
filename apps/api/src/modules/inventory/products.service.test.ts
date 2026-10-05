@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { ConflictException, NotFoundException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthUser } from "../../common/auth-types";
 import { ProductsService } from "./products.service";
@@ -29,10 +29,10 @@ describe("ProductsService Prisma error mapping", () => {
     await expect(del("P2025").remove("p1", actor, undefined)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("update: P2025 -> 404, P2003 -> 400", async () => {
+  it("update: P2025 -> 404, P2003 -> 404", async () => {
     const upd = (c: string) => build({ product: { findUnique: vi.fn().mockResolvedValue(detailRow), update: vi.fn().mockRejectedValue(code(c)) } });
     await expect(upd("P2025").update("p1", { name: "x" }, actor, undefined)).rejects.toBeInstanceOf(NotFoundException);
-    await expect(upd("P2003").update("p1", { categoryId: "c1" }, actor, undefined)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(upd("P2003").update("p1", { categoryId: "c1" }, actor, undefined)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("updateVariant: P2025 -> 404", async () => {
@@ -42,9 +42,9 @@ describe("ProductsService Prisma error mapping", () => {
     await expect(service.updateVariant("v1", { isActive: false }, actor, undefined)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("create: P2003 (category deleted meanwhile) -> 400", async () => {
+  it("create: P2003 (category deleted meanwhile) -> 404", async () => {
     const service = build({ $transaction: vi.fn().mockRejectedValue(code("P2003")), product: { count: vi.fn().mockResolvedValue(0) } });
     const input = { name: "x", slug: "x", status: "DRAFT", categoryId: "c1", options: [], variants: [], images: [] };
-    await expect(service.create(input as never, actor, undefined)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.create(input as never, actor, undefined)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

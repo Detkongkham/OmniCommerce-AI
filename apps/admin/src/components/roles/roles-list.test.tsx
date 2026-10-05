@@ -28,8 +28,8 @@ describe("RolesList", () => {
     renderWithProviders(<RolesList />);
     const owner = await screen.findByTestId("row-role-role-1");
     expect(within(owner).getByText("System")).toBeInTheDocument();
-    expect(within(owner).getByText("2/24")).toBeInTheDocument();
-    expect(within(screen.getByTestId("row-role-role-2")).getByText("1/24")).toBeInTheDocument();
+    expect(within(owner).getByText("2/30")).toBeInTheDocument();
+    expect(within(screen.getByTestId("row-role-role-2")).getByText("1/30")).toBeInTheDocument();
   });
 
   it("role ລະບົບ: ເບິ່ງໄດ້ ແຕ່ລຶບບໍ່ໄດ້; role ທົ່ວໄປ: ແກ້ໄຂ ແລະ ລຶບໄດ້", async () => {

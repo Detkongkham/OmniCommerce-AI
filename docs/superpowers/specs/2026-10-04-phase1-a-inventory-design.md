@@ -13,7 +13,7 @@ Schema ຫຼັກມີຄົບແລ້ວ ([DATABASE.md](../../DATABASE.md)
 | ສາງ | ຈອງຈາກສາງ default ເປັນຄ່າເລີ່ມຕົ້ນ; ລະບຸ `warehouseId` ຕໍ່ລາຍການໄດ້. ບໍ່ມີ auto-allocate ຂ້າມສາງ |
 | ຮູບສິນຄ້າ | admin ໃສ່ `url` ດ້ວຍມື (http/https). ບໍ່ມີ upload |
 | ເວລາຈອງ | `StoreSetting.reservationMinutes` (default 30, 1–10080); override ຕໍ່ບິນດ້ວຍ `reservationMinutes` ໃນ request |
-| ສິດ | `inventory:read` / `inventory:write` ທີ່ມີຢູ່ (ບໍ່ເພີ່ມ module ສິດ). ບິນກໍໃຊ້ສິດຊຸດນີ້ |
+| ສິດ | ສາງ/ສິນຄ້າ = `inventory:*`. ບິນແຍກອອກ (ແກ້ຕາມ final review, ເບິ່ງ §6.1): `orders:*` (ອ່ານ/ສ້າງ/ຍົກເລີກ), `payments:write` (ຢືນຢັນຊຳລະ), `logistics:write` (ແພັກ/ສົ່ງ/ປິດບິນ), `costs:read\|write` (ເຫັນ/ຕັ້ງຕົ້ນທຶນ). ເພີ່ມ module ສິດ `orders`, `payments`, `costs` ໃນ `@oca/shared` (ທຸກ module ສິດມີ Nest module ຄູ່) |
 | ເງິນ | ໃຊ້ `Decimal` ທັງໝົດ (Prisma `Decimal`/`decimal.js`), ຫ້າມ `number` ໃນການຄຳນວນ. DTO ສົ່ງເງິນເປັນ **string** (`"12500.00"`) |
 | ສະກຸນເງິນ | `currency = baseCurrency`, `exchangeRate = 1` ສະເໝີໃນ 1a |
 
@@ -82,6 +82,8 @@ CREATE SEQUENCE "Order_number_seq" START 1;
 **ທົ່ວໄປ**
 * `pagination`: `page` (int ≥1, default 1), `pageSize` (int 1–100, default 20). Response ລາຍການ: `{ items, total, page, pageSize }`.
 * `money`: string ກົງ `^\d{1,16}(\.\d{1,2})?$`, ≥ 0.
+* `vatRate`: **string** ຄືກັບເງິນ (`"7"`/`"7.00"`, 0–100, ≤2 ທົດສະນິຍົມ). ທັງ request ຂອງ `PATCH /settings/store` ແລະ response ຂອງ settings + ບິນ ຄືນ `"7.00"` (ກ່ອນນີ້ settings ເປັນ number, ບິນເປັນ string).
+* **filter ວັນທີ** (`from`/`to` ຂອງ `/orders`, `/stock/movements`): ວັນທີລ້ວນ `YYYY-MM-DD` ຖືເປັນ **ເວລາຮ້ານ (UTC+7)**: `from` = 00:00 ຂອງມື້ນັ້ນ, `to` = 00:00 ຂອງ **ມື້ຖັດໄປ** ແບບ exclusive (ຈຶ່ງຮວມມື້ສຸດທ້າຍທັງມື້). ສົ່ງເວລາເຕັມ (ISO) ມາ ໃຊ້ຕາມນັ້ນ ແລະ `to` ກໍເປັນ exclusive. ວັນທີທີ່ບໍ່ມີຢູ່ຈິງ (`2026-02-30`) → `400`.
 * `quantity`: int 1–1,000,000. `delta`: int ≠ 0, |delta| ≤ 1,000,000.
 
 **Category**: `name` (trim, 1–100), `slug` (optional; ຖ້າບໍ່ໃສ່ສ້າງຈາກ `name`; ຮູບແບບ `^[a-z0-9]+(?:-[a-z0-9]+)*$`, ≤100), `parentId` (optional|null), `position` (int ≥0).
@@ -134,6 +136,8 @@ CREATE SEQUENCE "Order_number_seq" START 1;
 | Variant | `POST /products/:id/variants`, `PATCH /variants/:id` | ສິນຄ້າທີ່ມີ options ຕ້ອງສົ່ງ `optionValues` ໃຫ້ຄົບ ແລະ ບໍ່ຊ້ຳ |
 | ຮູບ | `PUT /products/:id/images` | ແທນທັງລາຍການ |
 | ສາງ | `GET /warehouses`, `POST`, `PATCH /:id`, `POST /:id/default` | ຕັ້ງ default: ໃນ transaction ປົດອັນເກົ່າ ແລ້ວຕັ້ງໃໝ່ (partial unique index ກັນສອງອັນ). ປິດ (`isActive=false`) ສາງທີ່ `onHand>0` ຫຼື `reserved>0` ຫຼື ເປັນ default → `409` |
+| Variant | `GET /variants?q=&includeInactive=&page=&pageSize=` | ຄົ້ນ variant ພ້ອມລາຄາ ແລະ ສະຕ໋ອກຕໍ່ສາງ ສຳລັບ autocomplete ຂອງ `/orders/new` ແລະ ການຮັບສະຕ໋ອກຄັ້ງທຳອິດ. `q` ຄົ້ນ `sku`/`barcode`/ຊື່ variant/ຊື່ສິນຄ້າ. ຄືນ `id,sku,barcode,name,productId,productName,productStatus,imageUrl,price,costPrice*,isActive,availableTotal,stock[]` (`stock=[]` ຖ້າຍັງບໍ່ເຄີຍມີ StockLevel). ຄ່າເລີ່ມຕົ້ນ: ສະເພາະ variant ACTIVE ຂອງສິນຄ້າ ACTIVE; `includeInactive=true` ຮວມ DRAFT/ARCHIVED/ປິດ ເພື່ອຮັບສະຕ໋ອກ. ຮຽງຕາມ `sku` |
+| ລູກຄ້າ | `GET /customers?q=&page=&pageSize=` | ຄົ້ນຊື່/ໂທ/email, ຮຽງຕາມຊື່; ຄືນ `{id,name,phone,email}`. ຕ້ອງມີ `orders:read`. ການຈັດການລູກຄ້າເຕັມເປັນຂອງ CRM ພາຍຫຼັງ |
 | ສະຕ໋ອກ | `GET /stock?warehouseId=&variantId=&q=&lowStock=true&page=` | ແຖວຕໍ່ (variant, ສາງ): `onHand, reserved, available, lowStockThreshold`. `lowStock` = `available <= lowStockThreshold` |
 | | `GET /stock/movements?variantId=&warehouseId=&orderId=&type=&from=&to=&page=` | ໃໝ່→ເກົ່າ; ຄືນ `actorId` ພ້ອມຊື່ຜູ້ເຮັດ |
 | | `POST /stock/receive`, `/adjust`, `/transfer`, `/return`; `PATCH /stock/:id/threshold` | ຕອບ StockLevel ຫຼັງແກ້ (ແລະ ຂອງປາຍທາງສຳລັບ transfer) |
@@ -146,6 +150,24 @@ CREATE SEQUENCE "Order_number_seq" START 1;
 `category.{create,update,delete}`, `product.{create,update,archive,delete}`, `variant.{create,update}`, `product.images`, `warehouse.{create,update,setDefault}`, `stock.{receive,adjust,transfer,return,threshold}`, `order.{create,pay,pack,ship,complete,cancel}`, `settings.store.update`. ໝາຍເຫດ: ການ `expire` ໂດຍ worker ບໍ່ມີ actor ຈຶ່ງບໍ່ຂຽນ AuditLog (ມີ `StockMovement RELEASE` ແລະ `status=EXPIRED` ເປັນຫຼັກຖານ).
 
 `StockMovement.actorId` = `req.user.id`; ກໍລະນີ worker = `null`.
+
+### 6.1 ສິດຕາມໜ້າທີ່ (ຕັດສິນແລ້ວ: ແກ້ປັນຫາ role model ຈາກ final review)
+| ການກະທຳ | ສິດ |
+|---|---|
+| `GET /orders`, `/orders/:id`, `GET /customers` | `orders:read` |
+| `POST /orders`, `POST /orders/:id/cancel` | `orders:write` |
+| `POST /orders/:id/pay` (ຢືນຢັນຊຳລະ) | `payments:write` |
+| `POST /orders/:id/pack`, `/ship`, `/complete` | `logistics:write` |
+| ເຫັນ `costPrice` (variant) / `unitCost` (ລາຍການບິນ) | `costs:read`. **ບັງຄັບທີ່ຊັ້ນ response ທົ່ວແອັບ** (`CostRedactionInterceptor` ລຶບສອງ field ນີ້ອອກຈາກທຸກ response): endpoint ໃໝ່ (Inbox/CF) ປອດໄພໂດຍບໍ່ຕ້ອງຈື່ |
+| ຕັ້ງ/ແກ້ `costPrice` | `costs:write` (ຖ້າບໍ່ມີ → `403`; ຕອນສ້າງ `"0"` ຖືວ່າບໍ່ໄດ້ຕັ້ງ) |
+| ສິນຄ້າ/ສາງ/ສະຕ໋ອກ/ຕັ້ງຄ່າຮ້ານ | `inventory:read` / `inventory:write` ຄືເດີມ |
+
+Role ຕາມ seed: **OWNER** ທຸກຢ່າງ; **MANAGER** ທຸກຢ່າງຍົກເວັ້ນ `staff:write`; **CHAT_ADMIN** `orders:*` + ອ່ານ inventory/crm (ສ້າງ/ຍົກເລີກບິນໃຫ້ Inbox ໄດ້ ແຕ່ຢືນຢັນຊຳລະ/ເຫັນຕົ້ນທຶນບໍ່ໄດ້); **WAREHOUSE** `inventory:*` + `logistics:*` + `orders:read` (ແພັກ/ສົ່ງໄດ້ ແຕ່ສ້າງບິນ/ຢືນຢັນຊຳລະ/ເຫັນຕົ້ນທຶນບໍ່ໄດ້); **ACCOUNTANT** ອ່ານຢ່າງດຽວ ລວມ `orders`, `payments`, `costs`. ການຢືນຢັນຊຳລະສຳລັບບັນຊີ (`payments:write`) ປ່ອຍໃຫ້ໂມດູນ 9 (Slip) ຕັດສິນ. Seed ບໍ່ຂຽນທັບ role ທີ່ບໍ່ແມ່ນລະບົບທີ່ມີຢູ່ແລ້ວ ຈຶ່ງຕ້ອງແກ້ role ຂອງ deployment ເດີມຜ່ານ UI `/roles` (ເບິ່ງ DEPLOYMENT-NOTES).
+
+### 6.2 Error `code` ທີ່ຄົງທີ່
+ທຸກ error ຄືນ `{ statusCode, code, message, ... }` (`400` ມີ `issues[]`; `409` ຂອງສະຕ໋ອກມີ `shortages[]`). `code` ເປັນຄ່າຈາກ `ERROR_CODES` ໃນ `@oca/shared` ແລະ **ບໍ່ປ່ຽນຊື່ຫຼັງປ່ອຍ**; UI ແປຈາກ `code` (i18n lo/en) ສ່ວນ `message` ເປັນພາສາອັງກິດສຳລັບ log. Exception ທີ່ບໍ່ລະບຸ code ເອງໄດ້ code ຕາມ status (`BAD_REQUEST`, `VALIDATION_FAILED`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `TOO_MANY_ATTEMPTS`). ລະຫັດສະເພາະ: `*_NOT_FOUND`, `DUPLICATE_VALUE` (+`fields[]`), `CATEGORY_IN_USE`, `PRODUCT_HAS_STOCK_HISTORY`, `WAREHOUSE_NOT_EMPTY|IS_DEFAULT|INACTIVE`, `NO_DEFAULT_WAREHOUSE`, `INSUFFICIENT_STOCK`, `VARIANT_NOT_AVAILABLE`, `ORDER_INVALID_STATE` (+`status`), `RESERVATION_EXPIRED`.
+
+**ກົດ 404 vs 400:** id ທີ່ອ້າງອີງແລ້ວ **ບໍ່ພົບ** → `404` + `<ENTITY>_NOT_FOUND` ສະເໝີ ບໍ່ວ່າຢູ່ໃນ path ຫຼື body (ກ່ອນນີ້ບິນ/ສິນຄ້າ/ໝວດ/ລູກຄ້າ/ສາງໃນ body ຕອບ `400` ແຕ່ສະຕ໋ອກຕອບ `404`). `400` ໃຊ້ສະເພາະ body/query ຜິດຮູບ ຫຼື ຜິດກົດຂໍ້ມູນ (ຊ້ຳໃນ request, `compareAtPrice < price`, ຕັ້ງ parent ເປັນລູກຫຼານ).
 
 ## 7. ຄຳສັ່ງຊື້ (ລາຍລະອຽດ)
 
@@ -203,8 +225,8 @@ pricesIncludeVat = false:  vatAmount = round(vatBase × r / 100);        total =
 | ກໍລະນີ | HTTP |
 |---|---|
 | Zod ບໍ່ຜ່ານ | 400 (`issues[]`) |
-| ບໍ່ມີ token / ບໍ່ມີສິດ | 401 / 403 |
-| ບໍ່ພົບ resource | 404 |
+| ບໍ່ມີ token / ບໍ່ມີສິດ (ລວມ ຕັ້ງຕົ້ນທຶນໂດຍບໍ່ມີ `costs:write`) | 401 / 403 |
+| ບໍ່ພົບ resource (path ຫຼື id ໃນ body) | 404 (`*_NOT_FOUND`) |
 | `InsufficientStockError` | 409 `{ message, shortages: [{variantId, warehouseId, sku, requested, available}] }` |
 | ສະຖານະບິນບໍ່ຖືກ / ແພ້ການແຂ່ງ / ບິນໝົດເວລາແລ້ວແຕ່ pay | 409 |
 | `sku` / `barcode` / `slug` / `code` ຊ້ຳ | 409 (ບອກ field ຈາກ `uniqueViolationFields`) |
@@ -226,7 +248,7 @@ pricesIncludeVat = false:  vatAmount = round(vatBase × r / 100);        total =
 | `/categories` | tree + dialog ສ້າງ/ແກ້/ລຶບ |
 | `/settings` (ສ່ວນຮ້ານ) | ຊື່, VAT %, ລາຄາລວມ VAT, ນາທີຈອງ. ແກ້ໄດ້ດ້ວຍ `inventory:write` |
 
-Error ຈາກ API (409) ສະແດງເປັນ toast ພ້ອມຂໍ້ຄວາມທີ່ API ສົ່ງ. i18n: lo/en ຕາມ dictionary ທີ່ມີ.
+Error ຈາກ API ສະແດງເປັນ toast ໂດຍແປຈາກ `code` (§6.2); ຖ້າບໍ່ຮູ້ຈັກ code ໃຊ້ `message`. i18n: lo/en ຕາມ dictionary ທີ່ມີ. ປຸ່ມ/ເມນູຊ່ອນຕາມສິດຈິງຂອງຜູ້ໃຊ້ (§6.1): ຄອລຳຕົ້ນທຶນສະແດງສະເພາະເມື່ອ `costs:read`; ປຸ່ມຢືນຢັນຊຳລະ = `payments:write`; ແພັກ/ສົ່ງ/ປິດ = `logistics:write`; ສ້າງ/ຍົກເລີກ = `orders:write`.
 
 ## 11. ການທົດສອບ
 **ເຄື່ອງຈັກ + e2e (Postgres ຈິງ `oca_test` ໃນ `apps/api/test`, ຕາມ pattern `staff.e2e.test.ts`; ຫ້າມແຕະ 5432 ຂອງຜູ້ໃຊ້)**
@@ -239,7 +261,7 @@ Error ຈາກ API (409) ສະແດງເປັນ toast ພ້ອມຂໍ�
 7. ວົງຈອນເຕັມ pay→pack→ship→complete: ສະຕ໋ອກສຸດທ້າຍ `onHand` ລົດ, `reserved` ກັບ 0, movement ຄົບ.
 8. `pay` ຫຼັງ `reservedUntil` → `409`. ຍົກເລີກບິນ SHIPPED → `409`.
 9. ການສ້າງສິນຄ້າ: options ບໍ່ສອດຄ່ອງ variants, ຊຸດຄ່າຊ້ຳ, SKU ຊ້ຳ → `400`/`409` ແລະບໍ່ມີ product ຄ້າງ (rollback). Archive ແທນລຶບເມື່ອເຄີຍຖືກຂາຍ.
-10. ສິດ: ບໍ່ມີ `inventory:read` → `403` ທຸກ GET; ມີແຕ່ read → `403` ທຸກ POST/PATCH/DELETE. ຕົວແທນ WAREHOUSE / CHAT_ADMIN ຕາມ seed role ເຮັດສິ່ງທີ່ຄວນເຮັດໄດ້.
+10. ສິດ: **sweep** ທຸກ route (ຄົ້ນຫາຈາກ Nest metadata ຈຶ່ງ route ໃໝ່ທີ່ລືມ `@RequirePermissions` ເຮັດໃຫ້ test ລົ້ມ): ບໍ່ມີ token → `401`; role ທີ່ຂາດສິດຂອງ route ນັ້ນຢ່າງດຽວ → `403`. ແລະ e2e ກັບ role ຕາມ seed ຈິງ (`seedRoleUsers`): CHAT_ADMIN ສ້າງບິນໄດ້/ຢືນຢັນຊຳລະບໍ່ໄດ້, WAREHOUSE ແພັກ/ສົ່ງໄດ້/ສ້າງບິນ+ຢືນຢັນຊຳລະບໍ່ໄດ້, ບໍ່ເຫັນ ແລະ ຕັ້ງຕົ້ນທຶນບໍ່ໄດ້, MANAGER/OWNER/ACCOUNTANT ຕາມທີ່ກຳນົດ.
 11. ເງິນ: ຕົວຢ່າງ §7.2 ແລະ `pricesIncludeVat=false`, ຄ່າສົ່ງ 0, ສ່ວນຫຼຸດ = ລາຄາເຕັມ (lineTotal 0).
 
 **Unit (ບໍ່ຕ້ອງມີ DB)**: ຄຳນວນເງິນ, slug generator, ການສ້າງ `Variant.name`, ການກວດ options/variants ສອດຄ່ອງ, ຕາຕະລາງ transition, ການແປ error (`23514`, P2002).

@@ -68,9 +68,10 @@ describe("RolesService error mapping", () => {
 
   it("update: unique violation on name vs another field", async () => {
     const onName = serviceWith({ transaction: { code: "P2002", meta: { target: ["name"] } } });
-    await expect(onName.update("r1", { name: "X", permissions: [] }, actor, undefined)).rejects.toEqual(
-      new ConflictException("Role name already in use"),
-    );
+    await expect(onName.update("r1", { name: "X", permissions: [] }, actor, undefined)).rejects.toMatchObject({
+      status: 409,
+      response: { code: "DUPLICATE_VALUE" },
+    });
     const other = serviceWith({ transaction: { code: "P2002", meta: { target: ["roleId", "permission"] } } });
     await expect(other.update("r1", { name: "X", permissions: [] }, actor, undefined)).rejects.toEqual(
       new ConflictException("Conflict"),

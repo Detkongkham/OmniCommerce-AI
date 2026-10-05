@@ -23,6 +23,7 @@ export class InsufficientStockFilter implements ExceptionFilter<InsufficientStoc
       .json({
         statusCode: 409,
         error: "Conflict",
+        code: "INSUFFICIENT_STOCK",
         message: error.message,
         shortages: error.shortages.map((shortage) => ({ ...shortage, sku: skuById.get(shortage.variantId) ?? null })),
       });

@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import {
   type Prisma,
   type PrismaClient,
@@ -28,6 +28,7 @@ import {
   toMovementDto,
   toStockLevelDto,
 } from "./stock.mapper";
+import { apiError } from "../../common/api-error";
 
 @Injectable()
 export class StockService {
@@ -79,7 +80,7 @@ export class StockService {
       ...(query.orderId ? { orderId: query.orderId } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.from || query.to
-        ? { createdAt: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) } }
+        ? { createdAt: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lt: query.to } : {}) } }
         : {}),
     };
     const [rows, total] = await this.prisma.$transaction([
@@ -126,7 +127,7 @@ export class StockService {
     await this.requireTargets(input.variantId, [input.warehouseId]);
     if (input.orderId) {
       const order = await this.prisma.order.findUnique({ where: { id: input.orderId }, select: { id: true } });
-      if (!order) throw new NotFoundException("Order not found");
+      if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
     }
     await this.prisma.$transaction((tx) =>
       returnToStock(tx, input, { actorId: actor.id, note: input.note, orderId: input.orderId }),
@@ -163,7 +164,7 @@ export class StockService {
     ip: string | undefined,
   ): Promise<StockLevelDto> {
     const before = await this.prisma.stockLevel.findUnique({ where: { id } });
-    if (!before) throw new NotFoundException("Stock level not found");
+    if (!before) throw apiError("STOCK_LEVEL_NOT_FOUND", "Stock level not found");
     const row = await this.prisma.stockLevel.update({
       where: { id },
       data: { lowStockThreshold: input.lowStockThreshold },
@@ -184,11 +185,11 @@ export class StockService {
   // ----- helpers -----
   private async requireTargets(variantId: string, warehouseIds: string[]): Promise<void> {
     const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId }, select: { id: true } });
-    if (!variant) throw new NotFoundException("Variant not found");
+    if (!variant) throw apiError("VARIANT_NOT_FOUND", "Variant not found");
     const warehouses = await this.prisma.warehouse.findMany({ where: { id: { in: warehouseIds } } });
-    if (warehouses.length !== new Set(warehouseIds).size) throw new NotFoundException("Warehouse not found");
+    if (warehouses.length !== new Set(warehouseIds).size) throw apiError("WAREHOUSE_NOT_FOUND", "Warehouse not found");
     if (warehouses.some((warehouse) => !warehouse.isActive)) {
-      throw new ConflictException("Warehouse is inactive");
+      throw apiError("WAREHOUSE_INACTIVE", "Warehouse is inactive");
     }
   }
 

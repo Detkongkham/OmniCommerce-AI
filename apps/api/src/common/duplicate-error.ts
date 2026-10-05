@@ -1,4 +1,5 @@
-import { ConflictException } from "@nestjs/common";
+import type { HttpException } from "@nestjs/common";
+import { apiError } from "./api-error";
 import { uniqueViolationFields } from "./prisma-errors";
 
 const KNOWN_CONSTRAINTS: Record<string, string> = {
@@ -18,9 +19,9 @@ export function fieldNameFromConstraint(name: string): string {
 }
 
 /** 409 naming the duplicated field(s) for a P2002 error; undefined for any other error. */
-export function duplicateError(error: unknown): ConflictException | undefined {
+export function duplicateError(error: unknown): HttpException | undefined {
   const fields = uniqueViolationFields(error);
   if (!fields) return undefined;
   const names = fields.map(fieldNameFromConstraint);
-  return new ConflictException(`Duplicate value: ${names.join(", ") || "unique field"}`);
+  return apiError("DUPLICATE_VALUE", `Duplicate value: ${names.join(", ") || "unique field"}`, { fields: names });
 }

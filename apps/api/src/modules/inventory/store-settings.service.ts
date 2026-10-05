@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { PrismaClient } from "@oca/database";
+import { Prisma, type PrismaClient } from "@oca/database";
 import type { UpdateStoreSettingsInput } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
@@ -9,7 +9,8 @@ import { type StoreSettingRow, ensureStoreSetting } from "./ensure-store-setting
 export interface StoreSettingsDto {
   name: string;
   baseCurrency: string;
-  vatRate: number;
+  /** string ສອງທົດສະນິຍົມ ("7.00") ຄືກັບ vatRate ຂອງບິນ */
+  vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
 }
@@ -18,7 +19,7 @@ export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
   return {
     name: row.name,
     baseCurrency: row.baseCurrency,
-    vatRate: Number(row.vatRate.toString()),
+    vatRate: row.vatRate.toFixed(2),
     pricesIncludeVat: row.pricesIncludeVat,
     reservationMinutes: row.reservationMinutes,
   };
@@ -42,7 +43,7 @@ export class StoreSettingsService {
       where: { id: 1 },
       data: {
         name: input.name,
-        vatRate: input.vatRate === undefined ? undefined : input.vatRate.toFixed(2),
+        vatRate: input.vatRate === undefined ? undefined : new Prisma.Decimal(input.vatRate).toFixed(2),
         pricesIncludeVat: input.pricesIncludeVat,
         reservationMinutes: input.reservationMinutes,
       },

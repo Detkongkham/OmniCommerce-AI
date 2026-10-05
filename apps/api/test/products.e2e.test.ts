@@ -119,8 +119,9 @@ describe("products (e2e)", () => {
       }
     });
 
-    it("category ທີ່ບໍ່ມີ → 400; body ຜິດ → 400 ພ້ອມ issues", async () => {
-      await create({ ...cup, categoryId: "missing" }).expect(400);
+    it("category ທີ່ບໍ່ມີ → 404; body ຜິດ → 400 ພ້ອມ issues", async () => {
+      const missing = await create({ ...cup, categoryId: "missing" }).expect(404);
+      expect(missing.body.code).toBe("CATEGORY_NOT_FOUND");
       const res = await create({ name: "x", variants: [] }).expect(400);
       expect(res.body.issues.length).toBeGreaterThan(0);
     });
@@ -183,7 +184,7 @@ describe("products (e2e)", () => {
   });
 
   describe("ແກ້ໄຂສິນຄ້າ", () => {
-    it("PATCH ແກ້ຊື່/ສະຖານະ/ໝວດ/ລຶບ description (null); slug ຊ້ຳ 409; body ວ່າງ 400; ບໍ່ມີ id 404", async () => {
+    it("PATCH ແກ້ຊື່/ສະຖານະ/ໝວດ/ລຶບ description (null); slug ຊ້ຳ 409; ໝວດບໍ່ມີ 404; body ວ່າງ 400; ບໍ່ມີ id 404", async () => {
       const a = await create(cup).expect(201);
       const b = await create({ ...cup, name: "B", slug: "b-slug", variants: [{ sku: "B-1", price: "1" }] }).expect(201);
       const category = await db.category.create({ data: { name: "C", slug: "c" } });
@@ -192,7 +193,7 @@ describe("products (e2e)", () => {
       const res = await patch(a.body.id, { name: "ໃໝ່", status: "ACTIVE", categoryId: category.id, description: null }).expect(200);
       expect(res.body).toMatchObject({ name: "ໃໝ່", status: "ACTIVE", categoryId: category.id, description: null });
       await patch(a.body.id, { slug: "b-slug" }).expect(409);
-      await patch(a.body.id, { categoryId: "missing" }).expect(400);
+      await patch(a.body.id, { categoryId: "missing" }).expect(404);
       await patch(a.body.id, {}).expect(400);
       await patch("nope", { name: "x" }).expect(404);
       expect(await db.auditLog.count({ where: { action: "product.update", entityId: a.body.id } })).toBe(1);

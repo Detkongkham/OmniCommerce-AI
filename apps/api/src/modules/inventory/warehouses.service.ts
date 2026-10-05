@@ -1,10 +1,11 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import type { CreateWarehouseInput, UpdateWarehouseInput } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { isUniqueViolation } from "../../common/prisma-errors";
 import { PRISMA } from "../../prisma/prisma.module";
+import { apiError } from "../../common/api-error";
 
 export interface WarehouseDto {
   id: string;
@@ -48,7 +49,7 @@ export class WarehousesService {
       await this.record(actor, "warehouse.create", row.id, null, row, ip);
       return toWarehouseDto(row);
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException("Warehouse code already in use");
+      if (isUniqueViolation(error)) throw apiError("DUPLICATE_VALUE", "Warehouse code already in use");
       throw error;
     }
   }
@@ -57,7 +58,7 @@ export class WarehousesService {
     const before = await this.require(id);
     const deactivating = input.isActive === false && before.isActive;
     if (deactivating) {
-      if (before.isDefault) throw new ConflictException("Cannot deactivate the default warehouse");
+      if (before.isDefault) throw apiError("WAREHOUSE_IS_DEFAULT", "Cannot deactivate the default warehouse");
       // Known, accepted check-then-act window: deactivation vs a concurrent stock receive. Stock in an
       // inactive warehouse stays visible and the warehouse can be reactivated. StockService must
       // re-validate warehouse.isActive when it acts.
@@ -65,7 +66,7 @@ export class WarehousesService {
         where: { warehouseId: id, OR: [{ onHand: { gt: 0 } }, { reserved: { gt: 0 } }] },
         select: { id: true },
       });
-      if (stocked) throw new ConflictException("Cannot deactivate a warehouse that still holds stock");
+      if (stocked) throw apiError("WAREHOUSE_NOT_EMPTY", "Cannot deactivate a warehouse that still holds stock");
     }
     const data = { code: input.code, name: input.name, address: input.address, isActive: input.isActive };
     try {
@@ -76,8 +77,8 @@ export class WarehousesService {
           const res = await tx.warehouse.updateMany({ where: { id, isDefault: false }, data });
           if (res.count === 0) {
             const current = await tx.warehouse.findUnique({ where: { id } });
-            if (!current) throw new NotFoundException("Warehouse not found");
-            throw new ConflictException("Cannot deactivate the default warehouse");
+            if (!current) throw apiError("WAREHOUSE_NOT_FOUND", "Warehouse not found");
+            throw apiError("WAREHOUSE_IS_DEFAULT", "Cannot deactivate the default warehouse");
           }
           return tx.warehouse.findUniqueOrThrow({ where: { id } });
         });
@@ -87,7 +88,7 @@ export class WarehousesService {
       await this.record(actor, "warehouse.update", id, before, after, ip);
       return toWarehouseDto(after);
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException("Warehouse code already in use");
+      if (isUniqueViolation(error)) throw apiError("DUPLICATE_VALUE", "Warehouse code already in use");
       throw error;
     }
   }
@@ -101,8 +102,8 @@ export class WarehousesService {
         const res = await tx.warehouse.updateMany({ where: { id, isActive: true }, data: { isDefault: true } });
         if (res.count === 0) {
           const current = await tx.warehouse.findUnique({ where: { id } });
-          if (!current) throw new NotFoundException("Warehouse not found");
-          throw new ConflictException("Cannot make an inactive warehouse the default");
+          if (!current) throw apiError("WAREHOUSE_NOT_FOUND", "Warehouse not found");
+          throw apiError("WAREHOUSE_INACTIVE", "Cannot make an inactive warehouse the default");
         }
         return tx.warehouse.findUniqueOrThrow({ where: { id } });
       });
@@ -117,7 +118,7 @@ export class WarehousesService {
 
   private async require(id: string): Promise<WarehouseRow> {
     const row = await this.prisma.warehouse.findUnique({ where: { id } });
-    if (!row) throw new NotFoundException("Warehouse not found");
+    if (!row) throw apiError("WAREHOUSE_NOT_FOUND", "Warehouse not found");
     return row;
   }
 

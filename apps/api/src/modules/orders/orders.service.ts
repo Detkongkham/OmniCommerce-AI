@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { type Prisma, type PrismaClient, releaseMany, reserveMany, shipMany } from "@oca/database";
 import {
   type CancelOrderInput,
@@ -11,7 +11,7 @@ import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { PRISMA } from "../../prisma/prisma.module";
-import { ensureStoreSetting } from "./ensure-store-setting";
+import { ensureStoreSetting } from "../inventory/ensure-store-setting";
 import {
   type OrderDetailDto,
   type OrderDetailRow,
@@ -21,6 +21,7 @@ import {
   toOrderDetail,
   toOrderListItem,
 } from "./orders.mapper";
+import { apiError } from "../../common/api-error";
 
 @Injectable()
 export class OrdersService {
@@ -34,7 +35,7 @@ export class OrdersService {
       ...(query.status ? { status: query.status } : {}),
       ...(query.channel ? { channel: query.channel } : {}),
       ...(query.from || query.to
-        ? { createdAt: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) } }
+        ? { createdAt: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lt: query.to } : {}) } }
         : {}),
       ...(query.q
         ? {
@@ -74,12 +75,12 @@ export class OrdersService {
           where: { isDefault: true, isActive: true },
           select: { id: true },
         });
-        if (!warehouse) throw new ConflictException("No active default warehouse is configured");
+        if (!warehouse) throw apiError("NO_DEFAULT_WAREHOUSE", "No active default warehouse is configured");
         defaultWarehouseId = warehouse.id;
       }
       const resolved = input.items.map((item) => {
         const warehouseId = item.warehouseId ?? defaultWarehouseId;
-        if (!warehouseId) throw new ConflictException("No active default warehouse is configured");
+        if (!warehouseId) throw apiError("NO_DEFAULT_WAREHOUSE", "No active default warehouse is configured");
         return { ...item, warehouseId };
       });
       const keys = resolved.map((item) => `${item.variantId}|${item.warehouseId}`);
@@ -88,8 +89,8 @@ export class OrdersService {
       }
       const warehouseIds = [...new Set(resolved.map((item) => item.warehouseId))];
       const warehouses = await tx.warehouse.findMany({ where: { id: { in: warehouseIds } } });
-      if (warehouses.length !== warehouseIds.length) throw new BadRequestException("Warehouse not found");
-      if (warehouses.some((warehouse) => !warehouse.isActive)) throw new ConflictException("Warehouse is inactive");
+      if (warehouses.length !== warehouseIds.length) throw apiError("WAREHOUSE_NOT_FOUND", "Warehouse not found");
+      if (warehouses.some((warehouse) => !warehouse.isActive)) throw apiError("WAREHOUSE_INACTIVE", "Warehouse is inactive");
 
       // 2) variants
       const variantIds = [...new Set(resolved.map((item) => item.variantId))];
@@ -103,7 +104,7 @@ export class OrdersService {
       let customerId: string | null = null;
       if (input.customerId) {
         const customer = await tx.customer.findUnique({ where: { id: input.customerId }, select: { id: true } });
-        if (!customer) throw new BadRequestException("Customer not found");
+        if (!customer) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
         customerId = customer.id;
       } else if (input.customer) {
         const customer = await tx.customer.upsert({
@@ -117,9 +118,9 @@ export class OrdersService {
       // 4) ເງິນ
       const lines = resolved.map((item) => {
         const variant = variantById.get(item.variantId);
-        if (!variant) throw new NotFoundException(`Variant ${item.variantId} not found`);
+        if (!variant) throw apiError("VARIANT_NOT_FOUND", `Variant ${item.variantId} not found`);
         if (!variant.isActive || variant.product.status !== "ACTIVE") {
-          throw new ConflictException(`Variant ${variant.sku} is not available for sale`);
+          throw apiError("VARIANT_NOT_AVAILABLE", `Variant ${variant.sku} is not available for sale`, { sku: variant.sku });
         }
         return { item, variant };
       });
@@ -319,21 +320,21 @@ export class OrdersService {
 
   private async failTransition(id: string, action: string): Promise<never> {
     const order = await this.prisma.order.findUnique({ where: { id }, select: { status: true, reservedUntil: true } });
-    if (!order) throw new NotFoundException("Order not found");
+    if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
     if (
       action === "pay" &&
       order.status === "PENDING_PAYMENT" &&
       order.reservedUntil !== null &&
       order.reservedUntil.getTime() <= Date.now()
     ) {
-      throw new ConflictException("Reservation expired; the order can no longer be paid");
+      throw apiError("RESERVATION_EXPIRED", "Reservation expired; the order can no longer be paid");
     }
-    throw new ConflictException(`Order is ${order.status}; cannot ${action}`);
+    throw apiError("ORDER_INVALID_STATE", `Order is ${order.status}; cannot ${action}`, { status: order.status });
   }
 
   async requireDetail(id: string): Promise<OrderDetailRow> {
     const row = await this.prisma.order.findUnique({ where: { id }, include: orderDetailInclude });
-    if (!row) throw new NotFoundException("Order not found");
+    if (!row) throw apiError("ORDER_NOT_FOUND", "Order not found");
     return row;
   }
 }

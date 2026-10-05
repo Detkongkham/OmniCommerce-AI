@@ -3,8 +3,6 @@ import { APP_FILTER } from "@nestjs/core";
 import { CategoriesController } from "./categories.controller";
 import { CategoriesService } from "./categories.service";
 import { InsufficientStockFilter } from "./insufficient-stock.filter";
-import { OrdersController } from "./orders.controller";
-import { OrdersService } from "./orders.service";
 import { ProductsController } from "./products.controller";
 import { ProductsService } from "./products.service";
 import { StockController } from "./stock.controller";
@@ -21,7 +19,6 @@ import { WarehousesService } from "./warehouses.service";
     CategoriesController,
     ProductsController,
     StockController,
-    OrdersController,
   ],
   providers: [
     { provide: APP_FILTER, useClass: InsufficientStockFilter },
@@ -30,7 +27,6 @@ import { WarehousesService } from "./warehouses.service";
     CategoriesService,
     ProductsService,
     StockService,
-    OrdersService,
   ],
 })
 export class InventoryModule {}

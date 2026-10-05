@@ -133,15 +133,15 @@ describe("orders (e2e)", () => {
       expect(await db.order.count()).toBe(0);
     });
 
-    it("ບໍ່ມີສາງ default → 409; ສາງທີ່ລະບຸບໍ່ມີ → 400; ສາງປິດ → 409", async () => {
+    it("ບໍ່ມີສາງ default → 409; ສາງທີ່ລະບຸບໍ່ມີ → 404; ສາງປິດ → 409", async () => {
       await db.warehouse.update({ where: { id: f.whB.id }, data: { isActive: false } });
       await createOrder({ items: [{ variantId: f.v1.id, warehouseId: f.whB.id, quantity: 1 }] }).expect(409);
-      await createOrder({ items: [{ variantId: f.v1.id, warehouseId: "nope", quantity: 1 }] }).expect(400);
+      await createOrder({ items: [{ variantId: f.v1.id, warehouseId: "nope", quantity: 1 }] }).expect(404);
       await db.warehouse.update({ where: { id: f.whA.id }, data: { isDefault: false } });
       await createOrder({ items: [{ variantId: f.v1.id, quantity: 1 }] }).expect(409);
     });
 
-    it("ລູກຄ້າ: upsert ຕາມ phone (ບໍ່ຂຽນທັບຊື່), customerId ທີ່ບໍ່ມີ → 400", async () => {
+    it("ລູກຄ້າ: upsert ຕາມ phone (ບໍ່ຂຽນທັບຊື່), customerId ທີ່ບໍ່ມີ → 404", async () => {
       const item = { variantId: f.v1.id, quantity: 1 };
       const a = await createOrder({ items: [item], customer: { name: "ຊື່ເດີມ", phone: "020999" + "111" } }).expect(201);
       const b = await createOrder({ items: [item], customer: { name: "ຊື່ໃໝ່", phone: "020999111" } }).expect(201);
@@ -151,7 +151,8 @@ describe("orders (e2e)", () => {
 
       const withId = await createOrder({ items: [item], customerId: a.body.customer.id }).expect(201);
       expect(withId.body.customer.id).toBe(a.body.customer.id);
-      await createOrder({ items: [item], customerId: "nope" }).expect(400);
+      const noCustomer = await createOrder({ items: [item], customerId: "nope" }).expect(404);
+      expect(noCustomer.body.code).toBe("CUSTOMER_NOT_FOUND");
     });
 
     it("ສ່ວນຫຼຸດເກີນລາຄາ → 400; body ຜິດ (items ຫວ່າງ, ລາຍການຊ້ຳ) → 400", async () => {

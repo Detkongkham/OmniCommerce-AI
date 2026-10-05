@@ -33,7 +33,7 @@ describe("store settings (e2e)", () => {
     expect(res.body).toEqual({
       name: "OCA Store",
       baseCurrency: "LAK",
-      vatRate: 10,
+      vatRate: "10.00",
       pricesIncludeVat: true,
       reservationMinutes: 30,
     });
@@ -64,9 +64,9 @@ describe("store settings (e2e)", () => {
     const res = await request(server())
       .patch("/settings/store")
       .set(writer)
-      .send({ name: "ຮ້ານນ້ອງ", vatRate: 7, reservationMinutes: 45, pricesIncludeVat: false })
+      .send({ name: "ຮ້ານນ້ອງ", vatRate: "7", reservationMinutes: 45, pricesIncludeVat: false })
       .expect(200);
-    expect(res.body).toMatchObject({ name: "ຮ້ານນ້ອງ", vatRate: 7, reservationMinutes: 45, pricesIncludeVat: false });
+    expect(res.body).toMatchObject({ name: "ຮ້ານນ້ອງ", vatRate: "7.00", reservationMinutes: 45, pricesIncludeVat: false });
 
     const audit = await db.auditLog.findFirstOrThrow({ where: { action: "settings.store.update" } });
     expect(audit.entity).toBe("StoreSetting");
@@ -82,7 +82,7 @@ describe("store settings (e2e)", () => {
   it("PATCH: body ວ່າງ / ຄ່າຜິດ / baseCurrency → 400", async () => {
     const writer = await bearerFor(app, "inv-write@test.local");
     await request(server()).patch("/settings/store").set(writer).send({}).expect(400);
-    await request(server()).patch("/settings/store").set(writer).send({ vatRate: 101 }).expect(400);
+    await request(server()).patch("/settings/store").set(writer).send({ vatRate: "101" }).expect(400);
     await request(server()).patch("/settings/store").set(writer).send({ reservationMinutes: 0 }).expect(400);
     await request(server()).patch("/settings/store").set(writer).send({ baseCurrency: "USD" }).expect(400);
   });

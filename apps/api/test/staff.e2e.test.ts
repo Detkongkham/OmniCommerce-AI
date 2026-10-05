@@ -55,14 +55,15 @@ describe("staff (e2e)", () => {
     expect(JSON.stringify(audit.after)).not.toContain("assword");
   });
 
-  it("ສ້າງ: email ຊ້ຳ 409, role ບໍ່ມີ 400, body ຜິດ 400", async () => {
+  it("ສ້າງ: email ຊ້ຳ 409, role ບໍ່ມີ 404, body ຜິດ 400", async () => {
     const { accessToken } = await loginAs(app, "owner@test.local");
     const send = (body: object) => request(server()).post("/staff").set(bearer(accessToken)).send(body);
     const valid = { email: "dup@test.local", name: "D", password: "Password123!", roleId: ids.viewer.id };
 
     await send(valid).expect(201);
     await send(valid).expect(409);
-    await send({ ...valid, email: "other@test.local", roleId: "missing" }).expect(400);
+    const noRole = await send({ ...valid, email: "other@test.local", roleId: "missing" }).expect(404);
+    expect(noRole.body.code).toBe("ROLE_NOT_FOUND");
     await send({ ...valid, email: "short@test.local", password: "short" }).expect(400);
   });
 
