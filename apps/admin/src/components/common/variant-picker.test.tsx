@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import type { VariantSearchItemDto } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
 import { VariantPicker } from "./variant-picker";
@@ -62,5 +62,97 @@ describe("VariantPicker", () => {
     const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" excludeIds={["v1"]} onSelect={vi.fn()} />);
     await user.type(screen.getByLabelText("Item"), "tee");
     expect(await screen.findByText("No variants found")).toBeInTheDocument();
+  });
+
+  it("ARIA combobox: role, aria-expanded, aria-controls, aria-autocomplete", async () => {
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+    const input = screen.getByRole("combobox", { name: "Item" });
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).toHaveAttribute("aria-autocomplete", "list");
+    await user.type(input, "tee");
+    const listbox = await screen.findByRole("listbox");
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveAttribute("aria-controls", listbox.id);
+  });
+
+  it("ບໍ່ມີຜົນ (items ເປົ່າ): ສະແດງ status 'No variants found' ນອກ listbox", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 8 });
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("Item"), "zzz");
+    expect(await screen.findByRole("status")).toHaveTextContent("No variants found");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("ລາຍການຖືກເຊື່ອງກ່ອນ debounce ສຳເລັດ", async () => {
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("Item"), "tee");
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(await screen.findByRole("option")).toBeInTheDocument();
+  });
+
+  it("disabled: input ປິດ ແລະ ບໍ່ຍິງ API", () => {
+    renderWithProviders(<VariantPicker id="vp" label="Item" disabled onSelect={vi.fn()} />);
+    expect(screen.getByLabelText("Item")).toBeDisabled();
+    expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("keyboard: ArrowDown ເລືອກ active, Enter ເລືອກ, focus ຄືນ input", async () => {
+    const onSelect = vi.fn();
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={onSelect} />);
+    const input = screen.getByLabelText("Item");
+    await user.type(input, "tee");
+    const option = await screen.findByRole("option", { name: /TEE-R/ });
+    await user.keyboard("{ArrowDown}");
+    expect(option).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", option.id);
+    await user.keyboard("{Enter}");
+    expect(onSelect).toHaveBeenCalledWith(found);
+    expect(input).toHaveValue("");
+    expect(input).toHaveFocus();
+  });
+
+  it("keyboard: ArrowUp ວົນໄປຕົວສຸດທ້າຍ; Escape ປິດລາຍການ ແລະ ເປີດຄືນເມື່ອພິມຕໍ່", async () => {
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+    const input = screen.getByLabelText("Item");
+    await user.type(input, "tee");
+    const option = await screen.findByRole("option");
+    await user.keyboard("{ArrowUp}");
+    expect(option).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    await user.type(input, "e");
+    expect(await screen.findByRole("option")).toBeInTheDocument();
+  });
+
+  it("ປິດເມື່ອ blur", async () => {
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("Item"), "tee");
+    await screen.findByRole("option");
+    fireEvent.blur(screen.getByRole("combobox"));
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  it("ຄລິກ option ດ້ວຍ mouse ເລືອກໄດ້ (mousedown) ແລະ focus ຄືນ input", async () => {
+    const onSelect = vi.fn();
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={onSelect} />);
+    await user.type(screen.getByLabelText("Item"), "tee");
+    await user.click(await screen.findByRole("option"));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Item")).toHaveFocus();
+  });
+
+  it("excludeIds: pageSize = 8 + ຈຳນວນທີ່ຕັດ", async () => {
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" excludeIds={["v1"]} onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("Item"), "tee");
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/variants?q=tee&page=1&pageSize=9"));
+  });
+
+  it("error: ສະແດງຂໍ້ຄວາມຜິດພາດ (role=alert)", async () => {
+    vi.mocked(apiFetch).mockRejectedValue(new ApiError(500, "boom"));
+    const { user } = renderWithProviders(<VariantPicker id="vp" label="Item" onSelect={vi.fn()} />);
+    await user.type(screen.getByLabelText("Item"), "tee");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not search variants");
   });
 });

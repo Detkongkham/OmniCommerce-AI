@@ -293,13 +293,14 @@ export function useStockMovements(params: StockMovementParams) {
 }
 
 /** ຄົ້ນຫາ variant (autocomplete): ບໍ່ຍິງເມື່ອ q ເປົ່າ */
-export function useVariantSearch(params: { q: string; includeInactive?: boolean }) {
+export function useVariantSearch(params: { q: string; includeInactive?: boolean; pageSize?: number }) {
   const q = params.q.trim();
+  const pageSize = params.pageSize ?? 8;
   return useQuery({
-    queryKey: [...queryKeys.variants, "search", q, params.includeInactive ?? false],
+    queryKey: [...queryKeys.variants, "search", q, params.includeInactive ?? false, pageSize],
     queryFn: () =>
       apiFetch<Page<VariantSearchItemDto>>(
-        `/variants${toQueryString({ q, includeInactive: params.includeInactive ? true : undefined, page: 1, pageSize: 8 })}`,
+        `/variants${toQueryString({ q, includeInactive: params.includeInactive ? true : undefined, page: 1, pageSize })}`,
       ),
     enabled: q !== "",
   });
