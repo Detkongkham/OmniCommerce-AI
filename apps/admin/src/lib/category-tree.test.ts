@@ -34,6 +34,30 @@ describe("flattenCategories", () => {
     const looped = flattenCategories([cat("p", "q"), cat("q", "p")]);
     expect(looped.length).toBeLessThanOrEqual(2);
   });
+
+  it("ວົງຈອນລ້ວນ ຄືນທັງສອງ id ຄັ້ງດຽວ", () => {
+    const ids = flattenCategories([cat("p", "q"), cat("q", "p")]).map((row) => row.category.id);
+    expect(ids.sort()).toEqual(["p", "q"]);
+  });
+
+  it("ວົງຈອນທີ່ຫ້ອຍຢູ່ກັບຮາກທີ່ຖືກຕ້ອງ ຍັງຄືນທຸກ id ຄັ້ງດຽວ", () => {
+    const list = [cat("root", null), cat("p", "q"), cat("q", "p"), cat("r", "p")];
+    const ids = flattenCategories(list).map((row) => row.category.id);
+    expect(ids.sort()).toEqual(["p", "q", "r", "root"]);
+  });
+
+  it("position ເທົ່າກັນ ຮຽງຕາມຊື່", () => {
+    const rows = flattenCategories([cat("1", null, 0, "Zeta"), cat("2", null, 0, "Alpha")]);
+    expect(rows.map((row) => row.category.name)).toEqual(["Alpha", "Zeta"]);
+  });
+
+  it("orphan ທີ່ມີລູກ ຍັງຮັກສາ subtree ຊ້ອນກັນ", () => {
+    const rows = flattenCategories([cat("x", "ghost"), cat("x1", "x")]);
+    expect(rows.map((row) => [row.category.id, row.depth])).toEqual([
+      ["x", 0],
+      ["x1", 1],
+    ]);
+  });
 });
 
 describe("descendantIds", () => {
@@ -41,5 +65,15 @@ describe("descendantIds", () => {
     const list = [cat("a", null), cat("a1", "a"), cat("a1x", "a1"), cat("b", null)];
     expect([...descendantIds(list, "a")].sort()).toEqual(["a1", "a1x"]);
     expect(descendantIds(list, "b").size).toBe(0);
+  });
+
+  it("ວົງຈອນຈົບ ແລະ ບໍ່ລວມ id ເອງ", () => {
+    const list = [cat("p", "q"), cat("q", "p")];
+    expect([...descendantIds(list, "p")]).toEqual(["q"]);
+  });
+
+  it("id ທີ່ບໍ່ຮູ້ຈັກ ແລະ ລາຍການຫວ່າງ ຄືນ set ຫວ່າງ", () => {
+    expect(descendantIds([cat("a", null)], "nope").size).toBe(0);
+    expect(descendantIds([], "a").size).toBe(0);
   });
 });

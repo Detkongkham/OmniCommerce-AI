@@ -26,21 +26,29 @@ export function flattenCategories(list: readonly CategoryDto[]): CategoryRow[] {
     }
   };
   walk(null, 0);
+  // ໝວດທີ່ຢູ່ໃນວົງຈອນ (ຫຼືຫ້ອຍຢູ່ກັບວົງຈອນ) ບໍ່ຖືກເຂົ້າເຖິງຈາກຮາກ: ເພີ່ມເປັນຮາກ ເພື່ອບໍ່ໃຫ້ຫາຍ
+  for (const category of [...list].sort(byOrder)) {
+    if (seen.has(category.id)) continue;
+    seen.add(category.id);
+    rows.push({ category, depth: 0 });
+    walk(category.id, 1);
+  }
   return rows;
 }
 
 /** id ຂອງລູກຫຼານທຸກຊັ້ນຂອງ `id` (ບໍ່ລວມ `id` ເອງ) */
 export function descendantIds(list: readonly CategoryDto[], id: string): Set<string> {
   const result = new Set<string>();
-  const queue = [id];
-  while (queue.length > 0) {
-    const current = queue.pop();
+  const stack = [id];
+  while (stack.length > 0) {
+    const current = stack.pop();
     for (const category of list) {
       if (category.parentId === current && !result.has(category.id)) {
         result.add(category.id);
-        queue.push(category.id);
+        stack.push(category.id);
       }
     }
   }
+  result.delete(id);
   return result;
 }
