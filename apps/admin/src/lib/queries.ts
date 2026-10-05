@@ -1,6 +1,7 @@
 import type {
   AdjustStockInput,
   CreateCategoryInput,
+  CreateOrderInput,
   CreateStaffInput,
   CreateWarehouseInput,
   PutProductImagesInput,
@@ -23,6 +24,9 @@ import { apiFetch } from "./api";
 import { toQueryString } from "./query-string";
 import type {
   CategoryDto,
+  CustomerDto,
+  OrderDetailDto,
+  OrderListItemDto,
   Page,
   ProductDetailDto,
   ProductListItemDto,
@@ -45,6 +49,8 @@ export const queryKeys = {
   products: ["products"] as const,
   stock: ["stock"] as const,
   variants: ["variants"] as const,
+  orders: ["orders"] as const,
+  customers: ["customers"] as const,
 };
 
 export function useStaffList() {
@@ -326,5 +332,74 @@ export function useSetThreshold() {
     mutationFn: ({ id, lowStockThreshold }: { id: string; lowStockThreshold: number | null }) =>
       apiFetch<StockLevelDto>(`/stock/${id}/threshold`, { method: "PATCH", body: { lowStockThreshold } }),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ຄຳສັ່ງຊື້
+// ---------------------------------------------------------------------------
+export interface OrderListParams {
+  q?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useOrders(params: OrderListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.orders, "list", params],
+    queryFn: () => apiFetch<Page<OrderListItemDto>>(`/orders${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * ບິນທີ່ຍັງ PENDING_PAYMENT ແຕ່ນັບຖອຍຮອດ 0 (worker ຍັງບໍ່ໄດ້ expire) → poll ທຸກ 15 ວິ ຈົນສະຖານະປ່ຽນ.
+ */
+export function useOrder(id: string) {
+  return useQuery({
+    queryKey: [...queryKeys.orders, "detail", id],
+    queryFn: () => apiFetch<OrderDetailDto>(`/orders/${id}`),
+    refetchInterval: (query) => {
+      const order = query.state.data;
+      return order?.status === "PENDING_PAYMENT" && order.secondsUntilExpiry === 0 ? 15_000 : false;
+    },
+  });
+}
+
+/** ບິນໃໝ່ຈອງສະຕ໋ອກ ແລະ ອາດສ້າງລູກຄ້າໃໝ່ → invalidate orders/stock/products/variants/customers */
+export function useCreateOrder() {
+  const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants, queryKeys.customers);
+  return useMutation({
+    mutationFn: (input: CreateOrderInput) => apiFetch<OrderDetailDto>("/orders", { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export type OrderAction = "pay" | "pack" | "ship" | "complete" | "cancel";
+
+export function useOrderAction() {
+  const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants);
+  return useMutation({
+    mutationFn: ({ id, action, reason }: { id: string; action: OrderAction; reason?: string }) =>
+      apiFetch<OrderDetailDto>(
+        `/orders/${id}/${action}`,
+        action === "cancel" ? { method: "POST", body: reason ? { reason } : {} } : { method: "POST" },
+      ),
+    onSuccess: invalidate,
+    // ຖ້າລົ້ມ (ເຊັ່ນ ORDER_INVALID_STATE/RESERVATION_EXPIRED) ບິນອາດຖືກປ່ຽນໄປແລ້ວ → refetch ໃຫ້ສະແດງສະຖານະຫຼ້າສຸດ
+    onError: invalidate,
+  });
+}
+
+/** ຄົ້ນຫາລູກຄ້າ (ຟອມບິນ): ບໍ່ຍິງເມື່ອ q ເປົ່າ */
+export function useCustomers(params: { q: string }) {
+  const q = params.q.trim();
+  return useQuery({
+    queryKey: [...queryKeys.customers, q],
+    queryFn: () => apiFetch<Page<CustomerDto>>(`/customers${toQueryString({ q, page: 1, pageSize: 8 })}`),
+    enabled: q !== "",
   });
 }

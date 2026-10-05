@@ -1,4 +1,4 @@
-import type { Permission, ProductStatus, StockMovementType } from "@oca/shared";
+import type { OrderStatus, Permission, ProductStatus, SalesChannel, StockMovementType } from "@oca/shared";
 
 export interface StaffDto {
   id: string;
@@ -157,4 +157,80 @@ export interface Shortage {
   sku: string | null;
   requested: number;
   available: number;
+}
+
+export interface CustomerDto {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
+
+export interface OrderListItemDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  channel: SalesChannel;
+  source: string;
+  customer: { id: string; name: string; phone: string | null } | null;
+  total: string;
+  itemCount: number;
+  reservedUntil: string | null;
+  createdAt: string;
+}
+
+export interface OrderItemDto {
+  id: string;
+  variantId: string;
+  warehouseId: string;
+  productName: string;
+  variantName: string | null;
+  sku: string;
+  unitPrice: string;
+  /** ບໍ່ມີເມື່ອຜູ້ໃຊ້ບໍ່ມີ costs:read */
+  unitCost?: string;
+  quantity: number;
+  discount: string;
+  lineTotal: string;
+}
+
+export interface OrderMovementDto {
+  id: string;
+  type: StockMovementType;
+  quantity: number;
+  variantId: string;
+  sku: string;
+  warehouseId: string;
+  warehouseCode: string;
+  createdAt: string;
+}
+
+export interface OrderDetailDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  channel: SalesChannel;
+  source: string;
+  customer: { id: string; name: string; phone: string | null; email: string | null } | null;
+  currency: string;
+  exchangeRate: string;
+  subtotal: string;
+  discountTotal: string;
+  shippingFee: string;
+  vatRate: string;
+  vatAmount: string;
+  total: string;
+  shippingName: string | null;
+  shippingPhone: string | null;
+  shippingAddress: string | null;
+  note: string | null;
+  reservedUntil: string | null;
+  secondsUntilExpiry: number | null;
+  paidAt: string | null;
+  shippedAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  items: OrderItemDto[];
+  movements: OrderMovementDto[];
 }
