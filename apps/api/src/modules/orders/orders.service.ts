@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { type Prisma, type PrismaClient, releaseMany, reserveMany, shipMany } from "@oca/database";
 import {
@@ -10,6 +11,7 @@ import {
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
+import { isUniqueViolation } from "../../common/prisma-errors";
 import { PRISMA } from "../../prisma/prisma.module";
 import { ensureStoreSetting } from "../inventory/ensure-store-setting";
 import {
@@ -22,6 +24,11 @@ import {
   toOrderListItem,
 } from "./orders.mapper";
 import { apiError } from "../../common/api-error";
+
+/** sha256 ຂອງ payload ທີ່ zod parse ແລ້ວ (ລຳດັບ key ຄົງທີ່ຕາມ schema) */
+function hashInput(input: CreateOrderInput): string {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
 
 @Injectable()
 export class OrdersService {
@@ -64,8 +71,66 @@ export class OrdersService {
   }
 
   /** ສ້າງບິນ + ຈອງສະຕ໋ອກ ໃນ transaction ດຽວ. ສະຕ໋ອກບໍ່ພໍ → InsufficientStockError (filter ແປເປັນ 409) ແລະ rollback ທັງໝົດ. */
-  async create(input: CreateOrderInput, actor: AuthUser, ip: string | undefined): Promise<OrderDetailDto> {
-    const orderId = await this.prisma.$transaction(async (tx) => {
+  async create(
+    input: CreateOrderInput,
+    actor: AuthUser,
+    ip: string | undefined,
+    idempotencyKey?: string,
+  ): Promise<OrderDetailDto> {
+    const idempotencyHash = idempotencyKey ? hashInput(input) : undefined;
+    if (idempotencyKey && idempotencyHash) {
+      const replay = await this.findReplay(idempotencyKey, idempotencyHash);
+      if (replay) return replay;
+    }
+    let orderId: string;
+    try {
+      orderId = await this.createInTransaction(input, actor, idempotencyKey, idempotencyHash);
+    } catch (error) {
+      // ສອງ request ດ້ວຍ key ດຽວກັນແລ່ນພ້ອມກັນ: ຕົວທີ່ແພ້ unique ຖືກ rollback ທັງໝົດ (ລວມການຈອງສະຕ໋ອກ) ແລ້ວຄືນບິນຂອງຕົວທີ່ຊະນະ
+      if (idempotencyKey && idempotencyHash && isUniqueViolation(error)) {
+        const replay = await this.findReplay(idempotencyKey, idempotencyHash);
+        if (replay) return replay;
+      }
+      throw error;
+    }
+
+    const created = await this.requireDetail(orderId);
+    await this.audit.record({
+      userId: actor.id,
+      action: "order.create",
+      entity: "Order",
+      entityId: orderId,
+      after: {
+        orderNumber: created.orderNumber,
+        status: created.status,
+        total: created.total.toFixed(2),
+        itemCount: created.items.length,
+      },
+      ip,
+    });
+    return toOrderDetail(created);
+  }
+
+  /** ບິນເດີມຂອງ key ນີ້ (ຖ້າມີ). payload ຕ່າງກັນ = ໃຊ້ key ຜິດ → 409 */
+  private async findReplay(key: string, hash: string): Promise<OrderDetailDto | undefined> {
+    const existing = await this.prisma.order.findUnique({
+      where: { idempotencyKey: key },
+      select: { id: true, idempotencyHash: true },
+    });
+    if (!existing) return undefined;
+    if (existing.idempotencyHash !== hash) {
+      throw apiError("CONFLICT", "Idempotency-Key was already used with a different request body");
+    }
+    return toOrderDetail(await this.requireDetail(existing.id));
+  }
+
+  private async createInTransaction(
+    input: CreateOrderInput,
+    actor: AuthUser,
+    idempotencyKey: string | undefined,
+    idempotencyHash: string | undefined,
+  ): Promise<string> {
+    return this.prisma.$transaction(async (tx) => {
       const settings = await ensureStoreSetting(tx);
 
       // 1) ສາງ
@@ -164,6 +229,8 @@ export class OrdersService {
           shippingPhone: input.shippingPhone,
           shippingAddress: input.shippingAddress,
           note: input.note,
+          idempotencyKey,
+          idempotencyHash,
           reservedUntil: new Date(Date.now() + minutes * 60_000),
           items: {
             create: lines.map(({ item, variant }, index) => ({
@@ -191,22 +258,6 @@ export class OrdersService {
       );
       return order.id;
     });
-
-    const created = await this.requireDetail(orderId);
-    await this.audit.record({
-      userId: actor.id,
-      action: "order.create",
-      entity: "Order",
-      entityId: orderId,
-      after: {
-        orderNumber: created.orderNumber,
-        status: created.status,
-        total: created.total.toFixed(2),
-        itemCount: created.items.length,
-      },
-      ip,
-    });
-    return toOrderDetail(created);
   }
 
   pay(id: string, actor: AuthUser, ip: string | undefined) {

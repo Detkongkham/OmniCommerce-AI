@@ -401,4 +401,63 @@ describe("orders (e2e)", () => {
       }
     });
   });
+
+  describe("Idempotency-Key", () => {
+    const body = () => ({ items: [{ variantId: f.v1.id, quantity: 2 }] });
+    const withKey = (key: string, payload: object = body()) =>
+      request(server()).post("/orders").set(writer).set("Idempotency-Key", key).send(payload);
+
+    it("key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ, ບໍ່ຈອງສະຕ໋ອກ/ບໍ່ສ້າງບິນ/ບໍ່ audit ຊ້ຳ", async () => {
+      const first = await withKey("key-1").expect(201);
+      const second = await withKey("key-1").expect(201);
+
+      expect(second.body.id).toBe(first.body.id);
+      expect(second.body.orderNumber).toBe(first.body.orderNumber);
+      expect(await db.order.count()).toBe(1);
+      expect(await level()).toEqual({ onHand: 10, reserved: 2 });
+      expect(await db.auditLog.count({ where: { action: "order.create" } })).toBe(1);
+      await expectLedgerMatches(db);
+    });
+
+    it("key ຊ້ຳ ແຕ່ payload ຕ່າງ = 409 ແລະ ບໍ່ສ້າງບິນໃໝ່", async () => {
+      await withKey("key-2").expect(201);
+      const res = await withKey("key-2", { items: [{ variantId: f.v1.id, quantity: 3 }] }).expect(409);
+      expect(res.body.code).toBe("CONFLICT");
+      expect(await db.order.count()).toBe(1);
+      expect(await level()).toEqual({ onHand: 10, reserved: 2 });
+    });
+
+    it("ພ້ອມກັນດ້ວຍ key ດຽວ: ໄດ້ບິນດຽວ ແລະ ຈອງສະຕ໋ອກຄັ້ງດຽວ", async () => {
+      const results = await Promise.all(Array.from({ length: 4 }, () => withKey("key-race")));
+      for (const res of results) expect(res.status).toBe(201);
+      expect(new Set(results.map((res) => res.body.id)).size).toBe(1);
+      expect(await db.order.count()).toBe(1);
+      expect(await level()).toEqual({ onHand: 10, reserved: 2 });
+      await expectLedgerMatches(db);
+    });
+
+    it("key ຕ່າງກັນ = ບິນແຍກກັນ; ບໍ່ສົ່ງ key = ສ້າງທຸກຄັ້ງຄືເກົ່າ", async () => {
+      const a = await withKey("key-a").expect(201);
+      const b = await withKey("key-b").expect(201);
+      const c = await createOrder(body()).expect(201);
+      const d = await createOrder(body()).expect(201);
+      expect(new Set([a.body.id, b.body.id, c.body.id, d.body.id]).size).toBe(4);
+    });
+
+    it("ຄຳຕອບສະຕ໋ອກບໍ່ພໍບໍ່ຖືກຈື່: ຫຼັງເຕີມສະຕ໋ອກ ໃຊ້ key ເດີມລອງໃໝ່ໄດ້", async () => {
+      const big = { items: [{ variantId: f.v1.id, quantity: 15 }] };
+      await withKey("key-retry", big).expect(409);
+      expect(await db.order.count()).toBe(0);
+
+      await db.$transaction((tx) => receive(tx, { variantId: f.v1.id, warehouseId: f.whA.id, quantity: 10 }));
+      const retried = await withKey("key-retry", big).expect(201);
+      expect(retried.body.status).toBe("PENDING_PAYMENT");
+      expect(await level()).toEqual({ onHand: 20, reserved: 15 });
+    });
+
+    it("key ຮູບແບບຜິດ = 400", async () => {
+      await withKey("has space").expect(400);
+      await withKey("x".repeat(129)).expect(400);
+    });
+  });
 });

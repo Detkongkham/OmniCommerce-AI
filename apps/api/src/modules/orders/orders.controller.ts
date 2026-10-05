@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import {
   type CancelOrderInput,
   type CreateOrderInput,
@@ -17,6 +17,17 @@ import { OrdersService } from "./orders.service";
  * ສິດຕາມໜ້າທີ່: ອ່ານ/ສ້າງ/ຍົກເລີກ = orders; ຢືນຢັນຊຳລະ = payments:write; ແພັກ/ສົ່ງ/ປິດ = logistics:write.
  * ການເຫັນຕົ້ນທຶນ (unitCost) ຄວບຄຸມໂດຍ costs:read ທີ່ CostRedactionInterceptor.
  */
+
+const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,128}$/;
+
+/** header ເປັນ optional; ຖ້າສົ່ງມາຕ້ອງເປັນ ASCII ທີ່ພິມໄດ້ ບໍ່ມີຍະຫວ່າງ ຍາວ ≤ 128 */
+function parseIdempotencyKey(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!IDEMPOTENCY_KEY_PATTERN.test(value)) {
+    throw new BadRequestException("Idempotency-Key must be 1-128 printable ASCII characters without spaces");
+  }
+  return value;
+}
 
 @Controller("orders")
 export class OrdersController {
@@ -40,8 +51,9 @@ export class OrdersController {
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
     @CurrentUser() actor: AuthUser,
     @Req() req: Request,
+    @Headers("idempotency-key") idempotencyKey?: string,
   ) {
-    return this.orders.create(body, actor, req.ip);
+    return this.orders.create(body, actor, req.ip, parseIdempotencyKey(idempotencyKey));
   }
 
   @Post(":id/pay")

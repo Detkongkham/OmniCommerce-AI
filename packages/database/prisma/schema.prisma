@@ -287,6 +287,10 @@ model Order {
   shippingAddress String?
   note            String?
 
+  // Idempotency-Key ຂອງ POST /orders: key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ. hash = sha256 ຂອງ payload
+  idempotencyKey  String? @unique
+  idempotencyHash String?
+
   reservedUntil DateTime? // ໝົດເວລາຈອງສະຕ໋ອກ (ໂມງນັບຖອຍຫຼັງໃນໃບບິນ)
   paidAt        DateTime?
   shippedAt     DateTime?
