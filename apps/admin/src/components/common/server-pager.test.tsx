@@ -29,6 +29,33 @@ describe("ServerPager", () => {
     );
     await user.selectOptions(screen.getByRole("combobox", { name: "per page" }), "All");
     expect(onPageSizeChange).toHaveBeenCalledWith(MAX_SERVER_PAGE_SIZE);
-    expect(MAX_SERVER_PAGE_SIZE).toBe(100);
+  });
+
+  it("page ເກີນຂອບເຂດ ຖືກຕັດເປັນໜ້າສຸດທ້າຍ", () => {
+    renderWithProviders(
+      <ServerPager page={5} pageSize={10} total={35} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />,
+    );
+    expect(screen.getByText("Showing 31-35 of 35 items")).toBeInTheDocument();
+  });
+
+  it("pageSize 0 ບໍ່ throw ແລະ ໃຊ້ 10", () => {
+    renderWithProviders(
+      <ServerPager page={1} pageSize={0} total={35} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />,
+    );
+    expect(screen.getByText("Showing 1-10 of 35 items")).toBeInTheDocument();
+  });
+
+  it("pageSize 100 ເລືອກ All (value 0)", () => {
+    renderWithProviders(
+      <ServerPager page={1} pageSize={100} total={35} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />,
+    );
+    expect(screen.getByRole("combobox", { name: "per page" })).toHaveValue("0");
+  });
+
+  it("ປຸ່ມ Previous ປິດຢູ່ໜ້າ 1", () => {
+    renderWithProviders(
+      <ServerPager page={1} pageSize={10} total={35} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
   });
 });

@@ -17,14 +17,16 @@ export interface ServerPagerProps {
 /** DataTableFooter ສຳລັບຂໍ້ມູນທີ່ແບ່ງໜ້າຝັ່ງ server (ຕ່າງຈາກ `paginate()` ທີ່ແບ່ງໃນ client). */
 export function ServerPager({ page, pageSize, total, onPageChange, onPageSizeChange }: ServerPagerProps) {
   const { t } = useT();
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
+  const size = pageSize > 0 ? Math.min(pageSize, MAX_SERVER_PAGE_SIZE) : 10;
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const from = total === 0 ? 0 : (current - 1) * size + 1;
+  const to = Math.min(current * size, total);
   return (
     <DataTableFooter
-      page={page}
+      page={current}
       totalPages={totalPages}
-      pageSize={pageSize >= MAX_SERVER_PAGE_SIZE ? 0 : pageSize}
+      pageSize={size >= MAX_SERVER_PAGE_SIZE ? 0 : size}
       summary={t("page.showing", { from, to, total })}
       labels={{
         show: t("page.show"),
