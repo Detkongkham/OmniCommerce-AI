@@ -15,6 +15,9 @@ describe("conversationListQuerySchema", () => {
       conversationListQuerySchema.parse({ page: "2", pageSize: "10", status: "OPEN", assignee: "me", unread: "true", q: " ab " }),
     ).toEqual({ page: 2, pageSize: 10, status: "OPEN", assignee: "me", unread: true, q: "ab" });
   });
+  it("unread=false ແປງເປັນ false", () => {
+    expect(conversationListQuerySchema.parse({ unread: "false" })).toEqual({ page: 1, pageSize: 30, unread: false });
+  });
   it("ປະຕິເສດ status ຜິດ, pageSize > 100, unread ບໍ່ແມ່ນ true/false", () => {
     expect(conversationListQuerySchema.safeParse({ status: "NOPE" }).success).toBe(false);
     expect(conversationListQuerySchema.safeParse({ pageSize: "101" }).success).toBe(false);
@@ -48,6 +51,9 @@ describe("updateConversationSchema", () => {
     expect(updateConversationSchema.safeParse({}).success).toBe(false);
     expect(updateConversationSchema.safeParse({ status: undefined }).success).toBe(false);
   });
+  it("customerId: null ຢ່າງດຽວຖືກຮັບ", () => {
+    expect(updateConversationSchema.parse({ customerId: null })).toEqual({ customerId: null });
+  });
   it("ຮັບ null ເພື່ອຖອນຜູ້ຮັບຜິດຊອບ/ລູກຄ້າ", () => {
     expect(updateConversationSchema.parse({ assigneeId: null })).toEqual({ assigneeId: null });
     expect(updateConversationSchema.parse({ customerId: null, status: "CLOSED" })).toEqual({
@@ -70,5 +76,14 @@ describe("createCustomerFromChatSchema", () => {
     });
     expect(createCustomerFromChatSchema.safeParse({ name: "A", phone: "12ab" }).success).toBe(false);
     expect(createCustomerFromChatSchema.safeParse({ name: " " }).success).toBe(false);
+  });
+  it("ຂອບເຂດ phone: 6 ແລະ 15 ຫຼັກຜ່ານ; 5, 16, '+' ດ່ຽວ, '12+3456' ບໍ່ຜ່ານ", () => {
+    const ok = (phone: string) => createCustomerFromChatSchema.safeParse({ name: "A", phone }).success;
+    expect(ok("123456")).toBe(true);
+    expect(ok("1".repeat(15))).toBe(true);
+    expect(ok("12345")).toBe(false);
+    expect(ok("1".repeat(16))).toBe(false);
+    expect(ok("+")).toBe(false);
+    expect(ok("12+3456")).toBe(false);
   });
 });
