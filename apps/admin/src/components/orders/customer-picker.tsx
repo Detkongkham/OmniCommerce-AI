@@ -81,6 +81,9 @@ export function CustomerPicker({ value, onSelect, id, disabled }: CustomerPicker
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    // ກຳລັງ compose ດ້ວຍ IME (ລາວ/CJK): Enter/ລູກສອນເປັນຂອງ IME (keyCode 229 ສຳລັບ Safari). ອອກກ່ອນ ແລະ ບໍ່ preventDefault
+    // ເພື່ອບໍ່ໃຫ້ກືນການຢືນຢັນ composition ຫຼື ເລືອກຕົວເລືອກຜິດ
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     // Enter ຕ້ອງບໍ່ submit form ທີ່ຫໍ່ຢູ່ ເດັດຂາດ (ເຄື່ອງສະແກນບາໂຄດສົ່ງ Enter ຕາມຫຼັງລະຫັດ): ກັນທຸກກໍລະນີ
     // ລວມຕອນລາຍການຍັງບໍ່ເປີດ (debounce) ຫຼື ຍັງບໍ່ໄດ້ເນັ້ນຕົວເລືອກ
     if (event.key === "Enter") event.preventDefault();

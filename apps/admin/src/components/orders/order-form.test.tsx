@@ -441,4 +441,12 @@ describe("OrderForm", () => {
     expect(keyOf(orderCalls()[1])).toBeTruthy();
     expect(keyOf(orderCalls()[1])).not.toBe(keyOf(orderCalls()[0]));
   });
+
+  it("IME: Enter ຕອນ composing ໃນຊ່ອງຂອງຟອມ ບໍ່ຖືກ preventDefault (ປ່ອຍໃຫ້ IME ຢືນຢັນ); Enter ປົກກະຕິຍັງຖືກກັນ", async () => {
+    renderWithProviders(<OrderForm />);
+    const note = await screen.findByLabelText("Note");
+    expect(fireEvent.keyDown(note, { key: "Enter", isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(note, { key: "Enter", keyCode: 229 })).toBe(true);
+    expect(fireEvent.keyDown(note, { key: "Enter" })).toBe(false);
+  });
 });

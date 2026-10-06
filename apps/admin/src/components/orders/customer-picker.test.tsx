@@ -219,4 +219,24 @@ describe("CustomerPicker", () => {
     await user.keyboard("{Enter}");
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("IME: Enter/ArrowDown ຕອນກຳລັງພິມດ້ວຍ IME (isComposing ຫຼື keyCode 229) ບໍ່ເລືອກຕົວເລືອກ ແລະ ບໍ່ preventDefault; ຈົບ composition ແລ້ວ Enter ເລືອກຕາມປົກກະຕິ", async () => {
+    const onSelect = vi.fn();
+    const { user } = renderWithProviders(<CustomerPicker value={null} onSelect={onSelect} />);
+    const input = screen.getByLabelText("Search name or phone");
+    await user.type(input, "020");
+    const option = await screen.findByRole("option", { name: /Mali/ });
+    await user.keyboard("{ArrowDown}");
+    expect(option).toHaveAttribute("aria-selected", "true");
+    // Enter ທີ່ຢືນຢັນ composition: ປ່ອຍໃຫ້ IME ຈັດການ
+    expect(fireEvent.keyDown(input, { key: "Enter", isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+    // ລູກສອນຕອນ composing ຕ້ອງບໍ່ຍ້າຍ active
+    expect(fireEvent.keyDown(input, { key: "ArrowDown", isComposing: true })).toBe(true);
+    expect(option).toHaveAttribute("aria-selected", "true");
+    // ຈົບ composition ແລ້ວ Enter ເລືອກປົກກະຕິ
+    await user.keyboard("{Enter}");
+    expect(onSelect).toHaveBeenCalledWith(mali);
+  });
 });

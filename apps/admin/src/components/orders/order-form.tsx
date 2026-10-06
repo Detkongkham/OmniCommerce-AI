@@ -178,6 +178,8 @@ export function OrderForm() {
       // ປຸ່ມ (submit/button) ແລະ <select>/<textarea> ຍັງໃຊ້ Enter ຕາມປົກກະຕິ
       onKeyDown={(event) => {
         const target = event.target;
+        // Enter ທີ່ຢືນຢັນ composition ຂອງ IME ປ່ອຍໃຫ້ IME ຈັດການ (ບໍ່ preventDefault)
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         if (event.key !== "Enter" || !(target instanceof HTMLInputElement)) return;
         if (target.type === "submit" || target.type === "button") return;
         event.preventDefault();
