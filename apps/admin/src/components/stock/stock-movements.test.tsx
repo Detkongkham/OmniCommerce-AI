@@ -21,11 +21,19 @@ const rows = [
 ];
 const variantItem = { id: "v1", sku: "TEE-R", name: "Red", productName: "Tee", price: "100.00", available: 5, isActive: true, productStatus: "ACTIVE" };
 
+const WH_ID = "cmuv0qtwo002ekm05tqu12uci";
+const transferRows = (notes: Record<string, string | null>) =>
+  Object.entries(notes).map(([id, note]) => mv({ id, type: id.startsWith("out") ? "TRANSFER_OUT" : "TRANSFER_IN", note }));
+
 function mockApi(page: Page<StockMovementDto> = { items: rows, total: 3, page: 1, pageSize: 10 }) {
   vi.mocked(apiFetch).mockImplementation((async (path: string) => {
     if (path.startsWith("/stock/movements")) return page;
     if (path.startsWith("/variants")) return { items: [variantItem], total: 1, page: 1, pageSize: 8 };
-    if (path === "/warehouses") return [{ id: "w1", code: "MAIN", name: "Main", address: null, isDefault: true, isActive: true }];
+    if (path === "/warehouses")
+      return [
+        { id: "w1", code: "MAIN", name: "Main", address: null, isDefault: true, isActive: true },
+        { id: WH_ID, code: "BKK", name: "Bangkok", address: null, isDefault: false, isActive: false },
+      ];
     return {};
   }) as typeof apiFetch);
 }
@@ -220,5 +228,54 @@ describe("StockMovements", () => {
     await waitFor(() => expect(movementUrls()).toContain("/stock/movements?page=3&pageSize=10"));
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?page=2&pageSize=10"));
     expect(screen.queryByText("No movements found")).toBeNull();
+  });
+
+  describe("ໝາຍເຫດ transfer (ເກັບເປັນ `from <id>` / `to <id>`)", () => {
+    it("TRANSFER_IN/OUT ສະແດງລະຫັດສາງ (ລວມສາງທີ່ປິດ) ແທນ id ດິບ", async () => {
+      mockApi({ items: transferRows({ "in-1": `from ${WH_ID}`, "out-1": "to w1" }), total: 2, page: 1, pageSize: 10 });
+      renderWithProviders(<StockMovements />);
+      expect(await within(await screen.findByTestId("row-movement-in-1")).findByText("From BKK")).toBeInTheDocument();
+      expect(within(screen.getByTestId("row-movement-out-1")).getByText("To MAIN")).toBeInTheDocument();
+      expect(screen.queryByText(new RegExp(WH_ID))).toBeNull();
+    });
+
+    it("ບໍ່ພົບ id ໃນລາຍການສາງ: ສະແດງ 'ສາງທີ່ບໍ່ຮູ້ຈັກ' ບໍ່ສະແດງ id ດິບ", async () => {
+      mockApi({ items: transferRows({ "in-1": "from cmgone0000000000000000000" }), total: 1, page: 1, pageSize: 10 });
+      renderWithProviders(<StockMovements />);
+      const row = await screen.findByTestId("row-movement-in-1");
+      expect(await within(row).findByText("From unknown warehouse")).toBeInTheDocument();
+      expect(row).not.toHaveTextContent("cmgone");
+    });
+
+    it("ກຳລັງໂຫຼດລາຍການສາງ: ສະແດງ placeholder ກາງ ບໍ່ກະພິບ id ດິບ", async () => {
+      vi.mocked(apiFetch).mockImplementation((async (path: string) => {
+        if (path.startsWith("/stock/movements")) return { items: transferRows({ "in-1": `from ${WH_ID}` }), total: 1, page: 1, pageSize: 10 };
+        if (path === "/warehouses") return new Promise(() => {});
+        return {};
+      }) as typeof apiFetch);
+      renderWithProviders(<StockMovements />);
+      const row = await screen.findByTestId("row-movement-in-1");
+      expect(row).not.toHaveTextContent(WH_ID);
+      expect(row).not.toHaveTextContent("unknown warehouse");
+      expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
+    });
+
+    it("ໝາຍເຫດທີ່ບໍ່ກົງຮູບແບບ ຫຼື ບໍ່ແມ່ນ transfer: ສະແດງຕາມເດີມ", async () => {
+      mockApi({
+        items: [
+          mv({ id: "in-typed", type: "TRANSFER_IN", note: "from the old shop" }),
+          mv({ id: "in-prefix", type: "TRANSFER_IN", note: `from ${WH_ID} damaged` }),
+          mv({ id: "in-plain", type: "TRANSFER_IN", note: "restock" }),
+          mv({ id: "rcv", type: "RECEIVE", note: "from w1" }),
+        ],
+        total: 4, page: 1, pageSize: 10,
+      });
+      renderWithProviders(<StockMovements />);
+      await screen.findByTestId("row-movement-in-typed");
+      expect(screen.getByText("from the old shop")).toBeInTheDocument();
+      expect(screen.getByText(`from ${WH_ID} damaged`)).toBeInTheDocument();
+      expect(screen.getByText("restock")).toBeInTheDocument();
+      expect(within(screen.getByTestId("row-movement-rcv")).getByText("from w1")).toBeInTheDocument();
+    });
   });
 });
