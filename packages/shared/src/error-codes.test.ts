@@ -6,6 +6,11 @@ describe("ERROR_CODES", () => {
     expect(new Set(ERROR_CODES).size).toBe(ERROR_CODES.length);
     for (const code of ERROR_CODES) expect(code).toMatch(/^[A-Z]+(_[A-Z]+)*$/);
   });
+  it("ມີ code ຂອງ inbox", () => {
+    for (const code of ["CONVERSATION_NOT_FOUND", "USER_NOT_FOUND", "CHANNEL_NOT_CONFIGURED"]) {
+      expect(isErrorCode(code), code).toBe(true);
+    }
+  });
   it("isErrorCode", () => {
     expect(isErrorCode("INSUFFICIENT_STOCK")).toBe(true);
     expect(isErrorCode("nope")).toBe(false);

@@ -37,6 +37,9 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   VARIANT_NOT_AVAILABLE: HttpStatus.CONFLICT,
   ORDER_INVALID_STATE: HttpStatus.CONFLICT,
   RESERVATION_EXPIRED: HttpStatus.CONFLICT,
+  CONVERSATION_NOT_FOUND: HttpStatus.NOT_FOUND,
+  USER_NOT_FOUND: HttpStatus.NOT_FOUND,
+  CHANNEL_NOT_CONFIGURED: HttpStatus.SERVICE_UNAVAILABLE,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

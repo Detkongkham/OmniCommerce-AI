@@ -36,6 +36,10 @@ export const ERROR_CODES = [
   "VARIANT_NOT_AVAILABLE",
   "ORDER_INVALID_STATE",
   "RESERVATION_EXPIRED",
+  // inbox
+  "CONVERSATION_NOT_FOUND",
+  "USER_NOT_FOUND",
+  "CHANNEL_NOT_CONFIGURED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
