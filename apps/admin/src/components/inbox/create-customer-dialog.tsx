@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createCustomerFromChatSchema } from "@oca/shared";
 import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Field, Input, toast } from "@oca/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { errorMessage } from "@/lib/errors";
@@ -65,6 +65,10 @@ function CustomerForm({
   onSubmittingChange: (submitting: boolean) => void;
 }) {
   const { t } = useT();
+  const uid = useId();
+  const nameId = `${uid}-name`;
+  const phoneId = `${uid}-phone`;
+  const phoneHintId = `${uid}-phone-hint`;
   const create = useCreateCustomerFromChat();
   const [formError, setFormError] = useState<string | null>(null);
   const {
@@ -107,12 +111,12 @@ function CustomerForm({
             {formError}
           </p>
         ) : null}
-        <Field label={t("orders.customer.name")} htmlFor="inbox-customer-name" required error={nameError}>
-          <Input id="inbox-customer-name" invalid={!!errors.name} {...register("name")} />
+        <Field label={t("orders.customer.name")} htmlFor={nameId} required error={nameError}>
+          <Input id={nameId} invalid={!!errors.name} {...register("name")} />
         </Field>
-        <Field label={t("orders.customer.phone")} htmlFor="inbox-customer-phone" error={phoneError}>
-          <Input id="inbox-customer-phone" inputMode="tel" invalid={!!errors.phone} aria-describedby="inbox-customer-phone-hint" {...register("phone")} />
-          <p id="inbox-customer-phone-hint" className="mt-1 text-xs text-ink-muted">
+        <Field label={t("orders.customer.phone")} htmlFor={phoneId} error={phoneError}>
+          <Input id={phoneId} inputMode="tel" invalid={!!errors.phone} aria-describedby={phoneHintId} {...register("phone")} />
+          <p id={phoneHintId} className="mt-1 text-xs text-ink-muted">
             {t("inbox.customerDialog.phoneHint")}
           </p>
         </Field>

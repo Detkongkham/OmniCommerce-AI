@@ -3,7 +3,7 @@
 import type { UpdateConversationInput } from "@oca/shared";
 import { Button, Card, Select, toast } from "@oca/ui";
 import { Lock, LockOpen, Unlink, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { CustomerPicker } from "@/components/orders/customer-picker";
 import { errorMessage } from "@/lib/errors";
@@ -15,6 +15,8 @@ import { CreateCustomerDialog } from "./create-customer-dialog";
 export interface SidePanelProps {
   conversation: ConversationDto;
   canWrite: boolean;
+  /** false = ເຊື່ອງຫົວຂໍ້ h2 ຂອງຕົວເອງ (ເມື່ອຢູ່ໃນ dialog ທີ່ມີຫົວຂໍ້ຢູ່ແລ້ວ) */
+  showTitle?: boolean;
 }
 
 /** key ຕາມ conversation.id: ປ່ຽນເຄສ = remount ທັງໝົດ (dialog, mutation pending ບໍ່ຮົ່ວຂ້າມເຄສ) */
@@ -22,8 +24,13 @@ export function SidePanel(props: SidePanelProps) {
   return <SidePanelInner key={props.conversation.id} {...props} />;
 }
 
-function SidePanelInner({ conversation, canWrite }: SidePanelProps) {
+function SidePanelInner({ conversation, canWrite, showTitle = true }: SidePanelProps) {
   const { t } = useT();
+  const uid = useId();
+  const channelId = `${uid}-channel`;
+  const customerId = `${uid}-customer`;
+  const assigneeId = `${uid}-assignee`;
+  const statusId = `${uid}-status`;
   // CustomerPicker ຄົ້ນລູກຄ້າຜ່ານ GET /customers ທີ່ຕ້ອງ orders:read
   const canLinkExisting = useCan("orders:read");
   const update = useUpdateConversation();
@@ -44,15 +51,15 @@ function SidePanelInner({ conversation, canWrite }: SidePanelProps) {
 
   return (
     <Card className="h-full space-y-5 overflow-y-auto rounded-[20px] p-4">
-      <h2 className="text-sm font-bold text-ink">{t("inbox.panel.title")}</h2>
+      {showTitle ? <h2 className="text-sm font-bold text-ink">{t("inbox.panel.title")}</h2> : null}
 
-      <section aria-label={t("inbox.panel.channel")}>
-        <h3 className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.channel")}</h3>
+      <section aria-labelledby={channelId}>
+        <h3 id={channelId} className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.channel")}</h3>
         <p className="mt-1 text-sm text-ink">{t(`orders.channel.${conversation.channel}`)}</p>
       </section>
 
-      <section aria-label={t("inbox.panel.customer")} className="space-y-2">
-        <h3 className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.customer")}</h3>
+      <section aria-labelledby={customerId} className="space-y-2">
+        <h3 id={customerId} className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.customer")}</h3>
         {conversation.customer ? (
           <div className="flex items-start justify-between gap-2 rounded-xl border border-line bg-subtle px-3 py-2">
             <div className="min-w-0">
@@ -88,12 +95,12 @@ function SidePanelInner({ conversation, canWrite }: SidePanelProps) {
         )}
       </section>
 
-      <section aria-label={t("inbox.panel.assignee")} className="space-y-2">
-        <label htmlFor="inbox-assignee" className="text-xs font-semibold text-ink-secondary">
+      <section aria-labelledby={`${assigneeId}-label`} className="space-y-2">
+        <label id={`${assigneeId}-label`} htmlFor={assigneeId} className="text-xs font-semibold text-ink-secondary">
           {t("inbox.panel.assignee")}
         </label>
         <Select
-          id="inbox-assignee"
+          id={assigneeId}
           value={current?.id ?? ""}
           disabled={!canWrite || busy || assignees.isPending}
           onChange={(event) => void apply({ assigneeId: event.target.value || null })}
@@ -117,8 +124,8 @@ function SidePanelInner({ conversation, canWrite }: SidePanelProps) {
         ) : null}
       </section>
 
-      <section aria-label={t("inbox.panel.status")} className="space-y-2">
-        <h3 className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.status")}</h3>
+      <section aria-labelledby={statusId} className="space-y-2">
+        <h3 id={statusId} className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.status")}</h3>
         <p className="text-sm text-ink">{t(`inbox.status.${conversation.status}`)}</p>
         {canWrite ? (
           conversation.status === "OPEN" ? (

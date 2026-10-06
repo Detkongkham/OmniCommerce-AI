@@ -49,6 +49,19 @@ beforeEach(() => {
 });
 
 describe("SidePanel", () => {
+  it("showTitle=false ເຊື່ອງ h2; ສອງ instance ບໍ່ມີ id ຊ້ຳ; section ມີຊື່ຈາກ h3 ຂອງຕົນ", () => {
+    renderWithProviders(
+      <>
+        <SidePanel conversation={conversation} canWrite />
+        <SidePanel conversation={{ ...conversation, id: "c2" }} canWrite showTitle={false} />
+      </>,
+    );
+    expect(screen.getAllByRole("heading", { level: 2, name: "Conversation details" })).toHaveLength(1);
+    const ids = Array.from(document.querySelectorAll("[id]")).map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(screen.getAllByRole("region", { name: "Channel" })).toHaveLength(2);
+  });
+
   it("ສະແດງຊ່ອງທາງ, ລູກຄ້າ (ຊື່ + ເບີ) ແລະ ຖອນການລິ້ງໄດ້", async () => {
     const { user } = renderWithProviders(
       <SidePanel conversation={{ ...conversation, customer: { id: "cu1", name: "Dala", phone: "020111111" } }} canWrite />,
