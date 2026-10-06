@@ -3,6 +3,7 @@ import { signBody, simulator } from "@oca/channels";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { InboxIngestService } from "../src/modules/inbox/inbox-ingest.service";
 import { createTestApp, resetDb } from "./helpers";
 
 const SECRET = "app-secret-test";
@@ -25,6 +26,12 @@ describe("Facebook webhook (e2e)", () => {
   };
   const say = (psid: string, mid: string, text: string, timestamp?: number) =>
     post(simulator.messagePayload({ pageId: PAGE, psid, mid, text, timestamp }));
+
+  /** รวมหลาย payload (1 event ຕໍ່ອັນ) ເປັນ batch ດຽວ ຄືທີ່ Meta ສົ່ງ */
+  const batch = (...payloads: object[]) => ({
+    object: "page",
+    entry: payloads.flatMap((payload) => (payload as { entry: object[] }).entry),
+  });
 
   beforeAll(async () => {
     graph = await simulator.startFakeGraph({ token: "page-token" });
@@ -187,6 +194,71 @@ describe("Facebook webhook (e2e)", () => {
     });
   });
 
+  describe("ຄວາມທົນທານ", () => {
+    it("handshake: hub.challenge ເປັນ array (hub.challenge=1&hub.challenge=2) → 403", async () => {
+      await request(server())
+        .get("/webhooks/facebook?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=1&hub.challenge=2")
+        .expect(403);
+    });
+
+    it("ຂໍ້ຄວາມພ້ອມກັນ 2 ອັນ (ລຳດັບມາຮອດສຸ່ມ) → lastMessageAt/preview ເປັນອັນໃໝ່ສຸດສະເໝີ, unread 2", async () => {
+      for (let round = 0; round < 15; round++) {
+        await resetDb(db);
+        const older = say("U1", "m-old", "ເກົ່າ", 1000);
+        const newer = say("U1", "m-new", "ໃໝ່", 2000);
+        const responses = await Promise.all(Math.random() < 0.5 ? [older, newer] : [newer, older]);
+        for (const res of responses) expect(res.status).toBe(200);
+        const conversation = await db.conversation.findFirstOrThrow();
+        expect(conversation.lastMessageAt, `round ${round}`).toEqual(new Date(2000));
+        expect(conversation.lastMessagePreview, `round ${round}`).toBe("ໃໝ່");
+        expect(conversation.unreadCount, `round ${round}`).toBe(2);
+      }
+    });
+
+    it("event ເປັນພິດ (\\u0000 ໃນ text) ບໍ່ກີດ event ອື່ນໃນ batch: ເກັບອັນດີ 2 ອັນ, 200 + failed", async () => {
+      const res = await post(
+        batch(
+          simulator.messagePayload({ pageId: PAGE, psid: "U1", mid: "g1", text: "ດີ 1", timestamp: 1000 }),
+          simulator.messagePayload({ pageId: PAGE, psid: "U2", mid: "bad", text: "bad\u0000text", timestamp: 1500 }),
+          simulator.messagePayload({ pageId: PAGE, psid: "U3", mid: "g2", text: "ດີ 2", timestamp: 2000 }),
+        ),
+      ).expect(200);
+      expect(res.body).toEqual({ received: 2, failed: 1 });
+      const mids = (await db.message.findMany({ orderBy: { externalId: "asc" } })).map((m) => m.externalId);
+      expect(mids).toEqual(["g1", "g2"]);
+    });
+
+    it("timestamp ໃນອະນາຄົດໄກ (> 5 ນາທີ) ຖືກປັບເປັນເວລາປັດຈຸບັນ", async () => {
+      const before = Date.now();
+      await say("U1", "m1", "future", before + 3_600_000).expect(200);
+      const after = Date.now();
+      const conversation = await db.conversation.findFirstOrThrow({ include: { messages: true } });
+      for (const at of [conversation.lastMessageAt, conversation.messages[0]?.createdAt as Date]) {
+        expect(at.getTime()).toBeGreaterThanOrEqual(before);
+        expect(at.getTime()).toBeLessThanOrEqual(after);
+      }
+    });
+
+    it("timestamp ໃນອະນາຄົດໃກ້ (< 5 ນາທີ) ຖືກເກັບຕາມເດີມ", async () => {
+      const near = Date.now() + 60_000;
+      await say("U1", "m1", "near", near).expect(200);
+      expect((await db.conversation.findFirstOrThrow()).lastMessageAt).toEqual(new Date(near));
+    });
+  });
+
+  describe("ຂະໜາດ body", () => {
+    it("payload ~300kb ທີ່ເຊັນຖືກ → 200 (ເກີນ 100kb default ຂອງ express)", async () => {
+      const res = await say("U1", "m1", "x".repeat(300_000)).expect(200);
+      expect(res.body).toEqual({ received: 1 });
+      expect((await db.message.findFirstOrThrow()).text).toHaveLength(300_000);
+    });
+
+    it("body > 1mb → 413 ແລະ ບໍ່ບັນທຶກ", async () => {
+      await post({ object: "page", entry: [], pad: "x".repeat(1_150_000) }).expect(413);
+      expect(await db.message.count()).toBe(0);
+    });
+  });
+
   describe("ຊື່ໂປຣໄຟລ໌ (best-effort)", () => {
     const waitForName = async (expected: string) => {
       const deadline = Date.now() + 3000;
@@ -206,7 +278,7 @@ describe("Facebook webhook (e2e)", () => {
 
     it("ດຶງຊື່ບໍ່ໄດ້ ບໍ່ກະທົບການຮັບຂໍ້ຄວາມ (ຊື່ default ຄົງເດີມ)", async () => {
       await say("U8", "m1", "hi").expect(200);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await app.get(InboxIngestService).drain();
       expect((await db.conversation.findFirstOrThrow()).displayName).toBe("Facebook U8");
       expect(await db.message.count()).toBe(1);
     });
@@ -217,7 +289,7 @@ describe("Facebook webhook (e2e)", () => {
       await waitForName("Somchai Vong");
       graph.profiles.set("U7", "Other Name");
       await say("U7", "m2", "hello").expect(200);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await app.get(InboxIngestService).drain();
       expect((await db.conversation.findFirstOrThrow()).displayName).toBe("Somchai Vong");
     });
   });
@@ -234,6 +306,31 @@ describe("Facebook webhook ເມື່ອຍັງບໍ່ໄດ້ຕັ້�
       expect(get.body.code).toBe("CHANNEL_NOT_CONFIGURED");
       const post = await request(app.getHttpServer()).post("/webhooks/facebook").send({}).expect(503);
       expect(post.body.code).toBe("CHANNEL_NOT_CONFIGURED");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("Facebook webhook ເມື່ອ Redis ໃຊ້ບໍ່ໄດ້ (e2e)", () => {
+  it("publish ບໍ່ກີດ webhook: 200 ພາຍໃນ 3 ວິນາທີ ແລະ ຂໍ້ຄວາມຖືກເກັບ", async () => {
+    const { app, db } = await createTestApp({
+      FACEBOOK_APP_SECRET: SECRET,
+      FACEBOOK_WEBHOOK_VERIFY_TOKEN: VERIFY,
+      REDIS_URL: "redis://127.0.0.1:1",
+    });
+    try {
+      await resetDb(db);
+      const raw = JSON.stringify(simulator.messagePayload({ pageId: PAGE, psid: "U1", mid: "m1", text: "hi" }));
+      const started = Date.now();
+      await request(app.getHttpServer())
+        .post("/webhooks/facebook")
+        .set("content-type", "application/json")
+        .set("x-hub-signature-256", signBody(SECRET, raw))
+        .send(raw)
+        .expect(200);
+      expect(Date.now() - started).toBeLessThan(3000);
+      expect(await db.message.count()).toBe(1);
     } finally {
       await app.close();
     }
