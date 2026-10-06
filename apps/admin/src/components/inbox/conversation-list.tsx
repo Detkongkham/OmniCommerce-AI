@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
 import { useConversations } from "@/lib/queries";
-import { useDebounced } from "@/lib/use-debounced";
 
 const PAGE_SIZE = 30;
 
@@ -24,9 +23,17 @@ export function ConversationList({ selectedId, onSelect }: ConversationListProps
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [page, setPage] = useState(1);
   const trimmed = search.trim();
-  const debounced = useDebounced(trimmed, 300);
-  // ລ້າງຊ່ອງຄົ້ນຫາມີຜົນທັນທີ (ບໍ່ລໍ debounce)
-  const q = trimmed === "" ? "" : debounced;
+  // ຄຳຄົ້ນຫາທີ່ນິ່ງແລ້ວ 300ms; ລ້າງຊ່ອງ → ຕັ້ງເປັນ "" ທັນທີ ເພື່ອບໍ່ໃຫ້ຄຳເກົ່າຫຼຸດມາຫຼັງພິມໃໝ່ພາຍໃນ 300ms
+  const [settled, setSettled] = useState("");
+  useEffect(() => {
+    if (trimmed === "") {
+      setSettled("");
+      return;
+    }
+    const id = setTimeout(() => setSettled(trimmed), 300);
+    return () => clearTimeout(id);
+  }, [trimmed]);
+  const q = trimmed === "" ? "" : settled;
 
   // ປ່ຽນຄຳຄົ້ນຫາ (ຄ່າທີ່ debounce ແລ້ວ) ກັບໄປໜ້າ 1 ໃນ render ດຽວກັນ ຈຶ່ງບໍ່ມີ request (q ເກົ່າ, page ເກົ່າ)
   const [seenQ, setSeenQ] = useState(q);
@@ -52,11 +59,11 @@ export function ConversationList({ selectedId, onSelect }: ConversationListProps
   const isEmpty = !busy && rows.length === 0;
 
   // ຂໍ້ມູນຫຼຸດລົງຈົນໜ້າປັດຈຸບັນເກີນໜ້າສຸດທ້າຍ: ກັບໄປໜ້າສຸດທ້າຍທີ່ມີ
+  const hasData = query.data !== undefined;
+  const lastPage = pages;
   useEffect(() => {
-    if (query.data && !query.isPlaceholderData && page > 1 && rows.length === 0 && total > 0) {
-      setPage(Math.max(1, Math.ceil(total / PAGE_SIZE)));
-    }
-  }, [query.data, query.isPlaceholderData, page, rows.length, total]);
+    if (hasData && !query.isPlaceholderData && page > lastPage) setPage(lastPage);
+  }, [hasData, query.isPlaceholderData, page, lastPage]);
 
   const reset = () => setPage(1);
 
@@ -106,6 +113,7 @@ export function ConversationList({ selectedId, onSelect }: ConversationListProps
         <label className="flex items-center gap-2 text-xs text-ink-secondary">
           <input
             type="checkbox"
+            className="size-4 rounded border-line focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             checked={unreadOnly}
             onChange={(event) => {
               setUnreadOnly(event.target.checked);
@@ -117,7 +125,18 @@ export function ConversationList({ selectedId, onSelect }: ConversationListProps
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {query.isError ? (
+        {query.isError && query.data ? (
+          <div role="alert" className="flex items-center justify-between gap-2 border-b border-line bg-subtle px-3 py-2 text-xs text-ink-secondary">
+            <span className="flex items-center gap-1.5">
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              {t("common.error.load")}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => void query.refetch()}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : null}
+        {query.isError && !query.data ? (
           <EmptyState
             icon={AlertCircle}
             title={t("common.error.load")}
@@ -128,7 +147,7 @@ export function ConversationList({ selectedId, onSelect }: ConversationListProps
             }
           />
         ) : query.isPending ? (
-          <div className="space-y-2 p-3" aria-busy="true" aria-label={t("common.loading")}>
+          <div className="space-y-2 p-3" role="status" aria-busy="true" aria-label={t("common.loading")}>
             {Array.from({ length: 6 }, (_, index) => (
               <Skeleton key={index} className="h-16 w-full rounded-xl" />
             ))}
@@ -188,7 +207,7 @@ export function ConversationList({ selectedId, onSelect }: ConversationListProps
         )}
       </div>
 
-      {!query.isError && total > PAGE_SIZE ? (
+      {(!query.isError || hasData) && total > PAGE_SIZE ? (
         <div className="flex items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs text-ink-secondary">
           <Button variant="ghost" size="sm" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
             {t("page.previous")}

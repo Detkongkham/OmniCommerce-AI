@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSafeAttachmentUrl, sendErrorKey } from "./inbox";
+import { isSafeAttachmentUrl, safeAttachmentUrl, sendErrorKey } from "./inbox";
 
 describe("isSafeAttachmentUrl", () => {
   it("ຮັບສະເພາະ https", () => {
@@ -20,5 +20,14 @@ describe("sendErrorKey", () => {
   it("ບໍ່ຮູ້ຈັກ/null → UNKNOWN", () => {
     expect(sendErrorKey("WHATEVER")).toBe("inbox.sendError.UNKNOWN");
     expect(sendErrorKey(null)).toBe("inbox.sendError.UNKNOWN");
+  });
+});
+
+describe("safeAttachmentUrl", () => {
+  it("ຄືນ url ຖ້າ https, ບໍ່ດັ່ງນັ້ນ null", () => {
+    expect(safeAttachmentUrl("https://scontent.xx.fbcdn.net/a.jpg")).toBe("https://scontent.xx.fbcdn.net/a.jpg");
+    for (const value of ["http://x.test/a.jpg", "javascript:alert(1)", "", null, undefined]) {
+      expect(safeAttachmentUrl(value), String(value)).toBeNull();
+    }
   });
 });

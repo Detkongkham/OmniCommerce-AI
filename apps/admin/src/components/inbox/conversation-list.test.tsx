@@ -1,6 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LanguageProvider } from "@/lib/i18n/language-provider";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { ConversationDto, Page } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
@@ -154,5 +157,102 @@ describe("ConversationList", () => {
     await screen.findByTestId("conversation-c1");
     await user.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(lastUrl()).toBe("/conversations?status=OPEN&page=1&pageSize=30"));
+  });
+
+  it("ໜ້າ 2 ຄືນ total=0 → ກັບໄປໜ້າ 1", async () => {
+    vi.mocked(apiFetch).mockImplementation((async (url: string) =>
+      url.includes("page=2") ? { items: [], total: 0, page: 2, pageSize: 30 } : { items, total: 90, page: 1, pageSize: 30 }) as typeof apiFetch);
+    const { user } = renderWithProviders(<ConversationList selectedId={null} onSelect={() => undefined} />);
+    await screen.findByTestId("conversation-c1");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(urls().filter((u) => u === "/conversations?status=OPEN&page=1&pageSize=30").length).toBeGreaterThan(0));
+    await waitFor(() => expect(lastUrl()).toBe("/conversations?status=OPEN&page=1&pageSize=30"));
+  });
+
+  it("refetch ລົ້ມຫຼັງມີຂໍ້ມູນ: ຍັງສະແດງແຖວ + banner (role=alert) ພ້ອມລອງໃໝ່", async () => {
+    const { user, queryClient } = renderWithProviders(<ConversationList selectedId={null} onSelect={() => undefined} />);
+    await screen.findByTestId("conversation-c1");
+    vi.mocked(apiFetch).mockRejectedValueOnce(new ApiError(500, "boom"));
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("Could not load data")).toBeInTheDocument();
+    expect(screen.getByTestId("conversation-c1")).toBeInTheDocument();
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByTestId("conversation-c1")).toBeInTheDocument();
+  });
+
+  it("ປ່ຽນ filter ຈາກໜ້າ 2 → ກັບໄປ page=1 (status, assignee, unread)", async () => {
+    mockApi({ items, total: 90, page: 1, pageSize: 30 });
+    const { user } = renderWithProviders(<ConversationList selectedId={null} onSelect={() => undefined} />);
+    await screen.findByTestId("conversation-c1");
+    const goPage2 = async () => {
+      await user.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() => expect(lastUrl()).toMatch(/page=2/));
+    };
+
+    await goPage2();
+    await user.selectOptions(screen.getByLabelText("Conversation status"), "CLOSED");
+    await waitFor(() => expect(lastUrl()).toBe("/conversations?status=CLOSED&page=1&pageSize=30"));
+    await goPage2();
+    await user.selectOptions(screen.getByLabelText("Assignee"), "me");
+    await waitFor(() => expect(lastUrl()).toBe("/conversations?status=CLOSED&assignee=me&page=1&pageSize=30"));
+    await goPage2();
+    await user.click(screen.getByRole("checkbox", { name: "Unread only" }));
+    await waitFor(() => expect(lastUrl()).toBe("/conversations?status=CLOSED&assignee=me&unread=true&page=1&pageSize=30"));
+  });
+
+  describe("ຄົ້ນຫາ (fake timers)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // RTL asyncWrapper detects fake timers via `jest`; shim it so waits advance vitest timers
+      vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime.bind(vi) });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+    const setup = () => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
+      render(
+        <QueryClientProvider client={queryClient}>
+          <LanguageProvider initialLanguage="en">
+            <ConversationList selectedId={null} onSelect={() => undefined} />
+          </LanguageProvider>
+        </QueryClientProvider>,
+      );
+      return user;
+    };
+    const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+    const qUrls = () => urls().filter((u) => String(u).includes("q="));
+
+    it("debounce 300ms: ບໍ່ມີ q= ກ່ອນ 300ms, ແລະ ສົ່ງ q ດຽວຫຼັງພິມ 'somchai'", async () => {
+      const user = setup();
+      await advance(0);
+      await user.type(screen.getByRole("searchbox", { name: SEARCH }), "somchai");
+      await advance(299);
+      expect(qUrls()).toEqual([]);
+      await advance(1);
+      expect(qUrls()).toEqual(["/conversations?status=OPEN&q=somchai&page=1&pageSize=30"]);
+    });
+
+    it("ລ້າງແລ້ວພິມໃໝ່ພາຍໃນ 300ms: ບໍ່ສົ່ງ q ເກົ່າ", async () => {
+      const user = setup();
+      await advance(0);
+      const box = screen.getByRole("searchbox", { name: SEARCH });
+      await user.type(box, "abc");
+      await advance(300);
+      expect(qUrls()).toEqual(["/conversations?status=OPEN&q=abc&page=1&pageSize=30"]);
+      const before = urls().length;
+      await user.clear(box);
+      await user.type(box, "ab");
+      await advance(299);
+      expect(urls().slice(before).filter((u) => String(u).includes("q=abc"))).toEqual([]);
+      await advance(1);
+      expect(lastUrl()).toBe("/conversations?status=OPEN&q=ab&page=1&pageSize=30");
+    });
   });
 });
