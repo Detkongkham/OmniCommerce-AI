@@ -67,22 +67,31 @@ export class FacebookWebhookController {
     if (!req.rawBody || !adapter.verifySignature(req.rawBody, signature)) throw new UnauthorizedException();
 
     const events = adapter.parseWebhook(body);
+    const stored = new Set<string>();
     const enrich = new Set<string>();
     let failed = 0;
-    for (const event of events) {
-      try {
-        const result = await this.ingest.ingest(event);
-        if (!result.duplicate && event.kind === "message") enrich.add(result.conversationId);
-      } catch (error) {
-        // ຂໍ້ຜິດພາດຊົ່ວຄາວ (DB/ເຄືອຂ່າຍ) → 500 ໃຫ້ Meta ສົ່ງຊ້ຳ; ຂໍ້ມູນເສຍ (ລອງໃໝ່ກໍບໍ່ຜ່ານ) → ຂ້າມ ບໍ່ໃຫ້ກີດ event ອື່ນ
-        if (classifyIngestError(error) === "transient") throw error;
-        failed += 1;
-        // ບັນທຶກສະເພາະ mid + ຊື່ error (ບໍ່ເອົາ payload/ຄວາມລັບລົງ log)
-        this.logger.error(`skipping unprocessable event mid=${event.externalId} (${errorName(error)})`);
+    try {
+      for (const event of events) {
+        try {
+          const result = await this.ingest.ingest(event);
+          if (!result.duplicate) {
+            stored.add(result.conversationId);
+            if (event.kind === "message") enrich.add(result.conversationId);
+          }
+        } catch (error) {
+          // ຂໍ້ຜິດພາດຊົ່ວຄາວ (DB/ເຄືອຂ່າຍ) → 500 ໃຫ້ Meta ສົ່ງຊ້ຳ; ຂໍ້ມູນເສຍ (ລອງໃໝ່ກໍບໍ່ຜ່ານ) → ຂ້າມ ບໍ່ໃຫ້ກີດ event ອື່ນ
+          if (classifyIngestError(error) === "transient") throw error;
+          failed += 1;
+          // ບັນທຶກສະເພາະ mid + ຊື່ error (ບໍ່ເອົາ payload/ຄວາມລັບລົງ log)
+          this.logger.error(`skipping unprocessable event mid=${event.externalId} (${errorName(error)})`);
+        }
       }
+    } finally {
+      // ເຄສທີ່ບັນທຶກແລ້ວຕ້ອງໄດ້ enrich/ແຈ້ງ ເຖິງ batch ຈະ 500 ກາງທາງ (Meta ສົ່ງຊ້ຳ → duplicate ຈະບໍ່ແຈ້ງອີກ)
+      // enrich ບໍ່ລໍຖ້າ: Meta ຕ້ອງໄດ້ 200 ໄວ; ແຈ້ງ SSE ຫຼັງ loop ເຄສລະ 1 ຄັ້ງແບບຂະໜານ
+      for (const conversationId of enrich) this.ingest.enrichInBackground(conversationId);
+      await this.ingest.notify(stored);
     }
-    // ບໍ່ລໍຖ້າ: Meta ຕ້ອງໄດ້ 200 ໄວ; 1 ເຄສ enrich ຄັ້ງດຽວຕໍ່ batch
-    for (const conversationId of enrich) this.ingest.enrichInBackground(conversationId);
     return failed > 0 ? { received: events.length - failed, failed } : { received: events.length };
   }
 }

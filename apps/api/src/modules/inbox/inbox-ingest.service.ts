@@ -33,25 +33,29 @@ export class InboxIngestService implements OnModuleDestroy {
   ) {}
 
   /**
-   * ບັນທຶກເຫດການ 1 ອັນ. ກັນຊ້ຳດ້ວຍ unique (conversationId, externalId) ແບບ ON CONFLICT DO NOTHING
+   * ບັນທຶກເຫດການ 1 ອັນ (ບໍ່ publish: ຜູ້ເອີ້ນຕ້ອງເອີ້ນ notify() ຫຼັງຈົບ batch ເພື່ອບໍ່ໃຫ້ Redis ຊ້າຄູນຕາມຈຳນວນ event). ກັນຊ້ຳດ້ວຍ unique (conversationId, externalId) ແບບ ON CONFLICT DO NOTHING
    * ເພື່ອບໍ່ໃຫ້ transaction ຖືກ abort ເມື່ອ Meta ສົ່ງ mid ຊ້ຳ (ຫຼື 2 request ພ້ອມກັນ).
    * thread ໃໝ່ທີ່ 2 request ສ້າງພ້ອມກັນອາດຊົນ unique ຂອງເຄສ (P2002): ລອງໃໝ່ 1 ຄັ້ງ (ຮອບສອງເຄສມີແລ້ວ).
    */
   async ingest(event: InboundEvent): Promise<IngestResult> {
-    let result: IngestResult;
     try {
-      result = await this.store(event);
+      return await this.storeOnce(event);
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
-      result = await this.store(event);
+      return await this.storeOnce(event);
     }
-    if (!result.duplicate) {
-      await this.events.publish({ type: "conversation.updated", conversationId: result.conversationId });
-    }
-    return result;
   }
 
-  private store(event: InboundEvent): Promise<IngestResult> {
+  /** ແຈ້ງ SSE ເຄສລະ 1 ຄັ້ງ (ຕັດ id ຊ້ຳ) ແບບຂະໜານ; publish ລົ້ມບໍ່ເຮັດໃຫ້ webhook ລົ້ມ */
+  async notify(conversationIds: Iterable<string>): Promise<void> {
+    await Promise.allSettled(
+      [...new Set(conversationIds)].map((conversationId) =>
+        this.events.publish({ type: "conversation.updated", conversationId }),
+      ),
+    );
+  }
+
+  private storeOnce(event: InboundEvent): Promise<IngestResult> {
     const at = event.timestamp.getTime() > Date.now() + MAX_FUTURE_SKEW_MS ? new Date() : event.timestamp;
     return this.prisma.$transaction(async (tx) => {
       const conversation = await tx.conversation.upsert({
@@ -110,6 +114,10 @@ export class InboxIngestService implements OnModuleDestroy {
     while (this.background.size > 0) await Promise.allSettled([...this.background]);
   }
 
+  /**
+   * ລຳດັບປິດ: Nest ປິດ module ຍ້ອນຫຼັງຕາມລຳດັບ import ດັ່ງນັ້ນ drain ນີ້ຈະຈົບກ່ອນ Prisma disconnect
+   * ກໍຕໍ່ເມື່ອ PrismaModule ຖືກ import ກ່ອນ feature modules ໃນ app.module.ts (ຢ່າສະຫຼັບລຳດັບ).
+   */
   async onModuleDestroy(): Promise<void> {
     await this.drain();
   }

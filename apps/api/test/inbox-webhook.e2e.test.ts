@@ -2,7 +2,9 @@ import type { INestApplication } from "@nestjs/common";
 import { signBody, simulator } from "@oca/channels";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { isErrorCode } from "@oca/shared";
+import { InboxEventsService } from "../src/modules/inbox/inbox-events.service";
 import { InboxIngestService } from "../src/modules/inbox/inbox-ingest.service";
 import { createTestApp, resetDb } from "./helpers";
 
@@ -254,8 +256,33 @@ describe("Facebook webhook (e2e)", () => {
     });
 
     it("body > 1mb → 413 ແລະ ບໍ່ບັນທຶກ", async () => {
-      await post({ object: "page", entry: [], pad: "x".repeat(1_150_000) }).expect(413);
+      const res = await post({ object: "page", entry: [], pad: "x".repeat(1_150_000) }).expect(413);
+      expect(res.body.statusCode).toBe(413);
+      expect(isErrorCode(res.body.code)).toBe(true);
       expect(await db.message.count()).toBe(0);
+    });
+  });
+
+  describe("publish ຕໍ່ batch", () => {
+    it("batch 8 event / 4 thread → publish 1 ຄັ້ງຕໍ່ເຄສ ແບບຂະໜານ (ບໍ່ເປັນ 8×ຄວາມຊ້າ)", async () => {
+      const events = app.get(InboxEventsService);
+      const spy = vi.spyOn(events, "publish").mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      });
+      try {
+        const payloads = Array.from({ length: 8 }, (_, i) =>
+          simulator.messagePayload({ pageId: PAGE, psid: `T${i % 4}`, mid: `b${i}`, text: `hi ${i}` }),
+        );
+        const started = Date.now();
+        await post(batch(...payloads)).expect(200);
+        expect(Date.now() - started).toBeLessThan(8 * 400);
+        expect(await db.message.count()).toBe(8);
+        expect(spy).toHaveBeenCalledTimes(4);
+        const ids = spy.mock.calls.map(([event]) => (event as { conversationId: string }).conversationId);
+        expect(new Set(ids).size).toBe(4);
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 
