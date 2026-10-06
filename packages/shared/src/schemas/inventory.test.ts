@@ -374,3 +374,23 @@ describe("boundaries", () => {
     expect(updateVariantSchema.safeParse({ price: "1" }).success).toBe(true);
   });
 });
+
+describe("conversationId ຂອງບິນຈາກແຊັດ", () => {
+  const item = { variantId: "v1", quantity: 1 };
+
+  it("createOrderSchema ຮັບ conversationId ທາງເລືອກ ແລະ ປະຕິເສດຄ່າວ່າງ", () => {
+    expect(createOrderSchema.parse({ items: [item], conversationId: "c1" }).conversationId).toBe("c1");
+    expect(createOrderSchema.parse({ items: [item] }).conversationId).toBeUndefined();
+    expect(createOrderSchema.safeParse({ items: [item], conversationId: "" }).success).toBe(false);
+  });
+
+  it("channel/source ສົ່ງມາເອງບໍ່ໄດ້ (strict): server ກຳນົດຈາກເຄສ", () => {
+    expect(createOrderSchema.safeParse({ items: [item], conversationId: "c1", channel: "FACEBOOK" }).success).toBe(false);
+    expect(createOrderSchema.safeParse({ items: [item], conversationId: "c1", source: "CHAT" }).success).toBe(false);
+  });
+
+  it("orderListQuerySchema ຮັບ conversationId", () => {
+    expect(orderListQuerySchema.parse({ conversationId: "c1" }).conversationId).toBe("c1");
+    expect(orderListQuerySchema.parse({}).conversationId).toBeUndefined();
+  });
+});

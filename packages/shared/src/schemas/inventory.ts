@@ -143,6 +143,7 @@ export const orderListQuerySchema = z.object({
   q: optionalText,
   status: z.enum(ORDER_STATUSES).optional(),
   channel: z.enum(SALES_CHANNELS).optional(),
+  conversationId: idSchema.optional(),
   from: dateBound("from"),
   to: dateBound("to"),
 });
@@ -438,6 +439,8 @@ export const createOrderSchema = z
   .strictObject({
     customerId: idSchema.optional(),
     customer: orderCustomerInputSchema.optional(),
+    /** ບິນທີ່ເປີດຈາກແຊັດ: server ຕັ້ງ channel ຕາມເຄສ + source=CHAT (ບໍ່ຮັບ channel/source ຈາກ client) */
+    conversationId: idSchema.optional(),
     items: z.array(orderItemInputSchema).min(1).max(100),
     shippingFee: moneySchema.default("0"),
     shippingName: z.string().trim().max(100).optional(),

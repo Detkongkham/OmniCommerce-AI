@@ -244,6 +244,38 @@ describe("role model ຕາມ seed ຈິງ (ບິນ / ຊຳລະ / ຕົ
       await request(server()).patch(`/conversations/${conversation.id}`).set(headers).send({ status: "OPEN" }).expect(403);
     }
   });
+
+  it("ບິນຈາກແຊັດ: CHAT_ADMIN/MANAGER/OWNER ເປີດໄດ້ ແລະ ເຫັນໃນລາຍການຂອງເຄສ; ACCOUNTANT/WAREHOUSE/ຜູ້ມີ orders:write ແຕ່ບໍ່ມີ inbox:write ບໍ່ໄດ້", async () => {
+    const conversation = await seedConversation(db);
+    for (const name of ["CHAT_ADMIN", "MANAGER", "OWNER"]) {
+      const headers = await as(name);
+      const created = await request(server())
+        .post("/orders")
+        .set(headers)
+        .send({ ...body(), conversationId: conversation.id })
+        .expect(201);
+      expect(created.body).toMatchObject({ channel: "FACEBOOK", source: "CHAT", conversationId: conversation.id });
+      const list = await request(server()).get(`/orders?conversationId=${conversation.id}`).set(headers).expect(200);
+      expect(list.body.items.map((item: { id: string }) => item.id)).toContain(created.body.id);
+    }
+    for (const name of ["ACCOUNTANT", "WAREHOUSE"]) {
+      const headers = await as(name);
+      await request(server()).post("/orders").set(headers).send({ ...body(), conversationId: conversation.id }).expect(403);
+    }
+
+    // orders:write + inventory:read ແຕ່ບໍ່ມີ inbox:write: ສ້າງບິນທົ່ວໄປໄດ້ ແຕ່ຜູກກັບເຄສບໍ່ໄດ້
+    const { passwordHash } = await db.user.findFirstOrThrow({ where: { email: "owner@role.test" } });
+    const role = await db.role.create({
+      data: {
+        name: "ORDERS_NO_INBOX",
+        permissions: { create: [{ permission: "orders:read" }, { permission: "orders:write" }, { permission: "inventory:read" }] },
+      },
+    });
+    await db.user.create({ data: { email: "orders-no-inbox@test.local", name: "Orders No Inbox", passwordHash, roleId: role.id } });
+    const noInbox = await bearerFor(app, "orders-no-inbox@test.local");
+    await request(server()).post("/orders").set(noInbox).send({ ...body(), conversationId: conversation.id }).expect(403);
+    await request(server()).post("/orders").set(noInbox).send(body()).expect(201);
+  });
 });
 
 describe("error code ທີ່ຄົງທີ່", () => {

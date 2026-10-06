@@ -2,7 +2,16 @@ import type { INestApplication } from "@nestjs/common";
 import { type PrismaClient, expireOrder, receive } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { bearerFor, createTestApp, expectLedgerMatches, resetDb, seedCatalog, seedInventoryUsers } from "./helpers";
+import {
+  bearerFor,
+  createTestApp,
+  expectLedgerMatches,
+  resetDb,
+  seedCatalog,
+  seedConversation,
+  seedInventoryUsers,
+  seedRoleUsers,
+} from "./helpers";
 
 describe("orders (e2e)", () => {
   let app: INestApplication;
@@ -458,6 +467,173 @@ describe("orders (e2e)", () => {
     it("key ຮູບແບບຜິດ = 400", async () => {
       await withKey("has space").expect(400);
       await withKey("x".repeat(129)).expect(400);
+    });
+  });
+
+  describe("ບິນຈາກແຊັດ (conversationId)", () => {
+    let chat: { Authorization: string };
+    const body = (conversationId?: string, extra: object = {}) => ({
+      items: [{ variantId: f.v1.id, quantity: 1 }],
+      ...(conversationId ? { conversationId } : {}),
+      ...extra,
+    });
+
+    beforeEach(async () => {
+      // CHAT_ADMIN ຕາມ seed ຈິງ: orders:write + inbox:write + inventory:read
+      await seedRoleUsers(db);
+      chat = await bearerFor(app, "chat_admin@role.test");
+    });
+
+    it("ຕັ້ງ channel=FACEBOOK, source=CHAT, ເກັບ conversationId; ຢູ່ໃນ detail, list ແລະ audit", async () => {
+      const conversation = await seedConversation(db);
+      const res = await createOrder(body(conversation.id), chat).expect(201);
+      expect(res.body).toMatchObject({ channel: "FACEBOOK", source: "CHAT", conversationId: conversation.id });
+
+      const stored = await db.order.findUniqueOrThrow({ where: { id: res.body.id } });
+      expect(stored).toMatchObject({ channel: "FACEBOOK", source: "CHAT", conversationId: conversation.id });
+
+      const detail = await request(server()).get(`/orders/${res.body.id}`).set(chat).expect(200);
+      expect(detail.body.conversationId).toBe(conversation.id);
+      const list = await request(server()).get("/orders").set(chat).expect(200);
+      expect(list.body.items[0]).toMatchObject({ channel: "FACEBOOK", source: "CHAT", conversationId: conversation.id });
+
+      const audit = await db.auditLog.findFirstOrThrow({ where: { action: "order.create", entityId: res.body.id } });
+      expect(audit.after).toMatchObject({ conversationId: conversation.id });
+    });
+
+    it("audit ຂອງບິນທົ່ວໄປມີ conversationId = null", async () => {
+      const res = await createOrder(body(), chat).expect(201);
+      const audit = await db.auditLog.findFirstOrThrow({ where: { action: "order.create", entityId: res.body.id } });
+      expect(audit.after).toMatchObject({ conversationId: null });
+    });
+
+    it("ບິນທົ່ວໄປຍັງເປັນ OFFLINE/MANUAL ແລະ conversationId = null", async () => {
+      const res = await createOrder(body(), chat).expect(201);
+      expect(res.body).toMatchObject({ channel: "OFFLINE", source: "MANUAL", conversationId: null });
+    });
+
+    it("ສົ່ງ channel/source ມາເອງ → 400 (server ກຳນົດຈາກເຄສ)", async () => {
+      const conversation = await seedConversation(db);
+      await createOrder(body(conversation.id, { channel: "OFFLINE" }), chat).expect(400);
+      await createOrder(body(conversation.id, { source: "MANUAL" }), chat).expect(400);
+      expect(await db.order.count()).toBe(0);
+    });
+
+    it("ເຄສບໍ່ມີ → 404 CONVERSATION_NOT_FOUND ແລະ ບໍ່ມີ Order/ການຈອງສະຕ໋ອກຄ້າງ", async () => {
+      const res = await createOrder(body("missing"), chat).expect(404);
+      expect(res.body.code).toBe("CONVERSATION_NOT_FOUND");
+      expect(await db.order.count()).toBe(0);
+      expect(await db.stockMovement.count({ where: { type: "RESERVE" } })).toBe(0);
+      expect(await level()).toEqual({ onHand: 10, reserved: 0 });
+    });
+
+    it("ມີ orders:write ແຕ່ບໍ່ມີ inbox:write → 403 FORBIDDEN (ກວດກ່ອນຫາເຄສ: ເຄສບໍ່ມີ ກໍ່ 403 ຄືກັນ)", async () => {
+      const conversation = await seedConversation(db);
+      const real = await createOrder(body(conversation.id), writer).expect(403);
+      expect(real.body.code).toBe("FORBIDDEN");
+      const missing = await createOrder(body("missing"), writer).expect(403);
+      expect(missing.body.code).toBe("FORBIDDEN");
+      expect(await db.order.count()).toBe(0);
+      // ບິນທົ່ວໄປຂອງຄົນນີ້ຍັງສ້າງໄດ້
+      await createOrder(body(), writer).expect(201);
+    });
+
+    it("ບໍ່ແກ້ລູກຄ້າຂອງເຄສ: ເຄສທີ່ບໍ່ມີລູກຄ້າຍັງບໍ່ມີ, ເຄສທີ່ລິ້ງລູກຄ້າ A ຍັງເປັນ A ເມື່ອບິນເລືອກ B", async () => {
+      const a = await db.customer.create({ data: { name: "A", phone: "020111111" } });
+      const b = await db.customer.create({ data: { name: "B", phone: "020222222" } });
+      const unlinked = await seedConversation(db);
+      const linked = await seedConversation(db, { customerId: a.id });
+
+      const first = await createOrder(body(unlinked.id, { customerId: b.id }), chat).expect(201);
+      expect(first.body.customer).toMatchObject({ id: b.id });
+      expect((await db.conversation.findUniqueOrThrow({ where: { id: unlinked.id } })).customerId).toBeNull();
+
+      await createOrder(body(linked.id, { customerId: b.id }), chat).expect(201);
+      expect((await db.conversation.findUniqueOrThrow({ where: { id: linked.id } })).customerId).toBe(a.id);
+    });
+
+    it("Idempotency-Key: ເຄສດຽວກັນ = ບິນເດີມ; ເຄສຕ່າງກັນດ້ວຍ key ເດີມ = 409", async () => {
+      const one = await seedConversation(db);
+      const two = await seedConversation(db);
+      const send = (conversationId: string) =>
+        request(server()).post("/orders").set(chat).set("Idempotency-Key", "chat-key").send(body(conversationId));
+      const first = await send(one.id).expect(201);
+      const replay = await send(one.id).expect(201);
+      expect(replay.body.id).toBe(first.body.id);
+      expect(await db.order.count()).toBe(1);
+      const clash = await send(two.id).expect(409);
+      expect(clash.body.code).toBe("CONFLICT");
+      expect(await db.order.count()).toBe(1);
+    });
+
+    it("Idempotency-Key: key ເດີມທີ່ສົ່ງມາແບບບໍ່ມີເຄສ ແລ້ວສົ່ງມາພ້ອມເຄສ = 409 (ບໍ່ replay ບິນທົ່ວໄປ)", async () => {
+      const one = await seedConversation(db);
+      const send = (payload: object) =>
+        request(server()).post("/orders").set(chat).set("Idempotency-Key", "mixed-key").send(payload);
+      await send(body()).expect(201);
+      await send(body(one.id)).expect(409);
+      expect(await db.order.count()).toBe(1);
+    });
+
+    it("ເສັ້ນທາງ replay ກໍ່ຕ້ອງມີ inbox:write (ບໍ່ replay ບິນຂອງເຄສໃຫ້ຄົນທີ່ບໍ່ມີສິດ)", async () => {
+      const one = await seedConversation(db);
+      await request(server()).post("/orders").set(chat).set("Idempotency-Key", "perm-key").send(body(one.id)).expect(201);
+      await request(server()).post("/orders").set(writer).set("Idempotency-Key", "perm-key").send(body(one.id)).expect(403);
+    });
+
+    it("GET /orders?conversationId=: ສະເພາະບິນຂອງເຄສນັ້ນ; ເຄສບໍ່ມີ = ລາຍການວ່າງ (ບໍ່ແມ່ນ 404); ຕ້ອງ orders:read", async () => {
+      const one = await seedConversation(db);
+      const two = await seedConversation(db);
+      const mine = await createOrder(body(one.id), chat).expect(201);
+      await createOrder(body(two.id), chat).expect(201);
+      await createOrder(body(), chat).expect(201);
+
+      const res = await request(server()).get(`/orders?conversationId=${one.id}`).set(chat).expect(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.items.map((item: { id: string }) => item.id)).toEqual([mine.body.id]);
+
+      const none = await request(server()).get("/orders?conversationId=missing").set(chat).expect(200);
+      expect(none.body).toMatchObject({ total: 0, items: [] });
+
+      const noOrdersRead = await bearerFor(app, "noinv@test.local");
+      await request(server()).get(`/orders?conversationId=${one.id}`).set(noOrdersRead).expect(403);
+    });
+
+    it("filter ຮ່ວມກັບ status/channel ແລະ pagination: total ນັບສະເພາະເຄສນັ້ນ", async () => {
+      const one = await seedConversation(db);
+      const two = await seedConversation(db);
+      const ids: string[] = [];
+      for (let i = 0; i < 3; i++) ids.push((await createOrder(body(one.id), chat).expect(201)).body.id);
+      await createOrder(body(two.id), chat).expect(201);
+      await act(ids[0] as string, "cancel", {}).expect(200);
+
+      const page1 = await request(server()).get(`/orders?conversationId=${one.id}&pageSize=2&page=1`).set(chat).expect(200);
+      const page2 = await request(server()).get(`/orders?conversationId=${one.id}&pageSize=2&page=2`).set(chat).expect(200);
+      expect(page1.body.total).toBe(3);
+      expect(page1.body.items).toHaveLength(2);
+      expect(page2.body.items).toHaveLength(1);
+      expect(new Set([...page1.body.items, ...page2.body.items].map((i: { id: string }) => i.id))).toEqual(new Set(ids));
+
+      const pending = await request(server())
+        .get(`/orders?conversationId=${one.id}&status=PENDING_PAYMENT`)
+        .set(chat)
+        .expect(200);
+      expect(pending.body.total).toBe(2);
+      const wrongChannel = await request(server()).get(`/orders?conversationId=${one.id}&channel=OFFLINE`).set(chat).expect(200);
+      expect(wrongChannel.body.total).toBe(0);
+    });
+
+    it("ຕົ້ນທຶນຍັງຖືກ redact ຕາມ costs:read ໃນບິນຈາກແຊັດ (create/detail/list-filter)", async () => {
+      const conversation = await seedConversation(db);
+      const created = await createOrder(body(conversation.id), chat).expect(201);
+      expect(created.body.items[0]).not.toHaveProperty("unitCost");
+      const detail = await request(server()).get(`/orders/${created.body.id}`).set(chat).expect(200);
+      expect(detail.body.items[0]).not.toHaveProperty("unitCost");
+      const manager = await bearerFor(app, "manager@role.test");
+      const asManager = await request(server()).get(`/orders/${created.body.id}`).set(manager).expect(200);
+      expect(asManager.body.items[0]).toHaveProperty("unitCost");
+      const list = await request(server()).get(`/orders?conversationId=${conversation.id}`).set(chat).expect(200);
+      expect(JSON.stringify(list.body)).not.toContain("unitCost");
     });
   });
 });

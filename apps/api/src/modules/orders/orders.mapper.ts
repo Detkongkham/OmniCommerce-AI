@@ -25,6 +25,8 @@ export interface OrderListItemDto {
   status: string;
   channel: string;
   source: string;
+  /** ບິນທີ່ເປີດຈາກແຊັດ; null = ບໍ່ໄດ້ມາຈາກແຊັດ */
+  conversationId: string | null;
   customer: { id: string; name: string; phone: string | null } | null;
   total: string;
   itemCount: number;
@@ -39,6 +41,7 @@ export function toOrderListItem(row: OrderListRow): OrderListItemDto {
     status: row.status,
     channel: row.channel,
     source: row.source,
+    conversationId: row.conversationId,
     customer: row.customer,
     total: money(row.total),
     itemCount: row._count.items,
@@ -53,6 +56,7 @@ export interface OrderDetailDto {
   status: string;
   channel: string;
   source: string;
+  conversationId: string | null;
   customer: { id: string; name: string; phone: string | null; email: string | null } | null;
   currency: string;
   exchangeRate: string;
@@ -106,6 +110,7 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
     status: row.status,
     channel: row.channel,
     source: row.source,
+    conversationId: row.conversationId,
     customer: row.customer
       ? { id: row.customer.id, name: row.customer.name, phone: row.customer.phone, email: row.customer.email }
       : null,

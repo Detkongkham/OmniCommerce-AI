@@ -6,7 +6,9 @@ import {
   type CreateOrderInput,
   type OrderListQuery,
   type OrderStatus,
+  type SalesChannel,
   calculateOrderTotals,
+  hasPermission,
 } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
@@ -41,6 +43,7 @@ export class OrdersService {
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.channel ? { channel: query.channel } : {}),
+      ...(query.conversationId ? { conversationId: query.conversationId } : {}),
       ...(query.from || query.to
         ? { createdAt: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lt: query.to } : {}) } }
         : {}),
@@ -77,6 +80,10 @@ export class OrdersService {
     ip: string | undefined,
     idempotencyKey?: string,
   ): Promise<OrderDetailDto> {
+    // ຜູກບິນກັບເຄສ = ເຮັດວຽກແຊັດ: ຕ້ອງມີ inbox:write ເພີ່ມ. ກວດກ່ອນຫາເຄສ (ບໍ່ຮົ່ວວ່າເຄສມີ/ບໍ່ມີ ໃຫ້ຜູ້ທີ່ບໍ່ມີສິດ inbox)
+    if (input.conversationId !== undefined && !hasPermission(actor.permissions, "inbox:write")) {
+      throw apiError("FORBIDDEN", "Opening an order from a conversation requires inbox:write");
+    }
     const idempotencyHash = idempotencyKey ? hashInput(input) : undefined;
     if (idempotencyKey && idempotencyHash) {
       const replay = await this.findReplay(idempotencyKey, idempotencyHash);
@@ -105,6 +112,7 @@ export class OrdersService {
         status: created.status,
         total: created.total.toFixed(2),
         itemCount: created.items.length,
+        conversationId: created.conversationId,
       },
       ip,
     });
@@ -132,6 +140,16 @@ export class OrdersService {
   ): Promise<string> {
     return this.prisma.$transaction(async (tx) => {
       const settings = await ensureStoreSetting(tx);
+
+      // 0) ເຄສ (ຖ້າເປີດຈາກແຊັດ): channel ຕາມເຄສ, source = CHAT. ບໍ່ພົບ → 404 ກ່ອນຈອງສະຕ໋ອກ
+      let conversation: { id: string; channel: SalesChannel } | null = null;
+      if (input.conversationId !== undefined) {
+        conversation = await tx.conversation.findUnique({
+          where: { id: input.conversationId },
+          select: { id: true, channel: true },
+        });
+        if (!conversation) throw apiError("CONVERSATION_NOT_FOUND", "Conversation not found");
+      }
 
       // 1) ສາງ
       let defaultWarehouseId: string | undefined;
@@ -215,8 +233,9 @@ export class OrdersService {
         data: {
           orderNumber: `SO-${String(n).padStart(6, "0")}`,
           customerId,
-          channel: "OFFLINE",
-          source: "MANUAL",
+          channel: conversation?.channel ?? "OFFLINE",
+          source: conversation ? "CHAT" : "MANUAL",
+          conversationId: conversation?.id,
           currency: settings.baseCurrency,
           exchangeRate: 1,
           subtotal: totals.subtotal,
