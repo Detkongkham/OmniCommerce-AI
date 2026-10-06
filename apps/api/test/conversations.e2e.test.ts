@@ -2,7 +2,9 @@ import type { INestApplication } from "@nestjs/common";
 import { simulator } from "@oca/channels";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ChannelRegistry } from "../src/modules/inbox/channel-registry";
+import { PRISMA } from "../src/prisma/prisma.module";
 import { bearerFor, createTestApp, resetDb, seedConversation, seedInboxReader, seedRoleUsers } from "./helpers";
 
 describe("conversations (e2e)", () => {
@@ -365,6 +367,115 @@ describe("conversations (e2e)", () => {
       await request(server()).post(url).set(chat).send({ name: "A", phone: "abc" }).expect(400);
       await request(server()).post("/conversations/nope/customer").set(chat).send({ name: "A" }).expect(404);
       await request(server()).post(url).set(reader).send({ name: "A" }).expect(403);
+    });
+  });
+  describe("ການຕອບ: race ແລະ ຄວາມຖືກຕ້ອງຫຼັງສົ່ງ", () => {
+    it("ຕອບປົກກະຕິ (ບໍ່ມີຂໍ້ຄວາມເຂົ້າພ້ອມກັນ) → unread ເປັນ 0", async () => {
+      const conversation = await seedConversation(db, { externalThreadId: "U1", unreadCount: 2 });
+      await request(server()).post(`/conversations/${conversation.id}/messages`).set(chat).send({ text: "hi" }).expect(201);
+      expect((await db.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).unreadCount).toBe(0);
+    });
+
+    it("ຂໍ້ຄວາມຂາເຂົ້າມາລະຫວ່າງສົ່ງ → ຍັງເຫຼືອ unread ຂອງມັນ (ບໍ່ຖືກລ້າງ)", async () => {
+      const conversation = await seedConversation(db, { externalThreadId: "U1", unreadCount: 2, lastMessageAt: new Date("2026-01-01T00:00:00Z") });
+      const registry = app.get(ChannelRegistry);
+      const spy = vi.spyOn(registry.facebook, "sendText").mockImplementation(async () => {
+        await db.conversation.update({
+          where: { id: conversation.id },
+          data: { unreadCount: { increment: 1 }, lastMessageAt: new Date(Date.now() + 1000) },
+        });
+        return { ok: true, externalId: "m_race_1" };
+      });
+      try {
+        await request(server()).post(`/conversations/${conversation.id}/messages`).set(chat).send({ text: "hi" }).expect(201);
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).unreadCount).toBe(3);
+    });
+
+    it("ສົ່ງສຳເລັດແລ້ວ ແຕ່ຂັ້ນຕອນຫຼັງສົ່ງ (ອັບເດດເຄສ) ລົ້ມ → ຍັງ 201 SENT", async () => {
+      const conversation = await seedConversation(db, { externalThreadId: "U1" });
+      const prisma = app.get<PrismaClient>(PRISMA);
+      const spy = vi.spyOn(prisma.conversation, "updateMany").mockRejectedValueOnce(new Error("db hiccup"));
+      try {
+        const res = await request(server()).post(`/conversations/${conversation.id}/messages`).set(chat).send({ text: "hi" }).expect(201);
+        expect(res.body).toMatchObject({ status: "SENT", text: "hi" });
+        expect(spy).toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("channel ທີ່ບໍ່ມີ adapter (INSTAGRAM) → 201 FAILED CHANNEL_NOT_CONFIGURED", async () => {
+      const conversation = await db.conversation.create({
+        data: { channel: "INSTAGRAM", externalThreadId: "ig1", displayName: "IG", lastMessageAt: new Date() },
+      });
+      const res = await request(server()).post(`/conversations/${conversation.id}/messages`).set(chat).send({ text: "x" }).expect(201);
+      expect(res.body).toMatchObject({ status: "FAILED", errorCode: "CHANNEL_NOT_CONFIGURED" });
+    });
+  });
+
+  describe("ກວດເພີ່ມ: q, audit, ຂອບ limit", () => {
+    it("q ຄົ້ນ preview, ບໍ່ສົນຕົວພິມ, q ວ່າງ = ບໍ່ກອງ", async () => {
+      const a = await seedConversation(db, { displayName: "Aaa", lastMessagePreview: "Need Discount" });
+      const b = await seedConversation(db, { displayName: "Bbb" });
+      const ids = async (query: string) =>
+        ((await request(server()).get(`/conversations?${query}`).set(reader).expect(200)).body.items as { id: string }[])
+          .map((item) => item.id)
+          .sort();
+      expect(await ids("q=discount")).toEqual([a.id]);
+      expect(await ids("q=")).toEqual([a.id, b.id].sort());
+    });
+
+    it("PATCH ບັນທຶກ audit ມີ before/after; assigneeId:null ຖອນຜູ້ຮັບຜິດຊອບ", async () => {
+      const conversation = await seedConversation(db);
+      const url = `/conversations/${conversation.id}`;
+      await request(server()).patch(url).set(chat).send({ assigneeId: chatUserId, status: "CLOSED" }).expect(200);
+      const res = await request(server()).patch(url).set(chat).send({ assigneeId: null }).expect(200);
+      expect(res.body.assignee).toBeNull();
+      const logs = await db.auditLog.findMany({ where: { action: "conversation.update", entityId: conversation.id }, orderBy: { createdAt: "asc" } });
+      expect(logs).toHaveLength(2);
+      expect(logs[0]).toMatchObject({
+        before: { assigneeId: null, status: "OPEN", customerId: null },
+        after: { assigneeId: chatUserId, status: "CLOSED", customerId: null },
+      });
+      expect(logs[1]).toMatchObject({
+        before: { assigneeId: chatUserId, status: "CLOSED" },
+        after: { assigneeId: null, status: "CLOSED" },
+      });
+    });
+
+    it("limit ຂອບ: ພໍດີ limit → hasMore false; limit+1 → true", async () => {
+      const conversation = await seedConversation(db);
+      const url = `/conversations/${conversation.id}/messages?limit=2`;
+      for (let i = 1; i <= 2; i++) {
+        await db.message.create({ data: { conversationId: conversation.id, direction: "IN", text: `m${i}`, createdAt: new Date(Date.UTC(2026, 9, 1, 0, 0, i)) } });
+      }
+      expect((await request(server()).get(url).set(reader).expect(200)).body.hasMore).toBe(false);
+      await db.message.create({ data: { conversationId: conversation.id, direction: "IN", text: "m3", createdAt: new Date(Date.UTC(2026, 9, 1, 0, 0, 3)) } });
+      expect((await request(server()).get(url).set(reader).expect(200)).body.hasMore).toBe(true);
+    });
+
+    it("createdAt ຊ້ຳກັນ: ແບ່ງໜ້າບໍ່ຂ້າມ/ບໍ່ຊ້ຳ (tie-break ດ້ວຍ id)", async () => {
+      const conversation = await seedConversation(db);
+      const same = new Date("2026-10-01T00:00:00Z");
+      for (const text of ["t1", "t2", "t3"]) {
+        await db.message.create({ data: { conversationId: conversation.id, direction: "IN", text, createdAt: same } });
+      }
+      const seen: string[] = [];
+      let beforeId: string | undefined;
+      for (let page = 0; page < 3; page++) {
+        const res = await request(server())
+          .get(`/conversations/${conversation.id}/messages?limit=1${beforeId ? `&beforeId=${beforeId}` : ""}`)
+          .set(reader)
+          .expect(200);
+        expect(res.body.items).toHaveLength(1);
+        seen.push(res.body.items[0].text);
+        beforeId = res.body.items[0].id;
+        expect(res.body.hasMore).toBe(page < 2);
+      }
+      expect(seen.sort()).toEqual(["t1", "t2", "t3"]);
     });
   });
 });

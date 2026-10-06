@@ -103,6 +103,7 @@ export class ConversationsService {
    */
   async sendMessage(id: string, input: SendMessageInput, actor: AuthUser): Promise<MessageDto> {
     const conversation = await this.require(id);
+    const lastMessageAtBeforeSend = conversation.lastMessageAt;
     const pending = await this.prisma.message.create({
       data: { conversationId: id, direction: "OUT", text: input.text, status: "PENDING", sentByUserId: actor.id },
     });
@@ -119,12 +120,25 @@ export class ConversationsService {
     if (!result.ok) this.logger.warn(`send failed (${conversation.id}): ${result.code} ${result.detail}`);
 
     const message = await this.settle(pending.id, id, actor, result);
-    await this.prisma.conversation.updateMany({
-      where: { id, lastMessageAt: { lte: message.createdAt } },
-      data: { lastMessageAt: message.createdAt, lastMessagePreview: input.text.slice(0, PREVIEW_MAX) },
-    });
-    await this.prisma.conversation.update({ where: { id }, data: { unreadCount: 0 } });
-    await this.events.publish({ type: "conversation.updated", conversationId: id });
+    // ຫຼັງຈາກນີ້ເປັນ best-effort: ສົ່ງສຳເລັດແລ້ວ ຈຶ່ງບໍ່ໃຫ້ຂັ້ນຕອນເສີມເຮັດໃຫ້ request ເປັນ 500
+    try {
+      // ລ້າງ unread ສະເພາະເມື່ອບໍ່ມີຂໍ້ຄວາມຂາເຂົ້າໃໝ່ມາລະຫວ່າງສົ່ງ (ມັນຈະ bump lastMessageAt)
+      await this.prisma.conversation.updateMany({
+        where: { id, lastMessageAt: { lte: lastMessageAtBeforeSend } },
+        data: { unreadCount: 0 },
+      });
+      await this.prisma.conversation.updateMany({
+        where: { id, lastMessageAt: { lte: message.createdAt } },
+        data: { lastMessageAt: message.createdAt, lastMessagePreview: input.text.slice(0, PREVIEW_MAX) },
+      });
+      await this.events.publish({ type: "conversation.updated", conversationId: id });
+    } catch (error) {
+      this.logger.error(
+        `post-send update failed (message ${pending.id}, conversation ${id}, externalId ${result.ok ? result.externalId : "-"}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     return toMessageDto(message);
   }
 
@@ -145,14 +159,11 @@ export class ConversationsService {
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       // webhook echo ຂອງຂໍ້ຄວາມນີ້ມາຮອດກ່ອນ response ຂອງ Graph: ແຖວ echo ເປັນຕົວຈິງ → ລຶບແຖວ pending ແລ້ວໃສ່ຜູ້ສົ່ງໃຫ້ echo
-      await this.prisma.message.delete({ where: { id: pendingId } });
-      const echo = await this.prisma.message.findFirstOrThrow({
-        where: { conversationId, externalId: result.externalId },
-      });
-      return this.prisma.message.update({
-        where: { id: echo.id },
-        data: { sentByUserId: actor.id },
-        include: MESSAGE_INCLUDE,
+      // ທັງໝົດໃນ transaction ດຽວ: ຖ້າຫາ echo ບໍ່ເຫັນ ຈະ rollback ແລະ ແຖວ pending ຍັງຢູ່ (ຂໍ້ຄວາມບໍ່ເສຍ)
+      return this.prisma.$transaction(async (tx) => {
+        const echo = await tx.message.findFirstOrThrow({ where: { conversationId, externalId: result.externalId } });
+        await tx.message.delete({ where: { id: pendingId } });
+        return tx.message.update({ where: { id: echo.id }, data: { sentByUserId: actor.id }, include: MESSAGE_INCLUDE });
       });
     }
   }
@@ -206,8 +217,9 @@ export class ConversationsService {
   ): Promise<ConversationDto> {
     const existing = await this.require(id);
     if (existing.customerId) throw apiError("CONFLICT", "Conversation is already linked to a customer");
+    let after: ConversationRow;
     try {
-      const after = await this.prisma.$transaction(async (tx) => {
+      after = await this.prisma.$transaction(async (tx) => {
         const customer = await tx.customer.create({ data: { name: input.name, phone: input.phone } });
         const linked = await tx.conversation.updateMany({
           where: { id, customerId: null },
@@ -216,20 +228,20 @@ export class ConversationsService {
         if (linked.count === 0) throw apiError("CONFLICT", "Conversation is already linked to a customer");
         return tx.conversation.findUniqueOrThrow({ where: { id }, include: CONVERSATION_INCLUDE });
       });
-      await this.audit.record({
-        userId: actor.id,
-        action: "conversation.create-customer",
-        entity: "conversation",
-        entityId: id,
-        after: { customerId: after.customerId },
-        ip,
-      });
-      await this.events.publish({ type: "conversation.updated", conversationId: id });
-      return toConversationDto(after);
     } catch (error) {
       if (isUniqueViolation(error)) throw apiError("DUPLICATE_VALUE", "Phone number already in use");
       throw error;
     }
+    await this.audit.record({
+      userId: actor.id,
+      action: "conversation.create-customer",
+      entity: "conversation",
+      entityId: id,
+      after: { customerId: after.customerId },
+      ip,
+    });
+    await this.events.publish({ type: "conversation.updated", conversationId: id });
+    return toConversationDto(after);
   }
 
   private async require(id: string): Promise<ConversationRow> {
