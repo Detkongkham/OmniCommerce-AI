@@ -7,6 +7,8 @@ import { isValidSignature } from "./signature";
 
 export const DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v21.0";
 
+const SAFE_THREAD_ID = /^[\w-]{1,128}$/;
+
 export interface FacebookAdapterConfig {
   appSecret?: string;
   verifyToken?: string;
@@ -37,6 +39,7 @@ export class FacebookAdapter implements ChannelAdapter {
 
   verifyHandshake(mode: string | undefined, token: string | undefined): boolean {
     const expected = this.config.verifyToken;
+    if (typeof mode !== "string" || typeof token !== "string") return false;
     if (mode !== "subscribe" || !token || !expected) return false;
     const actual = Buffer.from(token);
     const wanted = Buffer.from(expected);
@@ -56,6 +59,7 @@ export class FacebookAdapter implements ChannelAdapter {
     if (!token) {
       return { ok: false, code: "CHANNEL_NOT_CONFIGURED", detail: "FACEBOOK_PAGE_ACCESS_TOKEN is not set" };
     }
+    if (!SAFE_THREAD_ID.test(threadId)) return { ok: false, code: "SEND_REJECTED", detail: "Invalid thread id" };
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}/me/messages`, {
@@ -67,9 +71,17 @@ export class FacebookAdapter implements ChannelAdapter {
     } catch (error) {
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: errorText(error) };
     }
-    const body: unknown = await response.json().catch(() => null);
-    if (response.ok && isRecord(body) && typeof body.message_id === "string") {
-      return { ok: true, externalId: body.message_id };
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      // abort/timeout/truncated/non-JSON body: the outcome is unknown, so never report a definite rejection
+      return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: errorText(error) };
+    }
+    if (response.ok) {
+      if (isRecord(body) && typeof body.message_id === "string") return { ok: true, externalId: body.message_id };
+      // 2xx: Meta may have delivered the message
+      return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: "Graph returned 2xx without message_id" };
     }
     const failure = mapGraphFailure(response.status, body);
     return { ok: false, ...failure };
@@ -77,7 +89,7 @@ export class FacebookAdapter implements ChannelAdapter {
 
   async fetchProfile(threadId: string): Promise<ChannelProfile | null> {
     const token = this.config.pageAccessToken;
-    if (!token) return null;
+    if (!token || !SAFE_THREAD_ID.test(threadId)) return null;
     try {
       const response = await this.fetchImpl(
         `${this.baseUrl}/${encodeURIComponent(threadId)}?fields=first_name%2Clast_name`,

@@ -78,4 +78,13 @@ describe("parseFacebookWebhook", () => {
       expect(parseFacebookWebhook(payload)).toEqual([]);
     }
   });
+
+  it("timestamp ນອກຊ່ວງ (1e308, -1e20) → ໃຊ້ເວລາປັດຈຸບັນ ບໍ່ແມ່ນ Invalid Date", () => {
+    for (const timestamp of [1e308, -1e20]) {
+      const [event] = parseFacebookWebhook(
+        wrap({ sender: { id: "U1" }, recipient: { id: "PAGE" }, timestamp, message: { mid: "mt", text: "x" } }),
+      );
+      expect(Number.isNaN(event?.timestamp.getTime())).toBe(false);
+    }
+  });
 });

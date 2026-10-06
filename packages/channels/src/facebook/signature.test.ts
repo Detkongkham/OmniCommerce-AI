@@ -28,4 +28,10 @@ describe("isValidSignature", () => {
     expect(isValidSignature(undefined, BODY, signBody(SECRET, BODY))).toBe(false);
     expect(isValidSignature("", BODY, signBody("", BODY))).toBe(false);
   });
+  it("ຜິດເມື່ອ hex ເປັນຕົວພິມໃຫຍ່, header ບໍ່ແມ່ນ string ຫຼື garbage ຍາວເທົ່າກັນ", () => {
+    const good = signBody(SECRET, BODY);
+    expect(isValidSignature(SECRET, BODY, `sha256=${good.slice(7).toUpperCase()}`)).toBe(false);
+    expect(isValidSignature(SECRET, BODY, ["sha256=abc"] as unknown as string)).toBe(false);
+    expect(isValidSignature(SECRET, BODY, `sha256=${"z".repeat(good.length - 7)}`)).toBe(false);
+  });
 });

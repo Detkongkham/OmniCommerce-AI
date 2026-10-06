@@ -13,6 +13,14 @@ function parseAttachments(value: unknown): InboundAttachment[] {
   }));
 }
 
+function timestampOf(value: unknown): Date {
+  if (typeof value === "number") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return new Date();
+}
+
 function parseMessaging(item: unknown): InboundEvent | null {
   if (!isRecord(item) || !isRecord(item.message)) return null;
   const message = item.message;
@@ -34,7 +42,7 @@ function parseMessaging(item: unknown): InboundEvent | null {
     externalId,
     text,
     attachments,
-    timestamp: typeof item.timestamp === "number" ? new Date(item.timestamp) : new Date(),
+    timestamp: timestampOf(item.timestamp),
   };
 }
 

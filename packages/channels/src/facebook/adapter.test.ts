@@ -45,6 +45,8 @@ describe("FacebookAdapter.sendText", () => {
     [400, { error: { message: "(#10) This message is sent outside of allowed window.", code: 10, error_subcode: 2018278 } }, "OUTSIDE_WINDOW"],
     [400, { error: { message: "(#200) This message is sent outside of allowed window", code: 200 } }, "OUTSIDE_WINDOW"],
     [400, { error: { message: "Invalid OAuth access token.", code: 190 } }, "CHANNEL_AUTH"],
+    [400, { error: { message: "Session invalid", code: 102 } }, "CHANNEL_AUTH"],
+    [400, { error: { message: "permission", code: 32 } }, "CHANNEL_UNAVAILABLE"],
     [401, { error: { message: "nope" } }, "CHANNEL_AUTH"],
     [500, { error: { message: "boom", code: 1 } }, "CHANNEL_UNAVAILABLE"],
     [429, { error: { message: "slow down", code: 4 } }, "CHANNEL_UNAVAILABLE"],
@@ -56,9 +58,45 @@ describe("FacebookAdapter.sendText", () => {
     expect(result).toMatchObject({ ok: false, code });
   });
 
-  it("200 ແຕ່ບໍ່ມີ message_id = SEND_REJECTED", async () => {
+  it("200 ແຕ່ບໍ່ມີ message_id = CHANNEL_UNAVAILABLE (ຜົນບໍ່ແນ່ນອນ)", async () => {
     const fetchImpl = vi.fn(async () => json(200, {}));
-    expect(await make(fetchImpl as unknown as typeof fetch).sendText("U1", "x")).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+    expect(await make(fetchImpl as unknown as typeof fetch).sendText("U1", "x")).toMatchObject({
+      ok: false,
+      code: "CHANNEL_UNAVAILABLE",
+      detail: "Graph returned 2xx without message_id",
+    });
+  });
+
+  it("200 ແຕ່ body ບໍ່ແມ່ນ JSON = CHANNEL_UNAVAILABLE", async () => {
+    const fetchImpl = vi.fn(async () => new Response("<html>ok</html>", { status: 200 }));
+    expect(await make(fetchImpl as unknown as typeof fetch).sendText("U1", "x")).toMatchObject({ ok: false, code: "CHANNEL_UNAVAILABLE" });
+  });
+
+  it.each([200, 400])("ອ່ານ body ລົ້ມ (status %i) = CHANNEL_UNAVAILABLE", async (status) => {
+    const fetchImpl = vi.fn(async () => ({ ok: status < 300, status, json: () => Promise.reject(new Error("aborted")) }));
+    expect(await make(fetchImpl as unknown as typeof fetch).sendText("U1", "x")).toMatchObject({ ok: false, code: "CHANNEL_UNAVAILABLE" });
+  });
+
+  it("timeout ຈິງ: signal abort → CHANNEL_UNAVAILABLE", async () => {
+    const fetchImpl = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const result = await make(fetchImpl as unknown as typeof fetch, { timeoutMs: 10 }).sendText("U1", "x");
+    expect(result).toMatchObject({ ok: false, code: "CHANNEL_UNAVAILABLE" });
+  });
+
+  it.each(["..", "", "a/b", "a?b"])("thread id ບໍ່ປອດໄພ %j → SEND_REJECTED ໂດຍບໍ່ເອີ້ນເຄືອຂ່າຍ", async (id) => {
+    const fetchImpl = vi.fn();
+    expect(await make(fetchImpl as unknown as typeof fetch).sendText(id, "x")).toMatchObject({
+      ok: false,
+      code: "SEND_REJECTED",
+      detail: "Invalid thread id",
+    });
+    expect(await make(fetchImpl as unknown as typeof fetch).fetchProfile(id)).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("ເຄືອຂ່າຍລົ້ມ/timeout → CHANNEL_UNAVAILABLE ແລະ detail ບໍ່ມີ token", async () => {
@@ -99,6 +137,8 @@ describe("FacebookAdapter webhook helpers", () => {
     expect(adapter.verifyHandshake("subscribe", "nope")).toBe(false);
     expect(adapter.verifyHandshake("unsubscribe", "verify-me")).toBe(false);
     expect(adapter.verifyHandshake(undefined, undefined)).toBe(false);
+    expect(adapter.verifyHandshake(["subscribe"] as unknown as string, { a: 1 } as unknown as string)).toBe(false);
+    expect(adapter.verifyHandshake("subscribe", ["verify-me"] as unknown as string)).toBe(false);
   });
   it("canReceive ຕ້ອງມີທັງ appSecret ແລະ verifyToken; default base URL", () => {
     expect(adapter.canReceive).toBe(true);

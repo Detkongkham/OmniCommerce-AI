@@ -12,7 +12,7 @@ export function isValidSignature(
   rawBody: Buffer,
   header: string | undefined,
 ): boolean {
-  if (!appSecret || !header?.startsWith(PREFIX)) return false;
+  if (!appSecret || typeof header !== "string" || !header.startsWith(PREFIX)) return false;
   const expected = Buffer.from(signBody(appSecret, rawBody));
   const actual = Buffer.from(header);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
