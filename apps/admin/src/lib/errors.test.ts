@@ -17,26 +17,41 @@ describe("errorMessage", () => {
     expect(errorMessage(error, t)).not.toBe("Warehouse is inactive");
   });
 
-  it("code ທົ່ວໄປ (CONFLICT/BAD_REQUEST/NOT_FOUND) ໃຊ້ message ຂອງ API ຖ້າມີ ເພື່ອບໍ່ເສຍລາຍລະອຽດ", () => {
+  it("CONFLICT/BAD_REQUEST ໃຊ້ message ຂອງ API ຖ້າມີ ເພື່ອບໍ່ເສຍລາຍລະອຽດ", () => {
     expect(errorMessage(new ApiError(409, "Cannot remove the last active OWNER", [], "CONFLICT"), t)).toBe(
       "Cannot remove the last active OWNER",
     );
+    expect(errorMessage(new ApiError(400, "name must not be empty", [], "BAD_REQUEST"), t)).toBe("name must not be empty");
   });
 
-  it("code ທີ່ບໍ່ຮູ້ຈັກ ແຕ່ມີ message ໃຊ້ message", () => {
-    expect(errorMessage(new ApiError(400, "Something odd", [], "SOME_FUTURE_CODE"), t)).toBe("Something odd");
+  it("FORBIDDEN / NOT_FOUND / UNAUTHORIZED / INTERNAL_ERROR ໃຊ້ຂໍ້ຄວາມແປສະເໝີ ບໍ່ຮົ່ວ message ອັງກິດ", () => {
+    expect(errorMessage(new ApiError(403, "Setting costPrice requires costs:write", [], "FORBIDDEN"), t)).toBe(t("error.FORBIDDEN"));
+    expect(errorMessage(new ApiError(404, "Product xyz not found", [], "NOT_FOUND"), t)).toBe(t("error.NOT_FOUND"));
+    expect(errorMessage(new ApiError(401, "Invalid credentials", [], "UNAUTHORIZED"), t)).toBe(t("error.UNAUTHORIZED"));
+    expect(errorMessage(new ApiError(500, "Internal server error", [], "INTERNAL_ERROR"), t)).toBe(t("error.INTERNAL_ERROR"));
   });
 
-  it("UNAUTHORIZED ໃຊ້ message ຂອງ API (ເຊັ່ນ Invalid credentials ຕອນ login)", () => {
-    expect(errorMessage(new ApiError(401, "Invalid credentials", [], "UNAUTHORIZED"), t)).toBe("Invalid credentials");
+  it("status >= 500 ໃຊ້ຂໍ້ຄວາມແປສະເໝີ (ແມ່ນແຕ່ code ທີ່ບໍ່ຮູ້ຈັກ ຫຼື ບໍ່ມີ code)", () => {
+    expect(errorMessage(new ApiError(500, "boom", [], undefined, { message: "boom" }), t)).toBe(t("common.error.generic"));
+    expect(errorMessage(new ApiError(502, "x", [], "SOME_FUTURE_CODE"), t)).toBe(t("common.error.generic"));
+    expect(errorMessage(new ApiError(409, "Boom", [], "INTERNAL_ERROR"), t)).toBe(t("error.INTERNAL_ERROR"));
   });
 
-  it("code ທົ່ວໄປ ແຕ່ message ຫວ່າງ ໃຊ້ຂໍ້ຄວາມແປ", () => {
+  it("response ທີ່ບໍ່ແມ່ນ JSON (gateway): ບໍ່ສະແດງ statusText", () => {
+    expect(errorMessage(new ApiError(502, "Bad Gateway"), t)).toBe(t("common.error.generic"));
+    expect(errorMessage(new ApiError(400, "Bad Request"), t)).toBe(t("common.error.generic"));
+  });
+
+  it("code ທີ່ບໍ່ຮູ້ຈັກ ແຕ່ມີ message (status < 500) ໃຊ້ message", () => {
+    expect(errorMessage(new ApiError(400, "Something odd", [], "SOME_FUTURE_CODE", { message: "Something odd" }), t)).toBe("Something odd");
+  });
+
+  it("CONFLICT ແຕ່ message ຫວ່າງ ໃຊ້ຂໍ້ຄວາມແປ", () => {
     expect(errorMessage(new ApiError(409, "", [], "CONFLICT"), t)).toBe(t("error.CONFLICT"));
   });
 
-  it("ບໍ່ມີ code: ໃຊ້ message; ບໍ່ແມ່ນ ApiError: ຂໍ້ຄວາມກາງ", () => {
-    expect(errorMessage(new ApiError(500, "boom"), t)).toBe("boom");
+  it("ບໍ່ມີ code ແຕ່ເປັນ JSON message (4xx): ໃຊ້ message; ບໍ່ແມ່ນ ApiError: ຂໍ້ຄວາມກາງ", () => {
+    expect(errorMessage(new ApiError(400, "boom", [], undefined, { message: "boom" }), t)).toBe("boom");
     expect(errorMessage(new Error("x"), t)).toBe(t("common.error.generic"));
     expect(errorMessage(undefined, t)).toBe(t("common.error.generic"));
   });

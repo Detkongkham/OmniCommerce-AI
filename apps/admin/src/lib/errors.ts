@@ -3,15 +3,8 @@ import type { Translate, TranslationKey } from "@/lib/i18n/dictionary";
 import { ApiError } from "./api";
 import type { Shortage } from "./types";
 
-/** code ທົ່ວໄປທີ່ message ຂອງ API ໃຫ້ລາຍລະອຽດຫຼາຍກວ່າຂໍ້ຄວາມແປ ຈຶ່ງໃຊ້ message ກ່ອນ */
-const GENERIC_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
-  "BAD_REQUEST",
-  "UNAUTHORIZED",
-  "CONFLICT",
-  "NOT_FOUND",
-  "FORBIDDEN",
-  "INTERNAL_ERROR",
-]);
+/** code ທີ່ message ຂອງ API ເປັນຂໍ້ຄວາມໃຫ້ຜູ້ໃຊ້ (ເຊັ່ນ "Cannot remove the last active OWNER") ຈຶ່ງໃຊ້ message ກ່ອນ */
+const MESSAGE_FIRST_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>(["BAD_REQUEST", "CONFLICT"]);
 
 /** ຖືກໂຍນເມື່ອມີ action ອື່ນກຳລັງສົ່ງຢູ່ ແລະ ບໍ່ໄດ້ສົ່ງຫຍັງ (ຕ່າງຈາກສຳເລັດ) */
 export class ActionBusyError extends Error {
@@ -22,16 +15,20 @@ export class ActionBusyError extends Error {
 }
 
 /**
- * ຂໍ້ຄວາມ error ທີ່ສະແດງຜູ້ໃຊ້ (spec §6.2): ແປຈາກ `code` ຄົງທີ່; code ທົ່ວໄປໃຊ້ message ຂອງ API;
- * ບໍ່ມີ code ໃຊ້ message; ບໍ່ມີຫຍັງ → ຂໍ້ຄວາມກາງ.
+ * ຂໍ້ຄວາມ error ທີ່ສະແດງຜູ້ໃຊ້ (spec §6.2): ແປຈາກ `code` ຄົງທີ່; ມີແຕ່ CONFLICT/BAD_REQUEST ທີ່ໃຊ້ message ຂອງ API;
+ * status >= 500 ແລະ response ທີ່ບໍ່ແມ່ນ JSON (gateway, ມີແຕ່ statusText) ໃຊ້ຂໍ້ຄວາມແປສະເໝີ ບໍ່ຮົ່ວອັງກິດ.
  */
 export function errorMessage(error: unknown, t: Translate): string {
   if (error instanceof ActionBusyError) return t("common.busy");
   if (error instanceof ApiError) {
-    if (isErrorCode(error.code) && !(GENERIC_CODES.has(error.code) && error.message)) {
-      return t(`error.${error.code}` as TranslationKey);
+    const known = isErrorCode(error.code);
+    if (error.status >= 500) return known ? t(`error.${error.code as ErrorCode}` as TranslationKey) : t("common.error.generic");
+    if (known) {
+      const code = error.code as ErrorCode;
+      return MESSAGE_FIRST_CODES.has(code) && error.message ? error.message : t(`error.${code}` as TranslationKey);
     }
-    if (error.message) return error.message;
+    // code ບໍ່ຮູ້ຈັກ/ບໍ່ມີ: ໃຊ້ message ສະເພາະເມື່ອມາຈາກ JSON body (body ບໍ່ມີ = statusText ຂອງ gateway)
+    if (error.message && error.body !== undefined) return error.message;
   }
   return t("common.error.generic");
 }
