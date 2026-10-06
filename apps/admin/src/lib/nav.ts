@@ -46,6 +46,11 @@ export function visibleNavGroups(permissions: readonly string[]): NavGroup[] {
   })).filter((group) => group.items.length > 0);
 }
 
+/** ໜ້າທຳອິດທີ່ຜູ້ໃຊ້ເປີດໄດ້ (ລາຍການທຳອິດຂອງເມນູທີ່ເຫັນ) ໃຊ້ເປັນໜ້າຫຼັງ login; null ຖ້າບໍ່ມີເມນູທີ່ເຫັນເລີຍ. */
+export function firstAllowedHref(permissions: readonly string[]): string | null {
+  return visibleNavGroups(permissions)[0]?.items[0]?.href ?? null;
+}
+
 export function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { LandingRedirect } from "@/components/auth/landing-redirect";
 
-export default function HomePage(): never {
-  redirect("/staff");
+export default function HomePage() {
+  return <LandingRedirect />;
 }
