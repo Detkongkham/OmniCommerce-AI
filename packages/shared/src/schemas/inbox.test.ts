@@ -3,6 +3,7 @@ import {
   MAX_MESSAGE_LENGTH,
   conversationListQuerySchema,
   createCustomerFromChatSchema,
+  isMessageSendError,
   messageListQuerySchema,
   sendMessageSchema,
   updateConversationSchema,
@@ -85,5 +86,16 @@ describe("createCustomerFromChatSchema", () => {
     expect(ok("1".repeat(16))).toBe(false);
     expect(ok("+")).toBe(false);
     expect(ok("12+3456")).toBe(false);
+  });
+});
+
+describe("isMessageSendError", () => {
+  it("ຮັບສະເພາະລະຫັດໃນ MESSAGE_SEND_ERRORS", () => {
+    for (const code of ["OUTSIDE_WINDOW", "CHANNEL_AUTH", "CHANNEL_NOT_CONFIGURED", "CHANNEL_UNAVAILABLE", "SEND_REJECTED"]) {
+      expect(isMessageSendError(code), code).toBe(true);
+    }
+    for (const value of ["", "nope", "outside_window", null, undefined, 1]) {
+      expect(isMessageSendError(value), String(value)).toBe(false);
+    }
   });
 });

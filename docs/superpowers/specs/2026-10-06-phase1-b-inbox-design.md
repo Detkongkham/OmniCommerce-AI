@@ -42,7 +42,7 @@
 
 ## 6. Realtime (SSE)
 
-`GET /inbox/events` (`inbox:read`, Bearer). API subscribe Redis channel `inbox:events` ດ້ວຍ connection ແຍກ ແລ້ວ fan-out ໄປ client; event ເບົາ `{type:"conversation.updated", conversationId}`. Heartbeat ທຸກ ~25 ວິ. Admin ໃຊ້ fetch-stream (EventSource ໃສ່ Authorization header ບໍ່ໄດ້), ເມື່ອ reconnect ຕ້ອງ refetch, ແລະ poll ສຳຮອງ 60 ວິ. ຕ້ອງປິດ subscription ເມື່ອ client ຕັດ ແລະ ເມື່ອ token ໝົດອາຍຸໃຫ້ client ຕໍ່ໃໝ່.
+`GET /inbox/events` (`inbox:read`, Bearer). API subscribe Redis channel `oca:inbox:events` ດ້ວຍ connection ແຍກ ແລ້ວ fan-out ໄປ client; event ເບົາ `{type:"conversation.updated", conversationId}`. Heartbeat ທຸກ ~25 ວິ. Admin ໃຊ້ fetch-stream (EventSource ໃສ່ Authorization header ບໍ່ໄດ້), ເມື່ອ reconnect ຕ້ອງ refetch, ແລະ poll ສຳຮອງ 60 ວິ. ຕ້ອງປິດ subscription ເມື່ອ client ຕັດ ແລະ ເມື່ອ token ໝົດອາຍຸໃຫ້ client ຕໍ່ໃໝ່.
 
 ## 7. ສິດ
 

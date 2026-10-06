@@ -330,6 +330,27 @@ describe("conversations (e2e)", () => {
       await request(server()).post(url).set(chat).expect(200);
       await request(server()).post("/conversations/nope/read").set(chat).expect(404);
     });
+
+    it("ຂໍ້ຄວາມຂາເຂົ້າທີ່ມາລະຫວ່າງອ່ານ (ຫຼັງ read ຖືກອ່ານແລ້ວ ກ່ອນ update) ບໍ່ຖືກລ້າງ unread", async () => {
+      const conversation = await seedConversation(db, { unreadCount: 2, lastMessageAt: new Date("2026-10-01T00:00:00Z") });
+      const prisma = app.get<PrismaClient>(PRISMA);
+      const original = prisma.conversation.findUnique.bind(prisma.conversation);
+      const spy = vi.spyOn(prisma.conversation, "findUnique").mockImplementationOnce(((args: never) =>
+        original(args).then(async (row) => {
+          // ຂໍ້ຄວາມໃໝ່ເຂົ້າຫຼັງ service ອ່ານແຖວແລ້ວ
+          await db.conversation.update({
+            where: { id: conversation.id },
+            data: { unreadCount: { increment: 1 }, lastMessageAt: new Date("2026-10-01T00:05:00Z") },
+          });
+          return row;
+        })) as never);
+      try {
+        await request(server()).post(`/conversations/${conversation.id}/read`).set(chat).expect(200);
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).unreadCount).toBe(3);
+    });
   });
 
   describe("POST /conversations/:id/customer", () => {

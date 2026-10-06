@@ -23,6 +23,10 @@ export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
 export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 export type MessageSendError = (typeof MESSAGE_SEND_ERRORS)[number];
 
+export function isMessageSendError(value: unknown): value is MessageSendError {
+  return typeof value === "string" && (MESSAGE_SEND_ERRORS as readonly string[]).includes(value);
+}
+
 /** event ເບົາທີ່ສົ່ງຜ່ານ Redis/SSE; client ຕ້ອງ refetch ເອງ. */
 export interface InboxEvent {
   type: "conversation.updated";

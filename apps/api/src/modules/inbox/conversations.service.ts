@@ -196,16 +196,25 @@ export class ConversationsService {
     return toConversationDto(after);
   }
 
+  /** ລ້າງ unread ສະເພາະຂໍ້ຄວາມທີ່ຜູ້ໃຊ້ເຫັນແລ້ວ: ຖ້າມີຂໍ້ຄວາມໃໝ່ເຂົ້າຫຼັງອ່ານແຖວ (lastMessageAt ເລື່ອນ) ຈະບໍ່ລ້າງ */
   async markRead(id: string): Promise<ConversationDto> {
     const row = await this.require(id);
     if (row.unreadCount === 0) return toConversationDto(row);
-    const after = await this.prisma.conversation.update({
-      where: { id },
+    await this.prisma.conversation.updateMany({
+      where: { id, lastMessageAt: { lte: row.lastMessageAt } },
       data: { unreadCount: 0 },
-      include: CONVERSATION_INCLUDE,
     });
     await this.events.publish({ type: "conversation.updated", conversationId: id });
-    return toConversationDto(after);
+    return toConversationDto(await this.require(id));
+  }
+
+  /** ຜູ້ໃຊ້ທີ່ມອບໝາຍເຄສໃຫ້ໄດ້: active ແລະ ມີສິດ inbox:write (ຜູ້ໃຊ້ inbox:read ທົ່ວໄປບໍ່ຕ້ອງມີ staff:read) */
+  async listAssignees(): Promise<{ id: string; name: string }[]> {
+    return this.prisma.user.findMany({
+      where: { isActive: true, role: { permissions: { some: { permission: "inbox:write" } } } },
+      select: { id: true, name: true },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    });
   }
 
   /** ສ້າງລູກຄ້າ + ລິ້ງເຄສໃນ transaction ດຽວ; ເຄສທີ່ລິ້ງແລ້ວ = 409 ໂດຍບໍ່ສ້າງລູກຄ້າເພີ່ມ (ກັນ 2 ຄົນກົດພ້ອມກັນ) */
