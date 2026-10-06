@@ -37,30 +37,53 @@ describe("GET /inbox/events (SSE e2e)", () => {
   const url = () => `http://127.0.0.1:${port}/inbox/events`;
 
   /** ອ່ານ stream ຈົນກວ່າຈະມີຂໍ້ຄວາມທີ່ຕ້ອງການ (ມີ timeout ກັນ test ຄ້າງ) */
-  function openStream(headers: Record<string, string>) {
+  function openStream(headers: Record<string, string>, target: string = url()) {
     const controller = new AbortController();
     let buffer = "";
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let body: ReadableStreamDefaultReader<Uint8Array> | undefined;
     const decoder = new TextDecoder();
+
+    async function readChunk(needle: string, remaining: number) {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          (body as ReadableStreamDefaultReader<Uint8Array>).read(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`timeout waiting for ${needle}; got: ${buffer}`)), remaining);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     return {
       async connect() {
-        const res = await fetch(url(), { headers, signal: controller.signal });
-        reader = res.body?.getReader();
+        const res = await fetch(target, { headers, signal: controller.signal });
+        body = res.body?.getReader();
         return res;
       },
       async readUntil(needle: string, timeoutMs = 5000) {
         const deadline = Date.now() + timeoutMs;
         while (!buffer.includes(needle)) {
           const remaining = deadline - Date.now();
-          if (remaining <= 0 || !reader) throw new Error(`timeout waiting for ${needle}; got: ${buffer}`);
-          const chunk = await Promise.race([
-            reader.read(),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`timeout waiting for ${needle}; got: ${buffer}`)), remaining)),
-          ]);
+          if (remaining <= 0 || !body) throw new Error(`timeout waiting for ${needle}; got: ${buffer}`);
+          const chunk = await readChunk(needle, remaining);
           if (chunk.done) throw new Error(`stream ended; got: ${buffer}`);
           buffer += decoder.decode(chunk.value, { stream: true });
         }
         return buffer;
+      },
+      /** ອ່ານຈົນ server ປິດ stream ເອງ (ບໍ່ abort ຝັ່ງ client); ລົ້ມເມື່ອເກີນເວລາ */
+      async readUntilEnd(timeoutMs = 5000) {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0 || !body) throw new Error(`stream did not end; got: ${buffer}`);
+          const chunk = await readChunk("end", remaining);
+          if (chunk.done) return buffer;
+          buffer += decoder.decode(chunk.value, { stream: true });
+        }
       },
       close() {
         controller.abort();
@@ -131,6 +154,54 @@ describe("GET /inbox/events (SSE e2e)", () => {
     } finally {
       a.close();
       b.close();
+    }
+  });
+
+  it("ປິດ stream ເອງເມື່ອ app ປິດ (ບໍ່ຕ້ອງລໍ client abort)", async () => {
+    const own = await createTestApp({ FACEBOOK_APP_SECRET: SECRET });
+    await own.app.listen(0);
+    const ownPort = (own.app.getHttpServer().address() as AddressInfo).port;
+    const stream = openStream(reader, `http://127.0.0.1:${ownPort}/inbox/events`);
+    try {
+      expect((await stream.connect()).status).toBe(200);
+      await stream.readUntil("event: ready");
+      await own.app.close();
+      await stream.readUntilEnd();
+    } finally {
+      stream.close();
+    }
+  });
+
+  it("ຕັດ stream ເມື່ອຄົບອາຍຸ access token (ຕ້ອງ reconnect ດ້ວຍ token ໃໝ່)", async () => {
+    const own = await createTestApp({ FACEBOOK_APP_SECRET: SECRET, ACCESS_TOKEN_TTL_SECONDS: "2" });
+    await own.app.listen(0);
+    const ownPort = (own.app.getHttpServer().address() as AddressInfo).port;
+    const stream = openStream(await bearerFor(own.app, "inbox-read@test.local"), `http://127.0.0.1:${ownPort}/inbox/events`);
+    try {
+      expect((await stream.connect()).status).toBe(200);
+      await stream.readUntil("event: ready");
+      const startedAt = Date.now();
+      await stream.readUntilEnd(6000);
+      expect(Date.now() - startedAt).toBeGreaterThan(500);
+    } finally {
+      stream.close();
+      await own.app.close();
+    }
+  });
+
+  it("Redis ໃຊ້ບໍ່ໄດ້: ຕອບ error ທີ່ຊັດເຈນ ແລະ ບໍ່ຄ້າງ", async () => {
+    const own = await createTestApp({ FACEBOOK_APP_SECRET: SECRET, REDIS_URL: "redis://127.0.0.1:1" });
+    await own.app.listen(0);
+    const ownPort = (own.app.getHttpServer().address() as AddressInfo).port;
+    const stream = openStream(reader, `http://127.0.0.1:${ownPort}/inbox/events`);
+    try {
+      const res = await stream.connect();
+      expect(res.status).toBe(503);
+      const body = await stream.readUntilEnd();
+      expect(JSON.parse(body)).toMatchObject({ statusCode: 503, code: "INTERNAL_ERROR" });
+    } finally {
+      stream.close();
+      await own.app.close();
     }
   });
 });

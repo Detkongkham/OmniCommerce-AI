@@ -32,6 +32,7 @@ function parseEvent(raw: string): InboxEvent | null {
 export class InboxEventsService implements OnModuleDestroy {
   private readonly logger = new Logger(InboxEventsService.name);
   private readonly subject = new Subject<InboxEvent>();
+  private readonly closedSubject = new Subject<void>();
   private publisher: Redis | null = null;
   private subscriber: Redis | null = null;
   private subscribing: Promise<void> | null = null;
@@ -92,8 +93,15 @@ export class InboxEventsService implements OnModuleDestroy {
     return this.subject.asObservable();
   }
 
+  /** ປ່ອຍສັນຍານ + ຈົບ ເມື່ອ service ຖືກປິດ (ໃຫ້ stream SSE ຈົບຕາມ) */
+  get closed$(): Observable<void> {
+    return this.closedSubject.asObservable();
+  }
+
   async onModuleDestroy(): Promise<void> {
     this.destroyed = true;
+    this.closedSubject.next();
+    this.closedSubject.complete();
     this.subject.complete();
     await Promise.allSettled([closeClient(this.publisher), closeClient(this.subscriber)]);
   }
