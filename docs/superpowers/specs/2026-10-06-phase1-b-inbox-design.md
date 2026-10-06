@@ -14,15 +14,15 @@
 
 ## 2. ໂຄງສ້າງ
 
-- `packages/channels`: interface `ChannelAdapter` { `verifySignature(rawBody, header)`, `parseWebhook(payload)` → `InboundEvent[]` (`message` | `echo`), `sendText(threadId, text)` }. `facebook/` ເຮັດ HMAC `X-Hub-Signature-256` (SHA-256, timing-safe) ແລະ ເອີ້ນ Graph API ທີ່ `FB_GRAPH_BASE_URL` (ຕັ້ງຄ່າໄດ້ ເພື່ອຊີ້ໄປ simulator).
-- Env ໃໝ່ (ໃນ api): `FB_APP_SECRET`, `FB_VERIFY_TOKEN`, `FB_PAGE_ID`, `FB_PAGE_ACCESS_TOKEN`, `FB_GRAPH_BASE_URL`. ຖ້າບໍ່ຕັ້ງ webhook/ຕອບ ຄືນ error ຊັດເຈນ (ບໍ່ crash ຕອນ boot). Token ບໍ່ຖືກ log.
+- `packages/channels`: interface `ChannelAdapter` { `verifySignature(rawBody, header)`, `parseWebhook(payload)` → `InboundEvent[]` (`message` | `echo`), `sendText(threadId, text)` }. `facebook/` ເຮັດ HMAC `X-Hub-Signature-256` (SHA-256, timing-safe) ແລະ ເອີ້ນ Graph API ທີ່ `FACEBOOK_GRAPH_BASE_URL` (ຕັ້ງຄ່າໄດ້ ເພື່ອຊີ້ໄປ simulator).
+- Env ໃໝ່ (ໃນ api): `FACEBOOK_APP_SECRET`, `FACEBOOK_WEBHOOK_VERIFY_TOKEN` (ມີໃນ .env.example ແລ້ວ), `FACEBOOK_PAGE_ACCESS_TOKEN`, `FACEBOOK_GRAPH_BASE_URL` (ຊີ້ໄປ simulator). ຖ້າບໍ່ຕັ້ງ app secret/verify token webhook ຕອບ 503 CHANNEL_NOT_CONFIGURED (ບໍ່ crash ຕອນ boot); ບໍ່ຕັ້ງ page token = ຕອບບໍ່ໄດ້ (ຂໍ້ຄວາມ FAILED). Token ບໍ່ຖືກ log.
 - `apps/api/src/modules/inbox`: `webhook.controller` (public, raw body), `conversations.controller/service`, `inbox-events` (SSE + Redis pub/sub).
 - **Simulator** (dev only, ບໍ່ຢູ່ໃນ prod build): script ສົ່ງ webhook ທີ່ເຊັນຖືກຕ້ອງເຂົ້າ API + fake Graph server ທີ່ຮັບ `POST /me/messages` ແລະ ບັນທຶກຂໍ້ຄວາມຂາອອກ.
 
 ## 3. ຂໍ້ມູນ (migration ເພີ່ມຢ່າງດຽວ)
 
 - `Conversation`: id, `channel` (SalesChannel), `externalThreadId` (PSID), `displayName`, `customerId?`, `assigneeId?`, `status` (OPEN | CLOSED), `lastMessageAt`, `lastMessagePreview`, `unreadCount`, timestamps. `@@unique([channel, externalThreadId])`, `@@index([status, lastMessageAt])`, `@@index([assigneeId])`.
-- `Message`: id, `conversationId`, `direction` (IN | OUT), `externalId?` (Messenger `mid`), `text?`, `attachments` Json?, `sentByUserId?`, `status` (SENT | FAILED), `errorCode?`, `createdAt`. `@@unique([conversationId, externalId])`, `@@index([conversationId, createdAt])`.
+- `Message`: id, `conversationId`, `direction` (IN | OUT), `externalId?` (Messenger `mid`), `text?`, `attachments` Json?, `sentByUserId?`, `status` (PENDING | SENT | FAILED), `errorCode?`, `createdAt`. `@@unique([conversationId, externalId])`, `@@index([conversationId, createdAt])`.
 - `Order.conversationId?` (FK, `onDelete: SetNull`, index).
 - Customer ບໍ່ປ່ຽນ; ລິ້ງດ້ວຍມື (ເລືອກລູກຄ້າເດີມ ຫຼື ສ້າງໃໝ່ຈາກແຊັດ).
 
@@ -38,7 +38,7 @@
 
 - `POST /conversations/:id/messages` (`inbox:write`): ບັນທຶກ OUT ກ່ອນ → `sendText` → ໝາຍ SENT ຫຼື FAILED ພ້ອມ `errorCode` (ຢ່າງນ້ອຍ: ເກີນໜ້າຕ່າງ 24 ຊມ ຂອງ Meta, token/ການຕັ້ງຄ່າບໍ່ຖືກ, ເຄືອຂ່າຍ). ໃຊ້ pattern error code → i18n ລາວ ຂອງ admin ເດີມ. ບໍ່ມີ retry ອັດຕະໂນມັດ; ແອດມິນສົ່ງໃໝ່ເອງ.
 - `GET /conversations` (ກອງ status/ມອບໝາຍ/ບໍ່ມີຜູ້ຮັບ/ຄົ້ນຫາ, ແບ່ງໜ້າ), `GET /conversations/:id` (+ messages ແບ່ງໜ້າ), `PATCH /conversations/:id` (assign, status, customerId), `POST /conversations/:id/read` (ລ້າງ unread). ທຸກ id ອ້າງອີງບໍ່ພົບ = 404.
-- ສ້າງລູກຄ້າຈາກແຊັດໃຊ້ endpoint customers ທີ່ມີຢູ່ ແລ້ວ PATCH ລິ້ງ.
+- ສ້າງລູກຄ້າຈາກແຊັດ = `POST /conversations/:id/customer` (ສ້າງ Customer + ລິ້ງໃນ transaction ດຽວ; ເບີຊ້ຳ = 409 DUPLICATE_VALUE; ເຄສທີ່ລິ້ງແລ້ວ = 409). GET messages ແບ່ງໜ້າດ້ວຍ cursor `beforeId` (ໃໝ່ສຸດກ່ອນ).
 
 ## 6. Realtime (SSE)
 
