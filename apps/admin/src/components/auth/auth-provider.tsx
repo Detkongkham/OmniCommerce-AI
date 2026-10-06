@@ -89,10 +89,10 @@ export function useAuth(): AuthContextValue {
   return context;
 }
 
-/** ຕ້ອງມີຄົບທຸກສິດ (all-of); ໃຊ້ກັບໜ້າທີ່ເອີ້ນ API ຫຼາຍສິດ */
+/** ຕ້ອງມີຄົບທຸກສິດ (all-of); ໃຊ້ກັບໜ້າທີ່ເອີ້ນ API ຫຼາຍສິດ. array ວ່າງ = false ເພື່ອບໍ່ໃຫ້ gate ເປີດໂດຍບໍ່ຕັ້ງໃຈ */
 export function useCanAll(permissions: readonly Permission[]): boolean {
   const { can } = useAuth();
-  return permissions.every((permission) => can(permission));
+  return permissions.length > 0 && permissions.every((permission) => can(permission));
 }
 
 /** ຊ່ອນເມນູ/ປຸ່ມຕາມສິດ. API ຍັງເປັນຜູ້ບັງຄັບສິດຈິງ. */

@@ -4,7 +4,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type Session, loginRequest, logoutRequest, refreshSession, setSessionRefreshedHandler } from "@/lib/api";
-import { AuthProvider, useAuth } from "./auth-provider";
+import { AuthProvider, useAuth, useCanAll } from "./auth-provider";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -34,6 +34,20 @@ function Probe() {
         logout
       </button>
     </div>
+  );
+}
+
+function AllProbe({ permissions }: { permissions: Permission[] }) {
+  return <p data-testid="all">{String(useCanAll(permissions))}</p>;
+}
+
+function renderAll(permissions: Permission[]) {
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AuthProvider>
+        <AllProbe permissions={permissions} />
+      </AuthProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -122,5 +136,30 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(status()).toHaveTextContent("authenticated"));
     unmount();
     expect(vi.mocked(setSessionRefreshedHandler).mock.calls.at(-1)).toEqual([null]);
+  });
+});
+
+describe("useCanAll", () => {
+  it("ຕ້ອງມີຄົບທຸກສິດ: ຄົບ = true, ຂາດໜຶ່ງ = false", async () => {
+    vi.mocked(refreshSession).mockResolvedValue(owner);
+    renderAll(["staff:read", "staff:write"]);
+    await waitFor(() => expect(screen.getByTestId("all")).toHaveTextContent("true"));
+    renderAll(["staff:read", "orders:write"]);
+    await waitFor(() => expect(screen.getAllByTestId("all")[1]).toHaveTextContent("false"));
+  });
+
+  it("ຍັງບໍ່ login (loading/unauthenticated) = false", async () => {
+    vi.mocked(refreshSession).mockResolvedValue(null);
+    renderAll(["staff:read"]);
+    expect(screen.getByTestId("all")).toHaveTextContent("false");
+    await waitFor(() => expect(screen.getByTestId("all")).toHaveTextContent("false"));
+  });
+
+  it("array ວ່າງ = false (ບໍ່ເປີດ gate ໃຫ້ທຸກຄົນໂດຍບໍ່ຕັ້ງໃຈ)", async () => {
+    vi.mocked(refreshSession).mockResolvedValue(owner);
+    renderAll([]);
+    await waitFor(() => expect(screen.getByTestId("all")).toBeInTheDocument());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByTestId("all")).toHaveTextContent("false");
   });
 });
