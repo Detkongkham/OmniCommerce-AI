@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n/language-provider";
 import { TOPBAR_BUTTON } from "./chrome";
 import { LanguageToggle } from "./language-toggle";
 import { ProfileMenu } from "./profile-menu";
+import { ThemeToggle } from "./theme-toggle";
 
 export interface TopbarProps {
   collapsed: boolean;
@@ -41,6 +42,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: TopbarPro
         <span className="truncate text-base font-semibold text-ink">{t("app.name")}</span>
       </div>
       <div className="flex items-center gap-2">
+        <ThemeToggle />
         <LanguageToggle className="hidden sm:inline-flex" />
         <span aria-hidden="true" className="hidden h-10 w-px bg-line sm:block" />
         <ProfileMenu />

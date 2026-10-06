@@ -1,6 +1,6 @@
 "use client";
 
-import { Toaster } from "@oca/ui";
+import { ThemeProvider, Toaster } from "@oca/ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { AuthProvider } from "@/components/auth/auth-provider";
@@ -28,13 +28,15 @@ function createQueryClient() {
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(createQueryClient);
   return (
-    <LanguageProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          {children}
-          <AppToaster />
-        </AuthProvider>
-      </QueryClientProvider>
-    </LanguageProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            {children}
+            <AppToaster />
+          </AuthProvider>
+        </QueryClientProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }
