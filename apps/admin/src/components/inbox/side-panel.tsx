@@ -17,15 +17,18 @@ export interface SidePanelProps {
   canWrite: boolean;
 }
 
-export function SidePanel({ conversation, canWrite }: SidePanelProps) {
+/** key ຕາມ conversation.id: ປ່ຽນເຄສ = remount ທັງໝົດ (dialog, mutation pending ບໍ່ຮົ່ວຂ້າມເຄສ) */
+export function SidePanel(props: SidePanelProps) {
+  return <SidePanelInner key={props.conversation.id} {...props} />;
+}
+
+function SidePanelInner({ conversation, canWrite }: SidePanelProps) {
   const { t } = useT();
   // CustomerPicker ຄົ້ນລູກຄ້າຜ່ານ GET /customers ທີ່ຕ້ອງ orders:read
   const canLinkExisting = useCan("orders:read");
   const update = useUpdateConversation();
   const assignees = useAssignees();
-  // ເກັບ id ຂອງເຄສທີ່ເປີດ dialog: ປ່ຽນເຄສແລ້ວ dialog ປິດເອງ ບໍ່ຮົ່ວຂ້າມເຄສ
-  const [createFor, setCreateFor] = useState<string | null>(null);
-  const createOpen = createFor === conversation.id;
+  const [createOpen, setCreateOpen] = useState(false);
   const busy = update.isPending;
   const current = conversation.assignee;
   const options = assignees.data ?? [];
@@ -76,7 +79,7 @@ export function SidePanel({ conversation, canWrite }: SidePanelProps) {
               />
             ) : null}
             {canWrite ? (
-              <Button variant="outlinePrimary" className="w-full rounded-lg" disabled={busy} onClick={() => setCreateFor(conversation.id)}>
+              <Button variant="outlinePrimary" className="w-full rounded-lg" disabled={busy} onClick={() => setCreateOpen(true)}>
                 <UserPlus aria-hidden="true" />
                 {t("inbox.panel.createCustomer")}
               </Button>
@@ -92,7 +95,7 @@ export function SidePanel({ conversation, canWrite }: SidePanelProps) {
         <Select
           id="inbox-assignee"
           value={current?.id ?? ""}
-          disabled={!canWrite || busy}
+          disabled={!canWrite || busy || assignees.isPending}
           onChange={(event) => void apply({ assigneeId: event.target.value || null })}
         >
           <option value="">{t("inbox.assignee.unassigned")}</option>
@@ -104,6 +107,14 @@ export function SidePanel({ conversation, canWrite }: SidePanelProps) {
             </option>
           ))}
         </Select>
+        {assignees.isError ? (
+          <p className="flex items-center gap-2 text-xs text-danger">
+            {t("common.error.load")}
+            <Button variant="ghost" size="sm" onClick={() => void assignees.refetch()}>
+              {t("common.retry")}
+            </Button>
+          </p>
+        ) : null}
       </section>
 
       <section aria-label={t("inbox.panel.status")} className="space-y-2">
@@ -124,7 +135,7 @@ export function SidePanel({ conversation, canWrite }: SidePanelProps) {
         ) : null}
       </section>
 
-      <CreateCustomerDialog open={createOpen} onOpenChange={(next) => setCreateFor(next ? conversation.id : null)} conversation={conversation} />
+      <CreateCustomerDialog open={createOpen} onOpenChange={setCreateOpen} conversation={conversation} />
     </Card>
   );
 }

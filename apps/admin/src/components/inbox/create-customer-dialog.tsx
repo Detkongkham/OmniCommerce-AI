@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createCustomerFromChatSchema } from "@oca/shared";
 import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Field, Input, toast } from "@oca/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { errorMessage } from "@/lib/errors";
@@ -32,16 +32,38 @@ export interface CreateCustomerDialogProps {
 
 export function CreateCustomerDialog({ open, onOpenChange, conversation }: CreateCustomerDialogProps) {
   const { t } = useT();
+  const [submitting, setSubmitting] = useState(false);
+  // ຂະນະສົ່ງ ຫ້າມປິດ (Escape/overlay/Cancel) ເພື່ອບໍ່ໃຫ້ເສຍຜົນລັບ
+  const guarded = (next: boolean) => {
+    if (!next && submitting) return;
+    onOpenChange(next);
+  };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={guarded}>
       <DialogContent className="max-w-md" closeLabel={t("common.close")}>
-        <CustomerForm key={conversation.id} conversation={conversation} onDone={() => onOpenChange(false)} />
+        <CustomerForm
+          key={conversation.id}
+          conversation={conversation}
+          onDone={() => onOpenChange(false)}
+          onCancel={() => guarded(false)}
+          onSubmittingChange={setSubmitting}
+        />
       </DialogContent>
     </Dialog>
   );
 }
 
-function CustomerForm({ conversation, onDone }: { conversation: ConversationDto; onDone: () => void }) {
+function CustomerForm({
+  conversation,
+  onDone,
+  onCancel,
+  onSubmittingChange,
+}: {
+  conversation: ConversationDto;
+  onDone: () => void;
+  onCancel: () => void;
+  onSubmittingChange: (submitting: boolean) => void;
+}) {
   const { t } = useT();
   const create = useCreateCustomerFromChat();
   const [formError, setFormError] = useState<string | null>(null);
@@ -53,6 +75,11 @@ function CustomerForm({ conversation, onDone }: { conversation: ConversationDto;
     resolver: zodResolver(formSchema),
     defaultValues: { name: conversation.displayName, phone: "" },
   });
+
+  useEffect(() => {
+    onSubmittingChange(isSubmitting);
+    return () => onSubmittingChange(false);
+  }, [isSubmitting, onSubmittingChange]);
 
   const submit = handleSubmit(async (values) => {
     setFormError(null);
@@ -91,7 +118,7 @@ function CustomerForm({ conversation, onDone }: { conversation: ConversationDto;
         </Field>
       </DialogBody>
       <DialogFooter>
-        <Button type="button" variant="outline" className="h-10 rounded-xl px-5" onClick={onDone}>
+        <Button type="button" variant="outline" className="h-10 rounded-xl px-5" disabled={isSubmitting} onClick={onCancel}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" className="h-10 rounded-xl px-6 font-bold" loading={isSubmitting}>

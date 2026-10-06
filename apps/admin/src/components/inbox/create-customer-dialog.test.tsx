@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { clearToasts, getToasts } from "@oca/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { ConversationDto } from "@/lib/types";
@@ -104,6 +105,34 @@ describe("CreateCustomerDialog", () => {
     await user.dblClick(save);
     expect(posts()).toHaveLength(1);
     release(conversation);
+  });
+
+  it("ສຳເລັດ: ສະແດງ toast", async () => {
+    clearToasts();
+    const { user } = open();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(getToasts().map((item) => item.title)).toContain("Customer created and linked"));
+  });
+
+  it("ຊື່ຍາວເກີນ 100 ໂຕ: ສະແດງ validation.tooLong ແລະ ບໍ່ສົ່ງ", async () => {
+    const { user } = open();
+    fireEvent.change(screen.getByLabelText(/Customer name/), { target: { value: "x".repeat(101) } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Too long (up to 100 characters)")).toBeInTheDocument();
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("ຂະນະກຳລັງສົ່ງ: Cancel ຖືກປິດ ແລະ Escape ບໍ່ປິດ dialog", async () => {
+    let release: (value: unknown) => void = () => {};
+    vi.mocked(apiFetch).mockImplementation(() => new Promise<unknown>((resolve) => { release = resolve; }));
+    const { user, onOpenChange } = open();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    release(conversation);
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
   it("dialog ມີຊື່ (title) ແລະ error ເປັນ role=alert", async () => {

@@ -1,4 +1,5 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { clearToasts, getToasts } from "@oca/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -102,7 +103,9 @@ describe("SidePanel", () => {
 
     // render ໃໝ່ (ບໍ່ໃຊ້ rerender: ຈະເສຍ providers)
     const second = renderWithProviders(<SidePanel conversation={{ ...conversation, assignee: { id: "u2", name: "Manager" } }} canWrite />);
-    await second.user.selectOptions(await screen.findByRole("combobox", { name: "Assignee" }), "");
+    const select2 = await screen.findByRole("combobox", { name: "Assignee" });
+    await waitFor(() => expect(select2).toBeEnabled());
+    await second.user.selectOptions(select2, "");
     await waitFor(() => expect(patches()).toHaveLength(2));
     expect(patches()[1]?.[1]).toEqual({ method: "PATCH", body: { assigneeId: null } });
   });
@@ -197,5 +200,91 @@ describe("SidePanel", () => {
     await user.click(screen.getByRole("button", { name: "Create customer" }));
     expect(await screen.findByLabelText(/Customer name/)).toHaveValue("Other Person");
     expect(screen.getByLabelText("Phone")).toHaveValue("");
+  });
+
+  describe("ສະຫຼັບ conversation / ສະຖານະກຳລັງໂຫຼດ", () => {
+    function Harness() {
+      const [id, setId] = useState("c1");
+      return (
+        <>
+          <button onClick={() => setId("c1")}>go-a</button>
+          <button onClick={() => setId("c2")}>go-b</button>
+          <SidePanel conversation={{ ...conversation, id, displayName: id === "c1" ? "Person A" : "Person B" }} canWrite />
+        </>
+      );
+    }
+
+    it("A→B→A: dialog ສ້າງລູກຄ້າບໍ່ເປີດຄືນເມື່ອກັບມາ A", async () => {
+      const { user } = renderWithProviders(<Harness />);
+      await user.click(screen.getByRole("button", { name: "Create customer" }));
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      // ປ່ຽນໄປ B (dialog ເປີດຢູ່ ໃຊ້ pointer ບໍ່ໄດ້ ຈຶ່ງໃຊ້ keyboard-less click ຜ່ານ DOM)
+      act(() => screen.getByText("go-b").click());
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      act(() => screen.getByText("go-a").click());
+      await waitFor(() => expect(screen.getByRole("button", { name: "Create customer" })).toBeInTheDocument());
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("PATCH ຄ້າງຢູ່ໃນ A ແລ້ວປ່ຽນໄປ B: ຄວບຄຸມຂອງ B ໃຊ້ໄດ້", async () => {
+      vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
+        if (url === "/inbox/assignees") return assignees;
+        if (init?.method === "PATCH") return new Promise<unknown>(() => {});
+        return { items: [], total: 0, page: 1, pageSize: 8 };
+      }) as typeof apiFetch);
+      const { user } = renderWithProviders(<Harness />);
+      await user.click(screen.getByRole("button", { name: "Close conversation" }));
+      expect(screen.getByRole("button", { name: "Close conversation" })).toBeDisabled();
+      await user.click(screen.getByText("go-b"));
+      expect(screen.getByRole("button", { name: "Close conversation" })).toBeEnabled();
+      expect(screen.getByRole("combobox", { name: "Assignee" })).toBeEnabled();
+    });
+
+    it("Unlink ແລະ ຕົວຄົ້ນຫາລູກຄ້າຖືກປິດຂະນະກຳລັງບັນທຶກ", async () => {
+      vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
+        if (url === "/inbox/assignees") return assignees;
+        if (init?.method === "PATCH") return new Promise<unknown>(() => {});
+        return { items: [], total: 0, page: 1, pageSize: 8 };
+      }) as typeof apiFetch);
+      const linked = renderWithProviders(
+        <SidePanel conversation={{ ...conversation, customer: { id: "cu1", name: "Dala", phone: null } }} canWrite />,
+      );
+      await linked.user.click(screen.getByRole("button", { name: "Unlink" }));
+      expect(screen.getByRole("button", { name: "Unlink" })).toBeDisabled();
+      linked.unmount();
+
+      const unlinked = renderWithProviders(<SidePanel conversation={conversation} canWrite />);
+      await unlinked.user.click(screen.getByRole("button", { name: "Close conversation" }));
+      expect(screen.getByRole("combobox", { name: "Search name or phone" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Create customer" })).toBeDisabled();
+    });
+  });
+
+  describe("ໂຫຼດລາຍຊື່ຜູ້ຮັບ", () => {
+    it("ກຳລັງໂຫຼດ: select ຖືກປິດ", async () => {
+      vi.mocked(apiFetch).mockImplementation((async (url: string) => {
+        if (url === "/inbox/assignees") return new Promise<unknown>(() => {});
+        return { items: [], total: 0, page: 1, pageSize: 8 };
+      }) as typeof apiFetch);
+      renderWithProviders(<SidePanel conversation={conversation} canWrite />);
+      expect(screen.getByRole("combobox", { name: "Assignee" })).toBeDisabled();
+    });
+
+    it("ໂຫຼດບໍ່ສຳເລັດ: ສະແດງຂໍ້ຄວາມ + ປຸ່ມ Retry ທີ່ໂຫຼດໃໝ່", async () => {
+      let fail = true;
+      vi.mocked(apiFetch).mockImplementation((async (url: string) => {
+        if (url === "/inbox/assignees") {
+          if (fail) throw new ApiError(500, "boom", [], "INTERNAL");
+          return assignees;
+        }
+        return { items: [], total: 0, page: 1, pageSize: 8 };
+      }) as typeof apiFetch);
+      const { user } = renderWithProviders(<SidePanel conversation={conversation} canWrite />);
+      expect(await screen.findByText("Could not load data")).toBeInTheDocument();
+      fail = false;
+      await user.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(within(screen.getByRole("combobox", { name: "Assignee" })).getAllByRole("option")).toHaveLength(3));
+      expect(screen.queryByText("Could not load data")).not.toBeInTheDocument();
+    });
   });
 });
