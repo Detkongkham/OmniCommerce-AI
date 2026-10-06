@@ -1,0 +1,158 @@
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { THEME_INIT_SCRIPT, THEME_STORAGE_KEY } from "./theme-script";
+import { ThemeProvider, useTheme } from "./theme";
+
+type Listener = (event: { matches: boolean }) => void;
+
+function mockMatchMedia(initialDark: boolean) {
+  let matches = initialDark;
+  const listeners = new Set<Listener>();
+  window.matchMedia = vi.fn().mockImplementation(() => ({
+    get matches() {
+      return matches;
+    },
+    addEventListener: (_: string, l: Listener) => listeners.add(l),
+    removeEventListener: (_: string, l: Listener) => listeners.delete(l),
+  })) as unknown as typeof window.matchMedia;
+  return (next: boolean) => {
+    matches = next;
+    for (const l of listeners) l({ matches: next });
+  };
+}
+
+function Probe() {
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  return (
+    <div>
+      <span data-testid="theme">{theme}</span>
+      <span data-testid="resolved">{resolvedTheme}</span>
+      <button onClick={() => setTheme("dark")}>dark</button>
+      <button onClick={() => setTheme("light")}>light</button>
+      <button onClick={() => setTheme("system")}>system</button>
+    </div>
+  );
+}
+
+const root = document.documentElement;
+
+beforeEach(() => {
+  window.localStorage.clear();
+  root.classList.remove("dark");
+  root.style.colorScheme = "";
+});
+
+afterEach(() => {
+  // @ts-expect-error restore jsdom default (no matchMedia)
+  delete window.matchMedia;
+});
+
+describe("ThemeProvider", () => {
+  it("defaults to system and resolves to light without matchMedia", () => {
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId("theme")).toHaveTextContent("system");
+    expect(screen.getByTestId("resolved")).toHaveTextContent("light");
+    expect(root.classList.contains("dark")).toBe(false);
+  });
+
+  it("follows the OS preference in system mode, including live changes", () => {
+    const setOsDark = mockMatchMedia(true);
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(root.classList.contains("dark")).toBe(true);
+    expect(root.style.colorScheme).toBe("dark");
+    act(() => setOsDark(false));
+    expect(root.classList.contains("dark")).toBe(false);
+    expect(screen.getByTestId("resolved")).toHaveTextContent("light");
+  });
+
+  it("applies and persists an explicit choice", async () => {
+    mockMatchMedia(false);
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "dark" }));
+    expect(root.classList.contains("dark")).toBe(true);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    await user.click(screen.getByRole("button", { name: "light" }));
+    expect(root.classList.contains("dark")).toBe(false);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+  });
+
+  it("restores the stored choice on mount", () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId("theme")).toHaveTextContent("dark");
+    expect(root.classList.contains("dark")).toBe(true);
+  });
+
+  it("ignores an invalid stored value and survives unavailable storage", async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "purple");
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId("theme")).toHaveTextContent("system");
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    await user.click(screen.getByRole("button", { name: "dark" }));
+    expect(root.classList.contains("dark")).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it("useTheme throws outside the provider", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(() => render(<Probe />)).toThrow("useTheme must be used within ThemeProvider");
+    spy.mockRestore();
+  });
+});
+
+describe("THEME_INIT_SCRIPT", () => {
+  const run = () => new Function(THEME_INIT_SCRIPT)();
+
+  it("adds the dark class for a stored dark theme", () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    run();
+    expect(root.classList.contains("dark")).toBe(true);
+    expect(root.style.colorScheme).toBe("dark");
+  });
+
+  it("uses the OS preference when nothing is stored", () => {
+    mockMatchMedia(true);
+    run();
+    expect(root.classList.contains("dark")).toBe(true);
+  });
+
+  it("stays light for a stored light theme even if the OS is dark", () => {
+    mockMatchMedia(true);
+    window.localStorage.setItem(THEME_STORAGE_KEY, "light");
+    run();
+    expect(root.classList.contains("dark")).toBe(false);
+  });
+
+  it("never throws when storage and matchMedia are unavailable", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    expect(run).not.toThrow();
+    vi.restoreAllMocks();
+  });
+});

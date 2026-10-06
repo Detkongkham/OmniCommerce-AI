@@ -17,3 +17,5 @@ export * from "./components/data-table-footer";
 export * from "./components/empty-state";
 export * from "./components/page-header";
 export * from "./components/pagination";
+export * from "./lib/theme";
+export * from "./lib/theme-script";
