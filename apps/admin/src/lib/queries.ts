@@ -356,6 +356,8 @@ export function useSetThreshold() {
 export interface OrderListParams {
   q?: string;
   status?: string;
+  /** ສະເພາະບິນທີ່ເປີດຈາກເຄສນີ້ (ຕ້ອງ orders:read) */
+  conversationId?: string;
   from?: string;
   to?: string;
   page: number;

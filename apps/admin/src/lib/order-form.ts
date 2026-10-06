@@ -47,6 +47,19 @@ export function emptyOrderForm(): OrderFormState {
   };
 }
 
+/** ຟອມຂອງບິນທີ່ເປີດຈາກແຊັດ: ມີລູກຄ້າທີ່ລິ້ງກັບເຄສ = prefill (ເລືອກແລ້ວ + ຊື່/ໂທຈັດສົ່ງ); ບໍ່ມີ = ຟອມເປົ່າ */
+export function orderFormForConversation(customer: { id: string; name: string; phone: string | null } | null): OrderFormState {
+  const base = emptyOrderForm();
+  if (!customer) return base;
+  return {
+    ...base,
+    customerMode: "existing",
+    customer: { id: customer.id, name: customer.name, phone: customer.phone, email: null },
+    shippingName: customer.name,
+    shippingPhone: customer.phone ?? "",
+  };
+}
+
 // ຊ້ຳກັບ `quantitySchema` (1..1_000_000) ຂອງ @oca/shared ທີ່ບໍ່ export ຄ່າຄົງທີ່; ແກ້ຄູ່ກັນ
 const MAX_QUANTITY = 1_000_000;
 // ຖັນເງິນຂອງ DB ເປັນ Decimal(18,2) → ສູງສຸດ 16 ຫຼັກກ່ອນຈຸດ

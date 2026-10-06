@@ -181,6 +181,8 @@ export interface OrderListItemDto {
   status: OrderStatus;
   channel: SalesChannel;
   source: string;
+  /** ບິນທີ່ເປີດຈາກແຊັດ (optional ເພື່ອບໍ່ແຕະ fixture ເກົ່າ; API ສົ່ງສະເໝີ) */
+  conversationId?: string | null;
   customer: { id: string; name: string; phone: string | null } | null;
   total: string;
   itemCount: number;
@@ -220,6 +222,7 @@ export interface OrderDetailDto {
   status: OrderStatus;
   channel: SalesChannel;
   source: string;
+  conversationId?: string | null;
   customer: { id: string; name: string; phone: string | null; email: string | null } | null;
   currency: string;
   exchangeRate: string;

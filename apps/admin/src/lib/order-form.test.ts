@@ -7,6 +7,7 @@ import {
   lineAvailable,
   lineQuantity,
   newIdempotencyKey,
+  orderFormForConversation,
   shortageKeys,
   toCreateOrderInput,
   validateOrderForm,
@@ -328,5 +329,24 @@ describe("validateOrderForm", () => {
     const issues = failed(form({ lines: [lineOf({ variant: variant({ price: "9999999999999999.00" }), quantity: "10", discount: "" })] }));
     expect(issues.messages).toEqual(["The order amount is too large to calculate"]);
     expect(issues.messages.join(" ")).not.toMatch(/discount/);
+  });
+});
+
+describe("orderFormForConversation", () => {
+  it("ເຄສບໍ່ມີລູກຄ້າ = ຟອມເປົ່າ (ຜູ້ໃຊ້ເລືອກ/ສ້າງເອງ)", () => {
+    expect(orderFormForConversation(null)).toEqual(emptyOrderForm());
+  });
+
+  it("ເຄສມີລູກຄ້າ: ເລືອກລູກຄ້າທີ່ມີແລ້ວ + ເຕີມຊື່/ໂທຈັດສົ່ງ", () => {
+    const form = orderFormForConversation({ id: "cu1", name: "Dala", phone: "020111111" });
+    expect(form.customerMode).toBe("existing");
+    expect(form.customer).toEqual({ id: "cu1", name: "Dala", phone: "020111111", email: null });
+    expect(form.shippingName).toBe("Dala");
+    expect(form.shippingPhone).toBe("020111111");
+    expect(form.lines).toEqual([]);
+  });
+
+  it("ລູກຄ້າບໍ່ມີເບີ: ໂທຈັດສົ່ງວ່າງ", () => {
+    expect(orderFormForConversation({ id: "cu2", name: "Noi", phone: null }).shippingPhone).toBe("");
   });
 });

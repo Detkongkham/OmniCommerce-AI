@@ -28,6 +28,13 @@ describe("order hooks", () => {
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/orders?q=SO-1&status=PAID&from=2026-10-01&page=1&pageSize=10"));
   });
 
+  it("useOrders ສົ່ງ conversationId ເປັນ query (ບິນຂອງເຄສ)", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 });
+    const { Wrapper } = wrapper();
+    renderHook(() => useOrders({ conversationId: "c1", page: 1, pageSize: 20 }), { wrapper: Wrapper });
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/orders?conversationId=c1&page=1&pageSize=20"));
+  });
+
   it("useOrder poll ທຸກ 15 ວິ ເມື່ອ PENDING_PAYMENT ແລະ secondsUntilExpiry = 0 ເທົ່ານັ້ນ", async () => {
     vi.mocked(apiFetch).mockResolvedValue({ status: "PENDING_PAYMENT", secondsUntilExpiry: 0 });
     const { client, Wrapper } = wrapper();
