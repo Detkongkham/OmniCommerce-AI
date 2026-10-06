@@ -2,7 +2,7 @@
 
 import { Avatar, Button, Card, EmptyState, Skeleton, StatusPill } from "@oca/ui";
 import { AlertCircle, ArrowLeft, MessageSquare, PanelRight } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
 import { useConversation, useMarkConversationRead, useMessages } from "@/lib/queries";
@@ -27,22 +27,66 @@ export function ThreadPane({ conversationId, canWrite, onBack, onShowDetails }: 
   const messages = useMessages(conversationId);
   const { mutate: markRead } = useMarkConversationRead();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const loadOlderAnchor = useRef<{ scrollHeight: number; firstId: string | undefined } | null>(null);
+  const [visible, setVisible] = useState(() => typeof document === "undefined" || document.visibilityState === "visible");
 
   // API ສົ່ງໃໝ່ສຸດກ່ອນ (ໜ້າທຳອິດ = ໃໝ່ສຸດ, ໜ້າຕໍ່ໄປ = ເກົ່າກວ່າ) → ກັບດ້ານເພື່ອສະແດງເກົ່າ→ໃໝ່
   const items = useMemo(() => [...(messages.data?.pages.flatMap((page) => page.items) ?? [])].reverse(), [messages.data]);
 
   // ເປີດເຄສທີ່ມີ unread (ແລະ ມີຂໍ້ຄວາມໃໝ່ເຂົ້າຕອນເປີດຢູ່) → ໝາຍອ່ານ. deps ມີ unread ເພື່ອບໍ່ວົນເມື່ອ request ລົ້ມ
+  useEffect(() => {
+    const onChange = () => setVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
   const unread = conversation.data?.unreadCount ?? 0;
   useEffect(() => {
-    if (canWrite && unread > 0 && document.visibilityState === "visible") markRead(conversationId);
-  }, [canWrite, unread, conversationId, markRead]);
+    if (canWrite && unread > 0 && visible) markRead(conversationId);
+  }, [canWrite, unread, conversationId, markRead, visible]);
 
-  // ເລື່ອນລົງລຸ່ມສຸດເມື່ອມີຂໍ້ຄວາມເພີ່ມ ຖ້າຜູ້ໃຊ້ຢູ່ໃກ້ລຸ່ມສຸດ (ຫຼື ເປີດໃໝ່)
+  const scrollToBottom = useCallback(() => {
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, []);
+
+  // ປ່ຽນເຄສ → ເລີ່ມຢູ່ລຸ່ມສຸດໃໝ່
+  useLayoutEffect(() => {
+    stickToBottom.current = true;
+    loadOlderAnchor.current = null;
+  }, [conversationId]);
+
+  // ໂຫຼດເກົ່າກວ່າ: ຮັກສາຕຳແໜ່ງເດີມ; ນອກນັ້ນເລື່ອນລົງລຸ່ມສຸດຖ້າຜູ້ໃຊ້ຢູ່ໃກ້ລຸ່ມສຸດ (ຫຼື ເປີດໃໝ່)
+  const firstId = items[0]?.id;
   useLayoutEffect(() => {
     const element = scrollRef.current;
-    if (element && stickToBottom.current) element.scrollTop = element.scrollHeight;
-  }, [items.length]);
+    if (!element) return;
+    const anchor = loadOlderAnchor.current;
+    if (anchor && firstId !== anchor.firstId) {
+      loadOlderAnchor.current = null;
+      element.scrollTop += element.scrollHeight - anchor.scrollHeight;
+      return;
+    }
+    if (stickToBottom.current) scrollToBottom();
+  }, [items.length, firstId, scrollToBottom]);
+
+  // ເນື້ອຫາສູງຂຶ້ນພາຍຫຼັງ (ຮູບໂຫຼດ): ຍຶດລຸ່ມສຸດຕໍ່ຖ້າ stick
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) scrollToBottom();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scrollToBottom, items.length === 0]);
+
+  function loadOlder() {
+    const element = scrollRef.current;
+    if (element) loadOlderAnchor.current = { scrollHeight: element.scrollHeight, firstId };
+    void messages.fetchNextPage();
+  }
 
   function onScroll() {
     const element = scrollRef.current;
@@ -84,7 +128,7 @@ export function ThreadPane({ conversationId, canWrite, onBack, onShowDetails }: 
             {data.status === "CLOSED" ? <StatusPill tone="neutral">{t("inbox.status.CLOSED")}</StatusPill> : null}
           </>
         ) : (
-          <div role="status" aria-label={t("common.loading")}>
+          <div aria-hidden="true">
             <Skeleton className="h-9 w-48" />
           </div>
         )}
@@ -118,48 +162,59 @@ export function ThreadPane({ conversationId, canWrite, onBack, onShowDetails }: 
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        role="region"
+        role="log"
+        aria-live="polite"
         aria-label={t("inbox.thread.label")}
         tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto bg-app px-3 py-4 sm:px-4"
       >
-        {messages.isError && !messages.data ? (
-          <EmptyState
-            icon={AlertCircle}
-            title={t("common.error.load")}
-            action={
-              <Button variant="outlinePrimary" className="rounded-lg" onClick={() => void messages.refetch()}>
-                {t("common.retry")}
-              </Button>
-            }
-          />
-        ) : messages.isPending ? (
-          <div className="space-y-3" role="status" aria-busy="true" aria-label={t("common.loading")}>
-            <Skeleton className="h-10 w-2/3 rounded-2xl" />
-            <Skeleton className="ml-auto h-10 w-1/2 rounded-2xl" />
-            <Skeleton className="h-10 w-3/5 rounded-2xl" />
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyState icon={MessageSquare} title={t("inbox.thread.empty")} />
-        ) : (
-          <>
-            {messages.hasNextPage ? (
-              <div className="mb-3 flex justify-center">
-                <Button variant="outline" size="sm" loading={messages.isFetchingNextPage} onClick={() => void messages.fetchNextPage()}>
-                  {messages.isFetchingNextPage ? t("inbox.thread.loadingOlder") : t("inbox.thread.loadOlder")}
+        <div ref={contentRef}>
+          {messages.isError && !messages.data ? (
+            <EmptyState
+              icon={AlertCircle}
+              title={t("common.error.load")}
+              action={
+                <Button variant="outlinePrimary" className="rounded-lg" onClick={() => void messages.refetch()}>
+                  {t("common.retry")}
                 </Button>
-              </div>
-            ) : null}
-            <ul className="space-y-2">
-              {items.map((message) => (
-                <MessageBubble key={message.id} message={message} />
-              ))}
-            </ul>
-          </>
-        )}
+              }
+            />
+          ) : messages.isPending ? (
+            <div className="space-y-3" role="status" aria-busy="true" aria-label={t("common.loading")}>
+              <Skeleton className="h-10 w-2/3 rounded-2xl" />
+              <Skeleton className="ml-auto h-10 w-1/2 rounded-2xl" />
+              <Skeleton className="h-10 w-3/5 rounded-2xl" />
+            </div>
+          ) : items.length === 0 ? (
+            <EmptyState icon={MessageSquare} title={t("inbox.thread.empty")} />
+          ) : (
+            <>
+              {messages.hasNextPage ? (
+                <div className="mb-3 flex justify-center">
+                  <Button variant="outline" size="sm" loading={messages.isFetchingNextPage} onClick={loadOlder}>
+                    {messages.isFetchingNextPage ? t("inbox.thread.loadingOlder") : t("inbox.thread.loadOlder")}
+                  </Button>
+                </div>
+              ) : null}
+              <ul className="space-y-2">
+                {items.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       </div>
 
-      <Composer conversationId={conversationId} canWrite={canWrite} />
+      <Composer
+        key={conversationId}
+        conversationId={conversationId}
+        canWrite={canWrite}
+        onSent={() => {
+          stickToBottom.current = true;
+          scrollToBottom();
+        }}
+      />
     </Card>
   );
 }

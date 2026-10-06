@@ -1,7 +1,10 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { ConversationDto, MessageDto, MessagePage } from "@/lib/types";
+import { LanguageProvider } from "@/lib/i18n/language-provider";
 import { renderWithProviders } from "@/test/render";
 import { ThreadPane } from "./thread-pane";
 
@@ -67,7 +70,7 @@ describe("ThreadPane", () => {
     renderWithProviders(<ThreadPane conversationId="c1" canWrite />);
     expect(await screen.findByRole("heading", { name: "Somchai Vong" })).toBeInTheDocument();
     expect(screen.getByText("Facebook")).toBeInTheDocument();
-    const region = screen.getByRole("region", { name: "Conversation messages" });
+    const region = screen.getByRole("log", { name: "Conversation messages" });
     await within(region).findByTestId("message-m1");
     const order = within(region)
       .getAllByRole("listitem")
@@ -219,5 +222,82 @@ describe("ThreadPane: refetch ທີ່ລົ້ມບໍ່ລຶບເນື�
     vi.mocked(apiFetch).mockImplementation((() => new Promise(() => undefined)) as typeof apiFetch);
     renderWithProviders(<ThreadPane conversationId="c1" canWrite />);
     expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
+  });
+});
+
+function setVisibility(state: "visible" | "hidden") {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue(state);
+}
+
+describe("ThreadPane: hardening", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("Load older ຮັກສາຕຳແໜ່ງເລື່ອນ (scrollTop += ຄວາມສູງທີ່ເພີ່ມ) ແລະ ບໍ່ກະໂດດລົງລຸ່ມ", async () => {
+    mockApi({
+      pages: [
+        { items: [message("m3", 30), message("m2", 20)], hasMore: true },
+        { items: [message("m1", 10)], hasMore: false },
+      ],
+    });
+    renderWithProviders(<ThreadPane conversationId="c1" canWrite />);
+    await screen.findByTestId("message-m2");
+    const region = screen.getByRole("log", { name: "Conversation messages" });
+    let height = 1000;
+    Object.defineProperty(region, "scrollHeight", { configurable: true, get: () => height });
+    region.scrollTop = 200;
+    fireEvent.click(screen.getByRole("button", { name: "Load older messages" }));
+    height = 1500;
+    await screen.findByTestId("message-m1");
+    await waitFor(() => expect(region.scrollTop).toBe(700));
+  });
+
+  it("ຫຼັງ mark-read ໃນແຖບທີ່ເຊື່ອງຢູ່: ບໍ່ໝາຍຈົນກວ່າແຖບຈະເບິ່ງເຫັນ (visibilitychange)", async () => {
+    setVisibility("hidden");
+    renderWithProviders(<ThreadPane conversationId="c1" canWrite />);
+    await screen.findByTestId("message-m1");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(reads()).toHaveLength(0);
+    setVisibility("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(reads()).toHaveLength(1));
+  });
+
+  it("ປ່ຽນ conversationId: composer ຖືກຣີເຊັດ (ຂໍ້ຄວາມ/error ຂອງ A ຫາຍ) ແລະ ບໍ່ມີຂໍ້ຄວາມໄປ A", async () => {
+    const other: ConversationDto = { ...conversation, id: "c2", displayName: "Other", unreadCount: 0 };
+    vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
+      if (url === "/conversations/c1" || url === "/conversations/c2") return url.endsWith("c1") ? { ...conversation, unreadCount: 0 } : other;
+      if (url.startsWith("/conversations/c1/messages") && init?.method === "POST") throw new ApiError(404, "nf", [], "CONVERSATION_NOT_FOUND");
+      if (url.includes("/messages")) return { items: [message("m1", 10)], hasMore: false };
+      throw new Error(`unexpected ${url}`);
+    }) as typeof apiFetch);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const ui = (id: string) => (
+      <QueryClientProvider client={queryClient}>
+        <LanguageProvider initialLanguage="en">
+          <ThreadPane conversationId={id} canWrite />
+        </LanguageProvider>
+      </QueryClientProvider>
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(ui("c1"));
+    await screen.findByTestId("message-m1");
+    const box = () => screen.getByRole("textbox", { name: "Reply to the customer" });
+    await user.type(box(), "draft A{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("This conversation was not found");
+    expect(box()).toHaveValue("draft A");
+    rerender(ui("c2"));
+    await screen.findByRole("heading", { name: "Other" });
+    expect(box()).toHaveValue("");
+    expect(screen.queryByText("This conversation was not found")).not.toBeInTheDocument();
+    await user.type(box(), "for B{Enter}");
+    await waitFor(() => expect(calls((url, method) => url === "/conversations/c2/messages" && method === "POST")).toHaveLength(1));
+    expect(calls((url, method) => url === "/conversations/c1/messages" && method === "POST")).toHaveLength(1);
+  });
+
+  it("ໜ້າຕ່າງຂໍ້ຄວາມເປັນ role=log (aria-live polite) ແລະ ມີ skeleton role=status ອັນດຽວ", () => {
+    vi.mocked(apiFetch).mockImplementation((() => new Promise(() => undefined)) as typeof apiFetch);
+    renderWithProviders(<ThreadPane conversationId="c1" canWrite />);
+    expect(screen.getByRole("log", { name: "Conversation messages" })).toHaveAttribute("aria-live", "polite");
+    expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 });

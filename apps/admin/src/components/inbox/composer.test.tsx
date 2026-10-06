@@ -114,6 +114,50 @@ describe("Composer", () => {
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
+  it("onSent ຖືກເອີ້ນຫຼັງສົ່ງສຳເລັດ ແຕ່ບໍ່ເອີ້ນເມື່ອ FAILED ຫຼື HTTP error", async () => {
+    const onSent = vi.fn();
+    const { user } = renderWithProviders(<Composer conversationId="c1" canWrite onSent={onSent} />);
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ...sent, status: "FAILED", errorCode: "OUTSIDE_WINDOW" });
+    await user.type(box(), "a{Enter}");
+    await screen.findByRole("alert");
+    vi.mocked(apiFetch).mockRejectedValueOnce(new ApiError(500, "boom"));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(onSent).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(onSent).toHaveBeenCalledTimes(1));
+  });
+
+  it("ແກ້ຂໍ້ຄວາມ (onChange) ລ້າງ error", async () => {
+    renderWithProviders(<Composer conversationId="c1" canWrite />);
+    fireEvent.change(box(), { target: { value: "a".repeat(2001) } });
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await screen.findByRole("alert");
+    fireEvent.change(box(), { target: { value: "ok" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ບໍ່ດຶງ focus ກັບມາຖ້າຜູ້ໃຊ້ຍ້າຍ focus ໄປບ່ອນອື່ນຕອນກຳລັງສົ່ງ", async () => {
+    let resolve: (message: MessageDto) => void = () => undefined;
+    vi.mocked(apiFetch).mockImplementation((() =>
+      new Promise((r) => {
+        resolve = r as (message: MessageDto) => void;
+      })) as typeof apiFetch);
+    const { user } = renderWithProviders(
+      <>
+        <button type="button">elsewhere</button>
+        <Composer conversationId="c1" canWrite />
+      </>,
+    );
+    await user.type(box(), "hello{Enter}");
+    await waitFor(() => expect(box()).toBeDisabled());
+    screen.getByRole("button", { name: "elsewhere" }).focus();
+    resolve(sent);
+    await waitFor(() => expect(box()).not.toBeDisabled());
+    expect(screen.getByRole("button", { name: "elsewhere" })).toHaveFocus();
+  });
+
   it("ບໍ່ມີສິດຕອບ (inbox:write): ບໍ່ມີຊ່ອງພິມ ມີແຕ່ຄຳອະທິບາຍ", () => {
     renderWithProviders(<Composer conversationId="c1" canWrite={false} />);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

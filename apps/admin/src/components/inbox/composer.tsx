@@ -9,11 +9,19 @@ import { useT } from "@/lib/i18n/language-provider";
 import { sendErrorKey } from "@/lib/inbox";
 import { useSendMessage } from "@/lib/queries";
 
-export function Composer({ conversationId, canWrite }: { conversationId: string; canWrite: boolean }) {
+export interface ComposerProps {
+  conversationId: string;
+  canWrite: boolean;
+  /** ເອີ້ນຫຼັງສົ່ງສຳເລັດ (ບໍ່ແມ່ນ FAILED) */
+  onSent?: () => void;
+}
+
+export function Composer({ conversationId, canWrite, onSent }: ComposerProps) {
   const { t } = useT();
   const send = useSendMessage();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const wasPending = useRef(false);
+  const inFlight = useRef(false);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const pending = send.isPending;
@@ -21,17 +29,22 @@ export function Composer({ conversationId, canWrite }: { conversationId: string;
 
   // ສົ່ງແລ້ວ (ຊ່ອງພິມຖືກປົດລັອກ) ໃຫ້ກັບມາ focus ທີ່ຊ່ອງພິມ ເພື່ອພິມຕໍ່ໄດ້ທັນທີ
   useEffect(() => {
-    if (wasPending.current && !pending) inputRef.current?.focus();
+    if (wasPending.current && !pending) {
+      // ດຶງ focus ກັບມາສະເພາະເມື່ອຜູ້ໃຊ້ບໍ່ໄດ້ຍ້າຍໄປບ່ອນອື່ນ
+      const active = document.activeElement;
+      if (!active || active === document.body || active === inputRef.current) inputRef.current?.focus();
+    }
     wasPending.current = pending;
   }, [pending]);
 
   async function submit() {
-    if (!canWrite || pending || trimmed === "") return;
+    if (!canWrite || pending || inFlight.current || trimmed === "") return;
     if (trimmed.length > MAX_MESSAGE_LENGTH) {
       setError(t("inbox.composer.tooLong", { max: MAX_MESSAGE_LENGTH }));
       return;
     }
     setError(null);
+    inFlight.current = true;
     try {
       const message = await send.mutateAsync({ id: conversationId, input: { text: trimmed } });
       // API ບັນທຶກແຖວ FAILED ແລ້ວ (ຢູ່ໃນ thread) ແຕ່ຄືນ 201: ເກັບຂໍ້ຄວາມໃນຊ່ອງໄວ້ໃຫ້ແກ້/ສົ່ງໃໝ່
@@ -39,9 +52,12 @@ export function Composer({ conversationId, canWrite }: { conversationId: string;
         setError(t("inbox.composer.failedKept", { reason: t(sendErrorKey(message.errorCode)) }));
       } else {
         setText("");
+        onSent?.();
       }
     } catch (caught) {
       setError(errorMessage(caught, t));
+    } finally {
+      inFlight.current = false;
     }
   }
 
@@ -79,7 +95,10 @@ export function Composer({ conversationId, canWrite }: { conversationId: string;
           rows={2}
           value={text}
           disabled={pending}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            setError(null);
+          }}
           onKeyDown={onKeyDown}
           className="min-h-[3.25rem] flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 disabled:opacity-60"
         />
