@@ -61,7 +61,7 @@ describe("product mutation hooks", () => {
       vars: { id: "p1", input: { status: "ACTIVE" } },
       path: "/products/p1",
       opts: { method: "PATCH", body: { status: "ACTIVE" } },
-      keys: ["products", "categories"],
+      keys: ["products", "variants", "stock", "categories"],
     },
     {
       name: "useDeleteProduct",
@@ -69,7 +69,7 @@ describe("product mutation hooks", () => {
       vars: "p1",
       path: "/products/p1",
       opts: { method: "DELETE" },
-      keys: ["products", "categories"],
+      keys: ["products", "variants", "stock", "categories"],
     },
     {
       name: "useAddVariant",
@@ -77,7 +77,7 @@ describe("product mutation hooks", () => {
       vars: { productId: "p1", input: { sku: "A", price: "1" } },
       path: "/products/p1/variants",
       opts: { method: "POST", body: { sku: "A", price: "1" } },
-      keys: ["products"],
+      keys: ["products", "variants", "stock"],
     },
     {
       name: "useUpdateVariant",
@@ -85,7 +85,7 @@ describe("product mutation hooks", () => {
       vars: { id: "v1", input: { price: "2" } },
       path: "/variants/v1",
       opts: { method: "PATCH", body: { price: "2" } },
-      keys: ["products"],
+      keys: ["products", "variants", "stock"],
     },
     {
       name: "usePutImages",
@@ -93,7 +93,7 @@ describe("product mutation hooks", () => {
       vars: { id: "p1", input: { images: [] } },
       path: "/products/p1/images",
       opts: { method: "PUT", body: { images: [] } },
-      keys: ["products"],
+      keys: ["products", "variants", "stock"],
     },
   ];
 

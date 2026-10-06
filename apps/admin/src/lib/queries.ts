@@ -120,7 +120,7 @@ export function useCreateWarehouse() {
 }
 
 export function useUpdateWarehouse() {
-  const invalidate = useInvalidate(queryKeys.warehouses);
+  const invalidate = useInvalidate(queryKeys.warehouses, queryKeys.stock, queryKeys.variants);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateWarehouseInput }) =>
       apiFetch<WarehouseDto>(`/warehouses/${id}`, { method: "PATCH", body: input }),
@@ -129,7 +129,7 @@ export function useUpdateWarehouse() {
 }
 
 export function useSetDefaultWarehouse() {
-  const invalidate = useInvalidate(queryKeys.warehouses);
+  const invalidate = useInvalidate(queryKeys.warehouses, queryKeys.stock, queryKeys.variants);
   return useMutation({
     mutationFn: (id: string) => apiFetch<WarehouseDto>(`/warehouses/${id}/default`, { method: "POST" }),
     onSuccess: invalidate,
@@ -141,7 +141,7 @@ export function useCategories() {
 }
 
 export function useSaveCategory() {
-  const invalidate = useInvalidate(queryKeys.categories);
+  const invalidate = useInvalidate(queryKeys.categories, queryKeys.products);
   return useMutation({
     mutationFn: ({ id, input }: { id?: string; input: CreateCategoryInput | UpdateCategoryInput }) =>
       id
@@ -152,7 +152,7 @@ export function useSaveCategory() {
 }
 
 export function useDeleteCategory() {
-  const invalidate = useInvalidate(queryKeys.categories);
+  const invalidate = useInvalidate(queryKeys.categories, queryKeys.products);
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/categories/${id}`, { method: "DELETE" }),
     onSuccess: invalidate,
@@ -209,7 +209,7 @@ export function useCreateProduct() {
 }
 
 export function useUpdateProduct() {
-  const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.variants, queryKeys.stock, queryKeys.categories);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateProductInput }) =>
       apiFetch<ProductDetailDto>(`/products/${id}`, { method: "PATCH", body: input }),
@@ -224,7 +224,7 @@ export function useUpdateProduct() {
  */
 export function useDeleteProduct() {
   const queryClient = useQueryClient();
-  const invalidate = useInvalidate(queryKeys.products, queryKeys.categories);
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.variants, queryKeys.stock, queryKeys.categories);
   return useMutation({
     mutationFn: (id: string) => apiFetch<{ archived: true } | undefined>(`/products/${id}`, { method: "DELETE" }),
     onSuccess: (result, id) => {
@@ -236,7 +236,7 @@ export function useDeleteProduct() {
 
 // the request side of the schema: costPrice is optional (users without costs:write must not send it)
 export function useAddVariant() {
-  const invalidate = useInvalidate(queryKeys.products);
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.variants, queryKeys.stock);
   return useMutation({
     mutationFn: ({ productId, input }: { productId: string; input: z.input<typeof variantInputSchema> }) =>
       apiFetch<VariantDto>(`/products/${productId}/variants`, { method: "POST", body: input }),
@@ -245,7 +245,7 @@ export function useAddVariant() {
 }
 
 export function useUpdateVariant() {
-  const invalidate = useInvalidate(queryKeys.products);
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.variants, queryKeys.stock);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateVariantInput }) =>
       apiFetch<VariantDto>(`/variants/${id}`, { method: "PATCH", body: input }),
@@ -254,7 +254,7 @@ export function useUpdateVariant() {
 }
 
 export function usePutImages() {
-  const invalidate = useInvalidate(queryKeys.products);
+  const invalidate = useInvalidate(queryKeys.products, queryKeys.variants, queryKeys.stock);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: PutProductImagesInput }) =>
       apiFetch<ProductDetailDto>(`/products/${id}/images`, { method: "PUT", body: input }),
@@ -324,6 +324,8 @@ export function useStockOperation() {
     mutationFn: ({ mode, input }: { mode: StockOpMode; input: StockOpInput }) =>
       apiFetch<unknown>(`/stock/${mode}`, { method: "POST", body: input }),
     onSuccess: invalidate,
+    // ລົ້ມ (ເຊັ່ນ 409 INSUFFICIENT_STOCK) ຕົວເລກທີ່ສະແດງອາດເກົ່າ → refetch
+    onError: invalidate,
   });
 }
 
@@ -333,6 +335,8 @@ export function useSetThreshold() {
     mutationFn: ({ id, lowStockThreshold }: { id: string; lowStockThreshold: number | null }) =>
       apiFetch<StockLevelDto>(`/stock/${id}/threshold`, { method: "PATCH", body: { lowStockThreshold } }),
     onSuccess: invalidate,
+    // ລົ້ມ (ເຊັ່ນ 409 INSUFFICIENT_STOCK) ຕົວເລກທີ່ສະແດງອາດເກົ່າ → refetch
+    onError: invalidate,
   });
 }
 
