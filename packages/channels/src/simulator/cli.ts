@@ -7,7 +7,7 @@ import { startFakeGraph } from "./fake-graph";
 import { postSignedWebhook } from "./post-webhook";
 
 const [command, ...args] = process.argv.slice(2);
-const apiUrl = process.env.SIM_API_URL ?? "http://localhost:3001";
+const apiUrl = process.env.SIM_API_URL ?? "http://127.0.0.1:3001";
 const pageId = process.env.SIM_PAGE_ID ?? "PAGE_SIM";
 
 function requireSecret(): string {
@@ -19,11 +19,17 @@ function requireSecret(): string {
 async function post(payload: object): Promise<void> {
   const response = await postSignedWebhook({ url: `${apiUrl}/webhooks/facebook`, appSecret: requireSecret(), payload });
   console.log(`webhook → ${response.status} ${await response.text()}`);
+  if (!response.ok) process.exitCode = 1;
 }
 
 async function main(): Promise<void> {
   if (command === "graph") {
     const port = Number(args[0] ?? 4010);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      console.error(`invalid port: ${args[0]} (expected an integer 1-65535)`);
+      process.exitCode = 1;
+      return;
+    }
     const graph = await startFakeGraph({
       port,
       token: process.env.FACEBOOK_PAGE_ACCESS_TOKEN || undefined,

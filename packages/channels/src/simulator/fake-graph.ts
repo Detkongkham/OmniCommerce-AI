@@ -1,4 +1,4 @@
-import { type IncomingMessage, createServer } from "node:http";
+import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export interface SentMessage {
@@ -35,9 +35,9 @@ export interface FakeGraph {
 }
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown> | null> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(chunk as Buffer);
   try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(chunk as Buffer);
     const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
   } catch {
@@ -52,7 +52,7 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
   const failures: FakeGraphFailure[] = [];
   let counter = 0;
 
-  const server = createServer(async (request, response) => {
+  const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const reply = (status: number, body: unknown) => {
       response.writeHead(status, { "content-type": "application/json" });
       response.end(JSON.stringify(body));
@@ -87,7 +87,7 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
       return;
     }
 
-    if (request.method === "GET") {
+    if (request.method === "GET" && /^\/(?:v[\d.]+\/)?[^/]+$/.test(url.pathname)) {
       const id = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() ?? "");
       const name = profiles.get(id) ?? (options.autoProfiles ? `Sim ${id}` : undefined);
       if (!name) {
@@ -100,10 +100,26 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
     }
 
     reply(404, { error: { message: "Not found", code: 100 } });
+  };
+
+  const server = createServer((request, response) => {
+    handle(request, response).catch(() => {
+      if (response.destroyed || response.headersSent) return;
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "Internal error", code: 1 } }));
+    });
   });
 
-  await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(options.port ?? 0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
   const { port } = server.address() as AddressInfo;
+
+  let closing: Promise<void> | undefined;
 
   return {
     url: `http://127.0.0.1:${port}`,
@@ -119,10 +135,12 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
       profiles.clear();
       counter = 0;
     },
-    close: () =>
-      new Promise<void>((resolve, reject) => {
+    close: () => {
+      closing ??= new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections();
-      }),
+      });
+      return closing;
+    },
   };
 }

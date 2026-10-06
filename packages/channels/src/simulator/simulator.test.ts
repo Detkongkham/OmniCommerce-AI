@@ -1,7 +1,10 @@
+import { type IncomingMessage, createServer, request as httpRequest } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { FacebookAdapter } from "../facebook/adapter";
 import { parseFacebookWebhook } from "../facebook/parse";
-import { type FakeGraph, deliveryPayload, echoPayload, messagePayload, startFakeGraph } from "./index";
+import { isValidSignature } from "../facebook/signature";
+import { type FakeGraph, deliveryPayload, echoPayload, messagePayload, postSignedWebhook, startFakeGraph } from "./index";
 
 describe("payload builders ກັບ parser", () => {
   it("messagePayload → message", () => {
@@ -80,5 +83,111 @@ describe("fake Graph server", () => {
     expect(graph.profiles.size).toBe(0);
     expect(graph.nextMessageId()).toBe("m_sim_1");
     expect(await adapterFor(graph).sendText("U1", "x")).toMatchObject({ ok: true });
+  });
+});
+
+describe("fake Graph server hardening", () => {
+  const graphs: FakeGraph[] = [];
+  const start = async (options?: Parameters<typeof startFakeGraph>[0]) => {
+    const g = await startFakeGraph(options);
+    graphs.push(g);
+    return g;
+  };
+  afterEach(async () => {
+    await Promise.all(graphs.splice(0).map((g) => g.close()));
+  });
+  const adapterFor = (g: FakeGraph) => new FacebookAdapter({ pageAccessToken: "tok", graphBaseUrl: g.url });
+  const rawRequest = (g: FakeGraph, method: string, path: string, body?: string) =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = httpRequest(`${g.url}${path}`, { method, headers: { "content-type": "application/json" } }, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: data }));
+      });
+      req.on("error", reject);
+      req.end(body);
+    });
+
+  it("socket ຖືກທຳລາຍກາງ body ບໍ່ເກີດ unhandled rejection ແລະ server ຍັງໃຊ້ໄດ້", async () => {
+    const g = await start();
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onRejection);
+    try {
+      const req = httpRequest(`${g.url}/me/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": "100" },
+      });
+      req.on("error", () => {});
+      req.write('{"recipient":');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      req.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(rejections).toEqual([]);
+      expect(await adapterFor(g).sendText("U1", "x")).toMatchObject({ ok: true });
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
+  });
+
+  it("close() ເອີ້ນຊ້ຳໄດ້", async () => {
+    const g = await start();
+    await g.close();
+    await g.close();
+  });
+
+  it("close() ບໍ່ຄ້າງເມື່ອມີ keep-alive connection", async () => {
+    const g = await start();
+    const response = await fetch(`${g.url}/me/messages`, { method: "DELETE", headers: { connection: "keep-alive" } });
+    await response.text();
+    await g.close();
+  });
+
+  it("listen ຜິດພາດ (port ຖືກໃຊ້ແລ້ວ) → reject", async () => {
+    const g = await start();
+    const port = Number(new URL(g.url).port);
+    await expect(startFakeGraph({ port })).rejects.toMatchObject({ code: "EADDRINUSE" });
+  });
+
+  it("path/method ທີ່ບໍ່ຮູ້ຈັກ → 404", async () => {
+    const g = await start();
+    expect((await rawRequest(g, "DELETE", "/me/messages")).status).toBe(404);
+  });
+
+  it("POST body JSON ເພ → 400", async () => {
+    const g = await start();
+    expect((await rawRequest(g, "POST", "/me/messages", "{not json")).status).toBe(400);
+  });
+
+  it("GET /me/messages ບໍ່ແມ່ນ profile ເຖິງເປີດ autoProfiles → 404", async () => {
+    const g = await start({ autoProfiles: true });
+    expect((await rawRequest(g, "GET", "/me/messages")).status).toBe(404);
+    expect((await rawRequest(g, "GET", "/v21.0/U1?fields=first_name")).status).toBe(200);
+  });
+});
+
+describe("postSignedWebhook", () => {
+  it("ເຊັນ body ທີ່ສົ່ງຈິງດ້ວຍ app secret", async () => {
+    let captured: { body: string; header: string | string[] | undefined } | undefined;
+    const server = createServer((req: IncomingMessage, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        captured = { body: Buffer.concat(chunks).toString("utf8"), header: req.headers["x-hub-signature-256"] };
+        res.end("ok");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const payload = messagePayload({ pageId: "P", psid: "U1", mid: "m1", text: "ສະບາຍດີ", timestamp: 1 });
+      const response = await postSignedWebhook({ url: `http://127.0.0.1:${port}/webhooks/facebook`, appSecret: "s3cret", payload });
+      expect(response.status).toBe(200);
+      expect(captured?.body).toBe(JSON.stringify(payload));
+      expect(isValidSignature("s3cret", Buffer.from(captured?.body ?? ""), captured?.header as string)).toBe(true);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
