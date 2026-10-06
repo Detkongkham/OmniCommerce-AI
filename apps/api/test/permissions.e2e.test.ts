@@ -6,7 +6,7 @@ import { ERROR_CODES, type Permission, PERMISSIONS, isErrorCode } from "@oca/sha
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { IS_PUBLIC_KEY, PERMISSIONS_KEY } from "../src/common/decorators";
-import { bearerFor, createTestApp, resetDb, seedCatalog, seedRoleUsers } from "./helpers";
+import { bearerFor, createTestApp, resetDb, seedCatalog, seedConversation, seedRoleUsers } from "./helpers";
 
 const HTTP_METHODS: Record<number, string> = { 0: "get", 1: "post", 2: "put", 3: "delete", 4: "patch" };
 
@@ -224,6 +224,25 @@ describe("role model ຕາມ seed ຈິງ (ບິນ / ຊຳລະ / ຕົ
     await request(server()).post("/orders").set(accountant).send(body()).expect(403);
     await request(server()).post(`/orders/${id}/pay`).set(accountant).expect(403);
     await request(server()).post(`/orders/${id}/pack`).set(accountant).expect(403);
+  });
+
+  it("inbox: CHAT_ADMIN/MANAGER/OWNER ອ່ານ+ຕອບ+ແກ້ເຄສໄດ້; ACCOUNTANT/WAREHOUSE ບໍ່ໄດ້", async () => {
+    const conversation = await seedConversation(db);
+    for (const name of ["CHAT_ADMIN", "MANAGER", "OWNER"]) {
+      const headers = await as(name);
+      await request(server()).get("/conversations").set(headers).expect(200);
+      await request(server()).get(`/conversations/${conversation.id}/messages`).set(headers).expect(200);
+      // ບໍ່ໄດ້ຕັ້ງ token ໃນ test ນີ້ → ການສົ່ງ FAILED ແຕ່ຍັງ 201 (ສິດຜ່ານ)
+      await request(server()).post(`/conversations/${conversation.id}/messages`).set(headers).send({ text: "x" }).expect(201);
+      await request(server()).patch(`/conversations/${conversation.id}`).set(headers).send({ status: "CLOSED" }).expect(200);
+    }
+    for (const name of ["ACCOUNTANT", "WAREHOUSE"]) {
+      const headers = await as(name);
+      await request(server()).get("/conversations").set(headers).expect(403);
+      await request(server()).get("/inbox/events").set(headers).expect(403);
+      await request(server()).post(`/conversations/${conversation.id}/messages`).set(headers).send({ text: "x" }).expect(403);
+      await request(server()).patch(`/conversations/${conversation.id}`).set(headers).send({ status: "OPEN" }).expect(403);
+    }
   });
 });
 
