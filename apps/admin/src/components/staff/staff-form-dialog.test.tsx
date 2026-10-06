@@ -86,7 +86,7 @@ describe("StaffFormDialog (edit)", () => {
 
   it("ສະແດງ message ຂອງ API ເມື່ອລົ້ມ ແລະ ບໍ່ປິດ dialog", async () => {
     const { ApiError } = await import("@/lib/api");
-    vi.mocked(apiFetch).mockRejectedValue(new ApiError(409, "Email already in use"));
+    vi.mocked(apiFetch).mockRejectedValue(new ApiError(409, "Email already in use", [], "CONFLICT"));
     const onOpenChange = vi.fn();
     const { user } = renderWithProviders(
       <StaffFormDialog open onOpenChange={onOpenChange} staff={existing} roles={roles} />,
