@@ -30,7 +30,16 @@ describe("visibleNavGroups", () => {
 
   it("ບໍ່ມີສິດ: ບໍ່ມີກຸ່ມເລີຍ (ກຸ່ມທີ່ບໍ່ມີລາຍການບໍ່ຖືກ render)", () => {
     expect(visibleNavGroups([])).toEqual([]);
-    expect(visibleNavGroups(["inbox:read"])).toEqual([]);
+    expect(visibleNavGroups(["crm:read"])).toEqual([]);
+  });
+
+  it("ຜູ້ມີ inbox:read ເຫັນກຸ່ມສົນທະນາ (/inbox) ແຕ່ landing ຫຼັງ login ຍັງເປັນໜ້າທຳອິດຂອງກຸ່ມທຳອິດ", () => {
+    const groups = visibleNavGroups(["inbox:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["chat"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/inbox"]);
+    expect(firstAllowedHref(["inbox:read"])).toBe("/inbox");
+    // ມີສິດສະຕ໊ອກນຳ: ກຸ່ມ inventory ຍັງມາກ່ອນ ຈຶ່ງບໍ່ປ່ຽນໜ້າຫຼັງ login ຂອງຜູ້ໃຊ້ເດີມ
+    expect(firstAllowedHref(["inbox:read", "inventory:read"])).toBe("/products");
   });
 });
 

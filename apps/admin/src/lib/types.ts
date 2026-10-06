@@ -1,4 +1,13 @@
-import type { OrderStatus, Permission, ProductStatus, SalesChannel, StockMovementType } from "@oca/shared";
+import type {
+  ConversationStatus,
+  MessageDirection,
+  MessageStatus,
+  OrderStatus,
+  Permission,
+  ProductStatus,
+  SalesChannel,
+  StockMovementType,
+} from "@oca/shared";
 
 export interface StaffDto {
   id: string;
@@ -233,4 +242,44 @@ export interface OrderDetailDto {
   createdAt: string;
   items: OrderItemDto[];
   movements: OrderMovementDto[];
+}
+
+// ---------------------------------------------------------------------------
+// Inbox (ກົງກັບ DTO ຂອງ apps/api/src/modules/inbox/inbox.mapper.ts)
+// ---------------------------------------------------------------------------
+export interface ConversationDto {
+  id: string;
+  channel: SalesChannel;
+  displayName: string;
+  status: ConversationStatus;
+  unreadCount: number;
+  lastMessageAt: string;
+  /** null = ຂໍ້ຄວາມສຸດທ້າຍມີແຕ່ໄຟລ໌ແນບ */
+  lastMessagePreview: string | null;
+  assignee: { id: string; name: string } | null;
+  customer: { id: string; name: string; phone: string | null } | null;
+  createdAt: string;
+}
+
+export interface MessageDto {
+  id: string;
+  direction: MessageDirection;
+  text: string | null;
+  attachments: { type: string; url: string | null }[];
+  status: MessageStatus;
+  /** ຄ່າຈາກ MESSAGE_SEND_ERRORS ເມື່ອ status = FAILED (ໃຊ້ isMessageSendError ກ່ອນແປ) */
+  errorCode: string | null;
+  sentBy: { id: string; name: string } | null;
+  createdAt: string;
+}
+
+/** ໃໝ່ສຸດກ່ອນ; ໜ້າຖັດໄປໃຊ້ id ຂອງແຖວສຸດທ້າຍເປັນ `beforeId` */
+export interface MessagePage {
+  items: MessageDto[];
+  hasMore: boolean;
+}
+
+export interface AssigneeDto {
+  id: string;
+  name: string;
 }

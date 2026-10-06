@@ -1,6 +1,8 @@
 import type {
   AdjustStockInput,
+  ConversationStatus,
   CreateCategoryInput,
+  CreateCustomerFromChatInput,
   CreateOrderInput,
   CreateStaffInput,
   CreateWarehouseInput,
@@ -8,8 +10,10 @@ import type {
   ReceiveStockInput,
   ReturnStockInput,
   RoleInput,
+  SendMessageInput,
   TransferStockInput,
   UpdateCategoryInput,
+  UpdateConversationInput,
   UpdateProductInput,
   UpdateStaffInput,
   UpdateStoreSettingsInput,
@@ -20,12 +24,16 @@ import type {
 } from "@oca/shared";
 import type { z } from "zod";
 import { useCallback } from "react";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { toQueryString } from "./query-string";
 import type {
+  AssigneeDto,
   CategoryDto,
+  ConversationDto,
   CustomerDto,
+  MessageDto,
+  MessagePage,
   OrderDetailDto,
   OrderListItemDto,
   Page,
@@ -52,6 +60,8 @@ export const queryKeys = {
   variants: ["variants"] as const,
   orders: ["orders"] as const,
   customers: ["customers"] as const,
+  conversations: ["conversations"] as const,
+  assignees: ["inbox-assignees"] as const,
 };
 
 export function useStaffList() {
@@ -425,5 +435,100 @@ export function useCustomers(params: { q: string }) {
     queryKey: [...queryKeys.customers, q],
     queryFn: () => apiFetch<Page<CustomerDto>>(`/customers${toQueryString({ q, page: 1, pageSize: 8 })}`),
     enabled: q !== "",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Inbox
+// ---------------------------------------------------------------------------
+export interface ConversationListParams {
+  status?: ConversationStatus;
+  /** "me" | "unassigned" | id ຂອງຜູ້ໃຊ້ */
+  assignee?: string;
+  unread?: boolean;
+  q?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useConversations(params: ConversationListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.conversations, "list", params],
+    queryFn: () =>
+      apiFetch<Page<ConversationDto>>(`/conversations${toQueryString({ ...params, unread: params.unread ? true : undefined })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useConversation(id: string | null) {
+  return useQuery({
+    enabled: id !== null,
+    queryKey: [...queryKeys.conversations, "detail", id],
+    queryFn: () => apiFetch<ConversationDto>(`/conversations/${id}`),
+  });
+}
+
+const MESSAGE_PAGE_SIZE = 30;
+
+/** ແບ່ງໜ້າດ້ວຍ cursor: ໜ້າທຳອິດ = ໃໝ່ສຸດ; fetchNextPage ໂຫຼດຂໍ້ຄວາມທີ່ເກົ່າກວ່າ (beforeId = ແຖວສຸດທ້າຍຂອງໜ້າກ່ອນ) */
+export function useMessages(conversationId: string | null) {
+  return useInfiniteQuery({
+    enabled: conversationId !== null,
+    queryKey: [...queryKeys.conversations, "messages", conversationId],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      apiFetch<MessagePage>(
+        `/conversations/${conversationId}/messages${toQueryString({ limit: MESSAGE_PAGE_SIZE, beforeId: pageParam })}`,
+      ),
+    getNextPageParam: (last) => (last.hasMore ? last.items.at(-1)?.id : undefined),
+  });
+}
+
+/** ສົ່ງຂໍ້ຄວາມ: ຖ້າ API ຕອບ 201 ແຕ່ status=FAILED ກໍຍັງ resolve (ຜູ້ເອີ້ນຕ້ອງເບິ່ງ status); invalidate ທັງຕອນລົ້ມ ເພາະແຖວ FAILED ຖືກບັນທຶກແລ້ວ */
+export function useSendMessage() {
+  const invalidate = useInvalidate(queryKeys.conversations);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: SendMessageInput }) =>
+      apiFetch<MessageDto>(`/conversations/${id}/messages`, { method: "POST", body: input }),
+    onSuccess: invalidate,
+    onError: invalidate,
+  });
+}
+
+export function useUpdateConversation() {
+  const invalidate = useInvalidate(queryKeys.conversations);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateConversationInput }) =>
+      apiFetch<ConversationDto>(`/conversations/${id}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+    onError: invalidate,
+  });
+}
+
+export function useMarkConversationRead() {
+  const invalidate = useInvalidate(queryKeys.conversations);
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<ConversationDto>(`/conversations/${id}/read`, { method: "POST" }),
+    onSuccess: invalidate,
+  });
+}
+
+/** ສ້າງລູກຄ້າ + ລິ້ງເຄສໃນຄັ້ງດຽວ → ລາຍການລູກຄ້າ (ຕົວເລືອກໃນຟອມບິນ) ປ່ຽນນຳ */
+export function useCreateCustomerFromChat() {
+  const invalidate = useInvalidate(queryKeys.conversations, queryKeys.customers);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: CreateCustomerFromChatInput }) =>
+      apiFetch<ConversationDto>(`/conversations/${id}/customer`, { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+/** ຜູ້ໃຊ້ທີ່ມອບໝາຍເຄສໃຫ້ໄດ້ (GET /inbox/assignees: ບໍ່ຕ້ອງມີ staff:read) */
+export function useAssignees(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.assignees,
+    queryFn: () => apiFetch<AssigneeDto[]>("/inbox/assignees"),
+    staleTime: 60_000,
   });
 }

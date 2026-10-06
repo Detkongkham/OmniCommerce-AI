@@ -1,5 +1,5 @@
 import { type Permission, hasPermission } from "@oca/shared";
-import { Boxes, ClipboardList, FolderTree, type LucideIcon, Package, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import { Boxes, ClipboardList, FolderTree, type LucideIcon, MessageSquare, Package, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 
 export interface NavItem {
@@ -26,6 +26,11 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/warehouses", labelKey: "nav.warehouses", icon: Warehouse, permission: "inventory:read" },
       { href: "/categories", labelKey: "nav.categories", icon: FolderTree, permission: "inventory:read" },
     ],
+  },
+  {
+    id: "chat",
+    labelKey: "nav.group.chat",
+    items: [{ href: "/inbox", labelKey: "nav.inbox", icon: MessageSquare, permission: "inbox:read" }],
   },
   {
     id: "settings",
