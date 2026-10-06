@@ -48,6 +48,7 @@ export function StockLevels({ initialQuery }: { initialQuery: string }) {
   const query = useStockLevels({ q, warehouseId, lowStock: lowOnly, page, pageSize });
   const warehouses = useWarehouses();
   const rows = query.data?.items ?? [];
+  const busy = query.isPending || query.isPlaceholderData;
   const filtered = q !== "" || warehouseId !== "" || lowOnly;
 
   const reset = () => setPage(1);
@@ -147,29 +148,32 @@ export function StockLevels({ initialQuery }: { initialQuery: string }) {
           />
         ) : (
           <>
-            <Table>
+            <p role="status" className="sr-only">
+              {!busy && rows.length > 0 ? t("stock.found", { count: total }) : ""}
+            </p>
+            <Table aria-label={t("stock.table")} aria-busy={busy}>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>{t("stock.col.item")}</TableHead>
-                  <TableHead>{t("stock.col.warehouse")}</TableHead>
-                  <TableHead className="text-right">{t("stock.col.onHand")}</TableHead>
-                  <TableHead className="text-right">{t("stock.col.reserved")}</TableHead>
-                  <TableHead className="text-right">{t("stock.col.available")}</TableHead>
-                  <TableHead className="text-right">{t("stock.col.threshold")}</TableHead>
-                  <TableHead className="text-right">{t("common.actions")}</TableHead>
+                  <TableHead scope="col">{t("stock.col.item")}</TableHead>
+                  <TableHead scope="col">{t("stock.col.warehouse")}</TableHead>
+                  <TableHead scope="col" className="text-right">{t("stock.col.onHand")}</TableHead>
+                  <TableHead scope="col" className="text-right">{t("stock.col.reserved")}</TableHead>
+                  <TableHead scope="col" className="text-right">{t("stock.col.available")}</TableHead>
+                  <TableHead scope="col" className="text-right">{t("stock.col.threshold")}</TableHead>
+                  <TableHead scope="col" className="text-right">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {query.isPending ? <TableSkeletonRows columns={COLUMNS} /> : null}
                 {rows.map((level) => (
                   <TableRow key={level.id} data-testid={`row-stock-${level.id}`}>
-                    <TableCell>
+                    <th scope="row" className="px-4 py-3 text-left font-normal">
                       <p className="font-medium text-ink">
                         {level.productName}
                         {level.variantName ? ` — ${level.variantName}` : ""}
                       </p>
                       <p className="font-mono text-xs text-ink-muted">{level.sku}</p>
-                    </TableCell>
+                    </th>
                     <TableCell className="font-mono text-sm">{level.warehouseCode}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatQuantity(level.onHand)}</TableCell>
                     <TableCell className="text-right tabular-nums text-ink-secondary">{formatQuantity(level.reserved)}</TableCell>
@@ -222,6 +226,7 @@ export function StockLevels({ initialQuery }: { initialQuery: string }) {
               </TableBody>
             </Table>
             {!query.isPending && rows.length === 0 && total === 0 ? (
+              <div role="status">
               <EmptyState
                 icon={Boxes}
                 title={filtered ? t("stock.empty.noResults") : t("stock.empty.title")}
@@ -236,6 +241,7 @@ export function StockLevels({ initialQuery }: { initialQuery: string }) {
                   )
                 }
               />
+              </div>
             ) : null}
             <ServerPager
               page={page}

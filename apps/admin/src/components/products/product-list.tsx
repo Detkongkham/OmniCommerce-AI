@@ -52,6 +52,7 @@ export function ProductList() {
   const categoryRows = useMemo(() => flattenCategories(categories.data ?? []), [categories.data]);
   const rows = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
+  const busy = query.isPending || query.isPlaceholderData;
   const filtered = q !== "" || status !== "" || categoryId !== "";
 
   // ຂໍ້ມູນຫຼຸດລົງຈົນໜ້າປັດຈຸບັນເກີນໜ້າສຸດທ້າຍ: ກັບໄປໜ້າສຸດທ້າຍທີ່ມີ
@@ -138,21 +139,24 @@ export function ProductList() {
             />
           ) : (
             <>
-              <Table>
+              <p role="status" className="sr-only">
+                {!busy && rows.length > 0 ? t("products.found", { count: total }) : ""}
+              </p>
+              <Table aria-label={t("products.table")} aria-busy={busy}>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead>{t("products.col.product")}</TableHead>
-                    <TableHead>{t("products.col.category")}</TableHead>
-                    <TableHead>{t("products.col.status")}</TableHead>
-                    <TableHead className="text-right">{t("products.col.price")}</TableHead>
-                    <TableHead className="text-right">{t("products.col.available")}</TableHead>
+                    <TableHead scope="col">{t("products.col.product")}</TableHead>
+                    <TableHead scope="col">{t("products.col.category")}</TableHead>
+                    <TableHead scope="col">{t("products.col.status")}</TableHead>
+                    <TableHead scope="col" className="text-right">{t("products.col.price")}</TableHead>
+                    <TableHead scope="col" className="text-right">{t("products.col.available")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {query.isPending ? <TableSkeletonRows columns={COLUMNS} /> : null}
                   {rows.map((product) => (
                     <TableRow key={product.id} data-testid={`row-product-${product.id}`}>
-                      <TableCell>
+                      <th scope="row" className="px-4 py-3 text-left font-normal">
                         <div className="flex items-center gap-3">
                           <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-subtle">
                             {product.imageUrl ? (
@@ -168,7 +172,7 @@ export function ProductList() {
                             <p className="text-xs text-ink-muted">{t("products.variantCount", { count: product.variantCount })}</p>
                           </div>
                         </div>
-                      </TableCell>
+                      </th>
                       <TableCell className="text-ink-secondary">{product.category?.name ?? "—"}</TableCell>
                       <TableCell>
                         <ProductStatusPill status={product.status} />
@@ -182,6 +186,7 @@ export function ProductList() {
                 </TableBody>
               </Table>
               {!query.isPending && rows.length === 0 && total === 0 ? (
+                <div role="status">
                 <EmptyState
                   icon={Package}
                   title={filtered ? t("products.empty.noResults") : t("products.empty.title")}
@@ -204,6 +209,7 @@ export function ProductList() {
                     )
                   }
                 />
+                </div>
               ) : null}
               <ServerPager
                 page={page}

@@ -216,4 +216,29 @@ describe("ProductList", () => {
     expect(screen.queryByText("No products yet")).toBeNull();
     expect(await screen.findByTestId("row-product-p1")).toBeInTheDocument();
   });
+
+  it("table semantics: aria-label, scope=col, ຊື່ສິນຄ້າເປັນ row header, ແລະ status ນັບຜົນ (sr-only)", async () => {
+    renderWithProviders(<ProductList />);
+    const tee = await screen.findByTestId("row-product-p1");
+    const table = screen.getByRole("table", { name: "Products" });
+    expect(table).toHaveAttribute("aria-busy", "false");
+    expect(within(table).getAllByRole("columnheader").every((th) => th.getAttribute("scope") === "col")).toBe(true);
+    expect(within(tee).getByRole("rowheader")).toHaveTextContent("Tee");
+    expect(within(tee).getByRole("rowheader")).toHaveTextContent("3 variants");
+    expect(screen.getByRole("status")).toHaveTextContent("3 products found");
+  });
+
+  it("ກຳລັງໂຫຼດ: aria-busy=true ແລະ status ວ່າງ", () => {
+    vi.mocked(apiFetch).mockImplementation((() => new Promise(() => {})) as typeof apiFetch);
+    renderWithProviders(<ProductList />);
+    expect(screen.getByRole("table", { name: "Products" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("ວ່າງ: status ນັບຜົນວ່າງ ບໍ່ປະກາດຊ້ຳກັບ empty state", async () => {
+    mockApi({ items: [], total: 0, page: 1, pageSize: 10 });
+    renderWithProviders(<ProductList />);
+    await screen.findByText("No products yet");
+    expect(screen.queryByText(/products found/)).toBeNull();
+  });
 });

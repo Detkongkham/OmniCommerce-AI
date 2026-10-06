@@ -174,4 +174,29 @@ describe("StockLevels", () => {
     await waitFor(() => expect(lastStockUrl()).toBe("/stock?page=2&pageSize=10"));
     expect(screen.queryByText("No stock yet")).toBeNull();
   });
+
+  it("table semantics: aria-label, scope=col, ສິນຄ້າ/SKU ເປັນ row header, ແລະ status ນັບຜົນ (sr-only)", async () => {
+    renderWithProviders(<StockLevels initialQuery="" />);
+    const first = await screen.findByTestId("row-stock-s1");
+    const table = screen.getByRole("table", { name: "Stock levels" });
+    expect(table).toHaveAttribute("aria-busy", "false");
+    expect(within(table).getAllByRole("columnheader").every((th) => th.getAttribute("scope") === "col")).toBe(true);
+    expect(within(first).getByRole("rowheader")).toHaveTextContent("Tee — Red");
+    expect(within(first).getByRole("rowheader")).toHaveTextContent("TEE-R");
+    expect(screen.getByRole("status")).toHaveTextContent("2 stock lines found");
+  });
+
+  it("ກຳລັງໂຫຼດ: aria-busy=true ແລະ status ວ່າງ", () => {
+    vi.mocked(apiFetch).mockImplementation((() => new Promise(() => {})) as typeof apiFetch);
+    renderWithProviders(<StockLevels initialQuery="" />);
+    expect(screen.getByRole("table", { name: "Stock levels" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("ວ່າງ: status ນັບຜົນວ່າງ ບໍ່ປະກາດຊ້ຳກັບ empty state", async () => {
+    mockApi({ items: [], total: 0, page: 1, pageSize: 10 });
+    renderWithProviders(<StockLevels initialQuery="" />);
+    await screen.findByText("No stock yet");
+    expect(screen.queryByText(/stock lines found/)).toBeNull();
+  });
 });
