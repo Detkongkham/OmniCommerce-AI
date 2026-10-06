@@ -452,10 +452,11 @@ export interface ConversationListParams {
 }
 
 export function useConversations(params: ConversationListParams) {
+  // unread=false ກັບບໍ່ໃສ່ ແມ່ນຄຳຖາມດຽວກັນ: ໃຊ້ຄ່າທີ່ normalize ແລ້ວທັງ key ແລະ URL
+  const normalized = { ...params, unread: params.unread ? true : undefined };
   return useQuery({
-    queryKey: [...queryKeys.conversations, "list", params],
-    queryFn: () =>
-      apiFetch<Page<ConversationDto>>(`/conversations${toQueryString({ ...params, unread: params.unread ? true : undefined })}`),
+    queryKey: [...queryKeys.conversations, "list", normalized],
+    queryFn: () => apiFetch<Page<ConversationDto>>(`/conversations${toQueryString(normalized)}`),
     placeholderData: keepPreviousData,
   });
 }

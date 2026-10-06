@@ -93,4 +93,35 @@ describe("useInboxRealtime", () => {
     setup(false);
     expect(runInboxStream).not.toHaveBeenCalled();
   });
+
+  it("mount, unmount, mount ອີກ (ແບບ StrictMode): stream ທຳອິດຖືກ abort, ອັນທີສອງຍັງເຮັດວຽກ", () => {
+    const first = setup();
+    const firstSignal = first.options().signal;
+    first.unmount();
+    setup();
+    const calls = vi.mocked(runInboxStream).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(firstSignal.aborted).toBe(true);
+    expect(calls[1]?.[0].signal.aborted).toBe(false);
+  });
+
+  it("onChange ຫຼັງ abort ບໍ່ schedule ໃໝ່; status ກັບເປັນ connecting ເມື່ອ effect ເລີ່ມໃໝ່", () => {
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const hook = renderHook(({ on }: { on: boolean }) => useInboxRealtime(on), { wrapper, initialProps: { on: true } });
+    const stale = vi.mocked(runInboxStream).mock.calls[0]?.[0] as InboxStreamOptions;
+    act(() => stale.onStatus("connected"));
+    expect(hook.result.current).toBe("connected");
+
+    hook.rerender({ on: false });
+    hook.rerender({ on: true });
+    expect(hook.result.current).toBe("connecting");
+
+    act(() => stale.onChange());
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(invalidate).not.toHaveBeenCalled();
+  });
 });

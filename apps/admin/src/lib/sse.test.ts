@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type SseFrame, createSseParser } from "./sse";
+import { MAX_BUFFER, type SseFrame, createSseParser } from "./sse";
 
 function collect(chunks: string[]): SseFrame[] {
   const frames: SseFrame[] = [];
@@ -46,5 +46,23 @@ describe("createSseParser", () => {
 
   it("frame ທີ່ຍັງບໍ່ຈົບ (ບໍ່ມີເສັ້ນວ່າງ) ບໍ່ຖືກສົ່ງ", () => {
     expect(collect(["event: a\ndata: 1\n"])).toEqual([]);
+  });
+
+  it("data without a value; a field line without a colon", () => {
+    expect(collect(["data\n\n"])).toEqual([{ event: "message", data: "" }]);
+    expect(collect(["data\ndata\n\n"])).toEqual([{ event: "message", data: "\n" }]);
+    expect(collect(["event\ndata: 1\n\n"])).toEqual([{ event: "message", data: "1" }]);
+    expect(collect(["bogus\n\n"])).toEqual([]);
+  });
+
+  it("pending buffer or accumulated data over 1 MiB throws", () => {
+    const feed = createSseParser(() => undefined);
+    expect(() => feed("x".repeat(MAX_BUFFER + 1))).toThrow("SSE frame too large");
+
+    const lines = createSseParser(() => undefined);
+    const line = `data: ${"y".repeat(1023)}\n`;
+    expect(() => {
+      for (let i = 0; i < 1100; i++) lines(line);
+    }).toThrow("SSE frame too large");
   });
 });

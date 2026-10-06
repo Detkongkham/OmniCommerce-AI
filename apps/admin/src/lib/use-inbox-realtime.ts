@@ -21,12 +21,14 @@ export function useInboxRealtime(enabled = true): StreamStatus {
 
   useEffect(() => {
     if (!enabled) return;
+    setStatus("connecting");
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refetch = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
     };
     const scheduleRefetch = () => {
+      if (controller.signal.aborted) return;
       clearTimeout(timer);
       timer = setTimeout(refetch, COALESCE_MS);
     };
@@ -38,7 +40,7 @@ export function useInboxRealtime(enabled = true): StreamStatus {
       onStatus: setStatus,
       onChange: scheduleRefetch,
       signal: controller.signal,
-    });
+    }).catch(() => undefined);
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") refetch();
     }, POLL_MS);

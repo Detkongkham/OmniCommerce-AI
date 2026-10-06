@@ -71,6 +71,19 @@ describe("useConversations", () => {
   });
 });
 
+describe("useConversations query key", () => {
+  it("unread=false ແລະ unread=undefined ໃຊ້ key ດຽວກັນ (cache entry ດຽວ)", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 30 } satisfies Page<ConversationDto>);
+    const { client, Wrapper } = wrapper();
+    const base = { page: 1, pageSize: 30 };
+    const a = renderHook(() => useConversations({ ...base, unread: false }), { wrapper: Wrapper });
+    await waitFor(() => expect(a.result.current.data).toBeDefined());
+    const b = renderHook(() => useConversations({ ...base }), { wrapper: Wrapper });
+    await waitFor(() => expect(b.result.current.data).toBeDefined());
+    expect(client.getQueryCache().findAll({ queryKey: [...queryKeys.conversations, "list"] })).toHaveLength(1);
+  });
+});
+
 describe("useConversation", () => {
   it("ບໍ່ຍິງເມື່ອ id ເປັນ null", () => {
     const { Wrapper } = wrapper();
@@ -132,24 +145,35 @@ describe("mutations", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.conversations });
   });
 
-  it("useUpdateConversation: PATCH", async () => {
+  it("useUpdateConversation: PATCH ແລະ invalidate conversations (ທັງຕອນລົ້ມ)", async () => {
     vi.mocked(apiFetch).mockResolvedValue(conversation);
-    const { Wrapper } = wrapper();
+    const { client, Wrapper } = wrapper();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
     const { result } = renderHook(() => useUpdateConversation(), { wrapper: Wrapper });
     await act(async () => {
       await result.current.mutateAsync({ id: "c1", input: { assigneeId: null, status: "CLOSED" } });
     });
     expect(vi.mocked(apiFetch)).toHaveBeenCalledWith("/conversations/c1", { method: "PATCH", body: { assigneeId: null, status: "CLOSED" } });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.conversations });
+
+    invalidate.mockClear();
+    vi.mocked(apiFetch).mockRejectedValue(new Error("boom"));
+    await act(async () => {
+      await expect(result.current.mutateAsync({ id: "c1", input: { status: "OPEN" } })).rejects.toThrow("boom");
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.conversations });
   });
 
-  it("useMarkConversationRead: POST /read", async () => {
+  it("useMarkConversationRead: POST /read ແລະ invalidate conversations", async () => {
     vi.mocked(apiFetch).mockResolvedValue(conversation);
-    const { Wrapper } = wrapper();
+    const { client, Wrapper } = wrapper();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
     const { result } = renderHook(() => useMarkConversationRead(), { wrapper: Wrapper });
     await act(async () => {
       await result.current.mutateAsync("c1");
     });
     expect(vi.mocked(apiFetch)).toHaveBeenCalledWith("/conversations/c1/read", { method: "POST" });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.conversations });
   });
 
   it("useCreateCustomerFromChat: POST /customer ແລະ invalidate customers ນຳ", async () => {
