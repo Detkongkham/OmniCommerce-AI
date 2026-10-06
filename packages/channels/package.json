@@ -2,5 +2,27 @@
   "name": "@oca/channels",
   "version": "0.0.0",
   "private": true,
-  "description": "Social channel adapters: Facebook, Instagram, TikTok, LINE"
+  "description": "Social channel adapters: Facebook, Instagram, TikTok, LINE",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "simulate": "tsx --env-file-if-exists=../../.env src/simulator/cli.ts"
+  },
+  "dependencies": {
+    "@oca/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@oca/config": "workspace:*",
+    "@types/node": "^26.6.4",
+    "eslint": "^9.39.5",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
 }
