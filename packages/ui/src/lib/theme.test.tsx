@@ -44,6 +44,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   // @ts-expect-error restore jsdom default (no matchMedia)
   delete window.matchMedia;
 });
@@ -85,8 +86,10 @@ describe("ThemeProvider", () => {
     await user.click(screen.getByRole("button", { name: "dark" }));
     expect(root.classList.contains("dark")).toBe(true);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    expect(root.style.colorScheme).toBe("dark");
     await user.click(screen.getByRole("button", { name: "light" }));
     expect(root.classList.contains("dark")).toBe(false);
+    expect(root.style.colorScheme).toBe("light");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
   });
 
@@ -115,7 +118,60 @@ describe("ThemeProvider", () => {
     });
     await user.click(screen.getByRole("button", { name: "dark" }));
     expect(root.classList.contains("dark")).toBe(true);
-    vi.restoreAllMocks();
+  });
+
+  it("restores a stored system choice and follows the OS", () => {
+    mockMatchMedia(true);
+    window.localStorage.setItem(THEME_STORAGE_KEY, "system");
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId("theme")).toHaveTextContent("system");
+    expect(root.classList.contains("dark")).toBe(true);
+  });
+
+  it("stops listening to the OS after switching to an explicit theme", async () => {
+    const setOsDark = mockMatchMedia(false);
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "dark" }));
+    act(() => setOsDark(false));
+    expect(root.classList.contains("dark")).toBe(true);
+    act(() => setOsDark(true));
+    await user.click(screen.getByRole("button", { name: "light" }));
+    act(() => setOsDark(true));
+    expect(root.classList.contains("dark")).toBe(false);
+  });
+
+  it.each([
+    { stored: "dark", osDark: false },
+    { stored: "light", osDark: true },
+  ])("never flips the html class while restoring stored $stored (OS dark=$osDark)", ({ stored, osDark }) => {
+    mockMatchMedia(osDark);
+    window.localStorage.setItem(THEME_STORAGE_KEY, stored);
+    // ຈຳລອງ script ທີ່ຮັນກ່ອນ paint
+    if (stored === "dark") root.classList.add("dark");
+    const seen: boolean[] = [];
+    const observer = new MutationObserver(() => {});
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    const mo = vi.spyOn(root.classList, "toggle");
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    seen.push(...observer.takeRecords().map(() => root.classList.contains("dark")));
+    observer.disconnect();
+    // ຕ້ອງບໍ່ມີການ toggle ໄປຜິດທິດໃນລະຫວ່າງ mount
+    for (const call of mo.mock.calls) expect(call[1]).toBe(stored === "dark");
+    expect(root.classList.contains("dark")).toBe(stored === "dark");
+    expect(seen.every((d) => d === (stored === "dark"))).toBe(true);
   });
 
   it("useTheme throws outside the provider", () => {
@@ -148,11 +204,17 @@ describe("THEME_INIT_SCRIPT", () => {
     expect(root.classList.contains("dark")).toBe(false);
   });
 
+  it("treats a stored system theme like no choice", () => {
+    mockMatchMedia(true);
+    window.localStorage.setItem(THEME_STORAGE_KEY, "system");
+    run();
+    expect(root.classList.contains("dark")).toBe(true);
+  });
+
   it("never throws when storage and matchMedia are unavailable", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
     });
     expect(run).not.toThrow();
-    vi.restoreAllMocks();
   });
 });

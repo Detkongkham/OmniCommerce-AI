@@ -49,12 +49,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("system");
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
 
+  const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
     const stored = readStoredTheme();
     if (stored) setThemeState(stored);
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
+    // ລໍຖ້າຄ່າທີ່ເກັບໄວ້ໂຫຼດກ່ອນ ເພື່ອບໍ່ໃຫ້ແຕະ class ທີ່ script ຕັ້ງໄວ້ແລ້ວ (ກັນກະພິບ)
+    if (!loaded) return;
     const sync = () => {
       const next = resolve(theme);
       setResolvedTheme(next);
@@ -65,7 +70,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const query = getMediaQuery();
     query?.addEventListener("change", sync);
     return () => query?.removeEventListener("change", sync);
-  }, [theme]);
+  }, [theme, loaded]);
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
