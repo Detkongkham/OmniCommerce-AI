@@ -42,8 +42,8 @@ const HEADERS: { key: TranslationKey; right?: boolean }[] = [
   { key: "stock.mov.col.actor" },
 ] as const;
 
-// engine ບັນທຶກໝາຍເຫດ transfer ເປັນ `from <warehouseId>` / `to <warehouseId>` (ຂໍ້ມູນເກົ່າກໍເປັນແບບນີ້)
-const TRANSFER_NOTE = /^(from|to) (\S+)$/;
+// engine ບັນທຶກໝາຍເຫດ transfer ເປັນ `[<note> | ]from <warehouseId>` / `[<note> | ]to <warehouseId>` (ຂໍ້ມູນເກົ່າກໍເປັນແບບນີ້)
+const TRANSFER_NOTE = /^(?:(.*) \| )?(from|to) (\S+)$/;
 
 const TONES: Record<StockMovementType, StatusTone> = {
   RECEIVE: "success",
@@ -78,9 +78,13 @@ export function StockMovements() {
     if (movement.note === null) return "—";
     const match = movement.type === "TRANSFER_IN" || movement.type === "TRANSFER_OUT" ? TRANSFER_NOTE.exec(movement.note) : null;
     if (!match) return movement.note;
-    if (warehouses.isPending) return "—";
-    const code = warehouseById.get(match[2] ?? "") ?? t("stock.mov.unknownWarehouse");
-    return t(match[1] === "from" ? "stock.mov.noteFrom" : "stock.mov.noteTo", { code });
+    const prefix = match[1];
+    const text = warehouses.isPending
+      ? "—"
+      : t(match[2] === "from" ? "stock.mov.noteFrom" : "stock.mov.noteTo", {
+          code: warehouseById.get(match[3] ?? "") ?? t("stock.mov.unknownWarehouse"),
+        });
+    return prefix ? `${prefix} | ${text}` : text;
   };
   const rows = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
@@ -266,7 +270,14 @@ export function StockMovements() {
                       "—"
                     )}
                   </TableCell>
-                  <TableCell className="max-w-[220px] truncate text-ink-secondary">{noteText(movement)}</TableCell>
+                  {(() => {
+                    const note = noteText(movement);
+                    return (
+                      <TableCell className="max-w-[220px] truncate text-ink-secondary" title={note}>
+                        {note}
+                      </TableCell>
+                    );
+                  })()}
                   <TableCell className="text-ink-secondary">{movement.actorName ?? t("stock.mov.system")}</TableCell>
                 </TableRow>
               ))}

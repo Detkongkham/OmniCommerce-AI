@@ -260,6 +260,37 @@ describe("StockMovements", () => {
       expect(within(row).getAllByText("—").length).toBeGreaterThan(0);
     });
 
+    it("ໝາຍເຫດຜູ້ໃຊ້ + ຕໍ່ທ້າຍດ້ວຍ ` | to <id>`: ສະແດງ prefix + ລະຫັດສາງ (prefix ມີ ` | ` ເອງກໍໄດ້) ບໍ່ມີ id ດິບ", async () => {
+      mockApi({
+        items: transferRows({ "out-1": `restock | to ${WH_ID}`, "in-1": "a | b | from w1", "out-2": `x | to cmgone0000000000000000000` }),
+        total: 3, page: 1, pageSize: 10,
+      });
+      renderWithProviders(<StockMovements />);
+      expect(await within(await screen.findByTestId("row-movement-out-1")).findByText("restock | To BKK")).toBeInTheDocument();
+      expect(within(screen.getByTestId("row-movement-in-1")).getByText("a | b | From MAIN")).toBeInTheDocument();
+      expect(within(screen.getByTestId("row-movement-out-2")).getByText("x | To unknown warehouse")).toBeInTheDocument();
+      expect(screen.queryByText(new RegExp(WH_ID))).toBeNull();
+      expect(screen.queryByText(/cmgone/)).toBeNull();
+    });
+
+    it("ກຳລັງໂຫຼດສາງ: ຍັງສະແດງ prefix ຂອງຜູ້ໃຊ້ ແລະ ໃສ່ placeholder ສະເພາະສ່ວນ id", async () => {
+      vi.mocked(apiFetch).mockImplementation((async (path: string) => {
+        if (path.startsWith("/stock/movements")) return { items: transferRows({ "out-1": `restock | to ${WH_ID}` }), total: 1, page: 1, pageSize: 10 };
+        if (path === "/warehouses") return new Promise(() => {});
+        return {};
+      }) as typeof apiFetch);
+      renderWithProviders(<StockMovements />);
+      const row = await screen.findByTestId("row-movement-out-1");
+      expect(within(row).getByText("restock | —")).toBeInTheDocument();
+      expect(row).not.toHaveTextContent(WH_ID);
+    });
+
+    it("cell ໝາຍເຫດທີ່ຖືກຕັດມີ title ເປັນຂໍ້ຄວາມເຕັມ", async () => {
+      renderWithProviders(<StockMovements />);
+      const first = await screen.findByTestId("row-movement-m1");
+      expect(within(first).getByText("PO-1")).toHaveAttribute("title", "PO-1");
+    });
+
     it("ໝາຍເຫດທີ່ບໍ່ກົງຮູບແບບ ຫຼື ບໍ່ແມ່ນ transfer: ສະແດງຕາມເດີມ", async () => {
       mockApi({
         items: [
