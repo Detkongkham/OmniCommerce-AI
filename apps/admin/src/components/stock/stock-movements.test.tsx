@@ -5,6 +5,8 @@ import type { Page, StockMovementDto } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
 import { StockMovements } from "./stock-movements";
 
+const auth = vi.hoisted(() => ({ canReadOrders: true }));
+vi.mock("@/components/auth/auth-provider", () => ({ useCan: (permission: string) => (permission === "orders:read" ? auth.canReadOrders : true) }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   apiFetch: vi.fn(),
@@ -41,6 +43,7 @@ const movementUrls = () => vi.mocked(apiFetch).mock.calls.map((call) => call[0])
 const lastUrl = () => movementUrls().at(-1);
 
 beforeEach(() => {
+  auth.canReadOrders = true;
   vi.mocked(apiFetch).mockReset();
   mockApi();
 });
@@ -64,6 +67,14 @@ describe("StockMovements", () => {
     expect(screen.getByRole("table", { name: "Stock movement history" })).toBeInTheDocument();
     expect(screen.getAllByRole("columnheader").every((th) => th.getAttribute("scope") === "col")).toBe(true);
     expect(screen.getByRole("status")).toHaveTextContent("3 movements found");
+  });
+
+  it("ບໍ່ມີ orders:read: ເລກບິນເປັນຂໍ້ຄວາມທຳມະດາ ບໍ່ເປັນລິ້ງ (ໜ້າບິນຈະ 403)", async () => {
+    auth.canReadOrders = false;
+    renderWithProviders(<StockMovements />);
+    const ship = await screen.findByTestId("row-movement-m2");
+    expect(within(ship).getByText("SO-000001")).toBeInTheDocument();
+    expect(within(ship).queryByRole("link")).toBeNull();
   });
 
   it("filter ປະເພດ, ສາງ ແລະ ວັນທີ ຖືກສົ່ງຕາມຄ່າ date-only (ບໍ່ແປງເປັນ ISO)", async () => {

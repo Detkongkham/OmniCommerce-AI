@@ -4,12 +4,12 @@ import type { Permission } from "@oca/shared";
 import { Card } from "@oca/ui";
 import { AlertCircle } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCan } from "@/components/auth/auth-provider";
+import { useCanAll } from "@/components/auth/auth-provider";
 import { useT } from "@/lib/i18n/language-provider";
 
-/** ໜ້າ "ບໍ່ມີສິດ" ຕາມ DESIGN.md §11.8. API ຍັງບັງຄັບສິດຈິງ; ນີ້ເປັນພຽງ UX. */
-export function PermissionGate({ permission, children }: { permission: Permission; children: ReactNode }) {
-  const allowed = useCan(permission);
+/** ໜ້າ "ບໍ່ມີສິດ" ຕາມ DESIGN.md §11.8. API ຍັງບັງຄັບສິດຈິງ; ນີ້ເປັນພຽງ UX. permission ເປັນ array = ຕ້ອງມີຄົບທຸກສິດ */
+export function PermissionGate({ permission, children }: { permission: Permission | readonly Permission[]; children: ReactNode }) {
+  const allowed = useCanAll(typeof permission === "string" ? [permission] : permission);
   const { t } = useT();
   if (allowed) return children;
   return (

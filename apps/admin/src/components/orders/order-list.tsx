@@ -45,7 +45,10 @@ const HEADERS: { key: TranslationKey; right?: boolean }[] = [
 
 export function OrderList({ initialQuery, initialStatus }: { initialQuery: string; initialStatus: OrderStatus | "" }) {
   const { t } = useT();
-  const canWrite = useCan("orders:write");
+  // ຟອມສ້າງບິນຍິງ /variants, /warehouses, /settings/store ທີ່ຕ້ອງ inventory:read ນຳ
+  const canWriteOrders = useCan("orders:write");
+  const canReadInventory = useCan("inventory:read");
+  const canWrite = canWriteOrders && canReadInventory;
   const [search, setSearch] = useState(initialQuery);
   const [status, setStatus] = useState<OrderStatus | "">(initialStatus);
   const [from, setFrom] = useState("");

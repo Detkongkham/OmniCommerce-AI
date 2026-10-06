@@ -89,6 +89,12 @@ export function useAuth(): AuthContextValue {
   return context;
 }
 
+/** ຕ້ອງມີຄົບທຸກສິດ (all-of); ໃຊ້ກັບໜ້າທີ່ເອີ້ນ API ຫຼາຍສິດ */
+export function useCanAll(permissions: readonly Permission[]): boolean {
+  const { can } = useAuth();
+  return permissions.every((permission) => can(permission));
+}
+
 /** ຊ່ອນເມນູ/ປຸ່ມຕາມສິດ. API ຍັງເປັນຜູ້ບັງຄັບສິດຈິງ. */
 export function useCan(permission: Permission): boolean {
   return useAuth().can(permission);

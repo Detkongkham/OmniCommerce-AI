@@ -5,8 +5,10 @@ import type { OrderListItemDto, Page } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
 import { OrderList } from "./order-list";
 
-const auth = vi.hoisted(() => ({ canWrite: true }));
-vi.mock("@/components/auth/auth-provider", () => ({ useCan: () => auth.canWrite }));
+const auth = vi.hoisted(() => ({ canWrite: true, canInventory: true }));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useCan: (permission: string) => (permission === "inventory:read" ? auth.canInventory : auth.canWrite),
+}));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   apiFetch: vi.fn(),
@@ -26,6 +28,7 @@ const SEARCH = "Search order no., name or phone...";
 
 beforeEach(() => {
   auth.canWrite = true;
+  auth.canInventory = true;
   vi.mocked(apiFetch).mockReset();
   mockApi();
 });
@@ -136,6 +139,13 @@ describe("OrderList", () => {
 
   it("ບໍ່ມີ orders:write: ບໍ່ມີປຸ່ມສ້າງບິນ", async () => {
     auth.canWrite = false;
+    renderWithProviders(<OrderList initialQuery="" initialStatus="" />);
+    await screen.findByTestId("row-order-o1");
+    expect(screen.queryByRole("link", { name: "Create order" })).toBeNull();
+  });
+
+  it("ມີ orders:write ແຕ່ບໍ່ມີ inventory:read: ບໍ່ມີປຸ່ມສ້າງບິນ (ຟອມຈະ 403 ຕອນໂຫຼດ)", async () => {
+    auth.canInventory = false;
     renderWithProviders(<OrderList initialQuery="" initialStatus="" />);
     await screen.findByTestId("row-order-o1");
     expect(screen.queryByRole("link", { name: "Create order" })).toBeNull();

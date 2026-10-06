@@ -20,6 +20,7 @@ import {
 import { AlertCircle, History, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useCan } from "@/components/auth/auth-provider";
 import { ServerPager } from "@/components/common/server-pager";
 import { VariantPicker } from "@/components/common/variant-picker";
 import { formatDateTime, formatMovementQuantity } from "@/lib/format";
@@ -58,6 +59,7 @@ const TONES: Record<StockMovementType, StatusTone> = {
 
 export function StockMovements() {
   const { t } = useT();
+  const canReadOrders = useCan("orders:read");
   const [type, setType] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [from, setFrom] = useState("");
@@ -263,9 +265,14 @@ export function StockMovements() {
                   <TableCell className="text-right font-semibold tabular-nums">{formatMovementQuantity(movement.type, movement.quantity)}</TableCell>
                   <TableCell>
                     {movement.orderId && movement.orderNumber ? (
-                      <Link href={`/orders/${movement.orderId}`} className="font-medium text-brand-ink hover:underline">
-                        {movement.orderNumber}
-                      </Link>
+                      canReadOrders ? (
+                        <Link href={`/orders/${movement.orderId}`} className="font-medium text-brand-ink hover:underline">
+                          {movement.orderNumber}
+                        </Link>
+                      ) : (
+                        // ບໍ່ມີ orders:read: ໜ້າບິນຈະ 403 ຈຶ່ງສະແດງເປັນຂໍ້ຄວາມ
+                        movement.orderNumber
+                      )
                     ) : (
                       "—"
                     )}
