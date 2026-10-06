@@ -6,7 +6,7 @@ import { parseEnv } from "./config/env";
 
 async function bootstrap(): Promise<void> {
   const env = parseEnv(process.env);
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   configureApp(app, env);
   await app.listen(env.PORT);
   console.log(`API listening on :${env.PORT}`);

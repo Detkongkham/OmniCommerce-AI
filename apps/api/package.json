@@ -18,6 +18,7 @@
     "@nestjs/platform-express": "^11.2.7",
     "@nestjs/throttler": "^6.7.1",
     "@node-rs/argon2": "^2.2.1",
+    "@oca/channels": "workspace:*",
     "@oca/database": "workspace:*",
     "@oca/shared": "workspace:*",
     "cookie-parser": "^1.4.7",

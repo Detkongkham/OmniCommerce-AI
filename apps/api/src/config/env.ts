@@ -19,6 +19,10 @@ const trustProxySchema = z
     return z.NEVER;
   });
 
+/** ຄ່າວ່າງ ("") ຖືວ່າບໍ່ໄດ້ຕັ້ງ (.env.example ມີແຖວວ່າງ) */
+const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
+const optionalString = z.preprocess(emptyToUndefined, z.string().min(1).optional());
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -34,6 +38,11 @@ const envSchema = z
     TRUST_PROXY: trustProxySchema,
     CORS_ORIGIN: z.string().default("http://localhost:3000"),
     REFRESH_COOKIE_PATH: z.string().startsWith("/").default("/auth"),
+    FACEBOOK_APP_SECRET: optionalString,
+    FACEBOOK_WEBHOOK_VERIFY_TOKEN: optionalString,
+    FACEBOOK_PAGE_ACCESS_TOKEN: optionalString,
+    // ຊີ້ໄປ simulator ໃນ dev; ບໍ່ຕັ້ງ = https://graph.facebook.com/v21.0
+    FACEBOOK_GRAPH_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
   })
   .superRefine((env, ctx) => {
     if (

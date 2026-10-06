@@ -22,7 +22,7 @@ export async function createTestApp(
   }
   try {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    const app = moduleRef.createNestApplication();
+    const app = moduleRef.createNestApplication({ rawBody: true });
     configureApp(app, parseEnv(process.env));
     await app.init();
     return { app, db: app.get<PrismaClient>(PRISMA) };

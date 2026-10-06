@@ -8,6 +8,27 @@ const base = {
 };
 
 describe("parseEnv", () => {
+  it("FACEBOOK_*: ຄ່າວ່າງ (ຈາກ .env.example) = ບໍ່ໄດ້ຕັ້ງ", () => {
+    const env = parseEnv({
+      ...base,
+      FACEBOOK_APP_SECRET: "",
+      FACEBOOK_WEBHOOK_VERIFY_TOKEN: "",
+      FACEBOOK_PAGE_ACCESS_TOKEN: "",
+      FACEBOOK_GRAPH_BASE_URL: "",
+    });
+    expect(env.FACEBOOK_APP_SECRET).toBeUndefined();
+    expect(env.FACEBOOK_WEBHOOK_VERIFY_TOKEN).toBeUndefined();
+    expect(env.FACEBOOK_PAGE_ACCESS_TOKEN).toBeUndefined();
+    expect(env.FACEBOOK_GRAPH_BASE_URL).toBeUndefined();
+  });
+
+  it("FACEBOOK_*: ອ່ານຄ່າທີ່ຕັ້ງ ແລະ ປະຕິເສດ base URL ທີ່ບໍ່ແມ່ນ URL", () => {
+    expect(
+      parseEnv({ ...base, FACEBOOK_APP_SECRET: "s", FACEBOOK_GRAPH_BASE_URL: "http://127.0.0.1:4010" }),
+    ).toMatchObject({ FACEBOOK_APP_SECRET: "s", FACEBOOK_GRAPH_BASE_URL: "http://127.0.0.1:4010" });
+    expect(() => parseEnv({ ...base, FACEBOOK_GRAPH_BASE_URL: "not a url" })).toThrow();
+  });
+
   it("ໃຊ້ຄ່າ default", () => {
     const env = parseEnv(base);
     expect(env.PORT).toBe(3001);

@@ -108,6 +108,9 @@ importers:
       '@node-rs/argon2':
         specifier: ^2.2.1
         version: 2.2.1
+      '@oca/channels':
+        specifier: workspace:*
+        version: link:../../packages/channels
       '@oca/database':
         specifier: workspace:*
         version: link:../../packages/database
