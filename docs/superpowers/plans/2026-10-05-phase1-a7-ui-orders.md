@@ -20,7 +20,7 @@
 * **ສະຫຼຸບເງິນຝັ່ງ client ເປັນພຽງການຄາດຄະເນ** (ໃຊ້ `vatRate`/`pricesIncludeVat` ຈາກ `GET /settings/store`); ບິນທີ່ສ້າງແລ້ວສະແດງຄ່າຈິງຈາກ API. ເງິນທັງໝົດເປັນ string, ບໍ່ໃຊ້ `number` ຄຳນວນ.
 * **ສາງຂອງແຖວ:** ຄ່າເລີ່ມຕົ້ນ "ສາງຫຼັກ" (ບໍ່ສົ່ງ `warehouseId` → API ໃຊ້ສາງ default); ເລືອກສາງອື່ນກໍ່ສົ່ງ `warehouseId`. ສະຕ໋ອກຂາຍໄດ້ຂອງແຖວອ່ານຈາກ `stock[]` ຂອງຜົນ `GET /variants` (ບໍ່ມີ = 0).
 * **ບິນດຽວກັນເລືອກ variant ຊ້ຳບໍ່ໄດ້** (picker ຕັດ variant ທີ່ເລືອກແລ້ວ) ເພື່ອກັນ `400` ຂອງ (variant, ສາງ) ຊ້ຳ.
-* **ເຄື່ອງໝາຍ idempotency:** `POST /orders` ຍັງບໍ່ມີ idempotency key (spec §13); ປຸ່ມສ້າງຖືກປິດຂະນະ submit ເພື່ອກັນກົດຊ້ຳ.
+* **Idempotency (ອັບເດດຫຼັງ commit 9fd1f51):** `POST /orders` ຮອງຮັບ header `Idempotency-Key` (1–128 ຕົວ ASCII ທີ່ພິມໄດ້): key ຊ້ຳ + body ເດີມ = ຄືນບິນເດີມ (201), key ຊ້ຳ + body ຕ່າງ = 409 `CONFLICT`, ຄັ້ງທີ່ສະຕ໋ອກບໍ່ພໍບໍ່ຖືກຈື່. ຟອມສ້າງບິນ (Task 5) ສ້າງ key ຕໍ່ payload ແລະໃຊ້ຊ້ຳເມື່ອ retry payload ເດີມ; ປຸ່ມຍັງຖືກປິດຂະນະ submit ດ້ວຍ.
 
 ## ໂຄງສ້າງໄຟລ໌
 
@@ -2528,4 +2528,4 @@ git commit -m "feat(admin): order detail with countdown, permission-aware action
 * **Role model (§6.1):** ທຸກປຸ່ມຜູກສິດຖືກ (pay=`payments:write`, pack/ship/complete=`logistics:write`, create/cancel=`orders:write`), ໜ້າ/ເມນູ=`orders:read`, ຄອລຳຕົ້ນທຶນມາຈາກ response (Task 6 test ກວດທັງສອງກໍລະນີ).
 * **Contract ຂອງ API ທີ່ແກ້ແລ້ວ:** date-only (Task 3), `vatRate` string (Task 5 ໃຊ້ `formatMoney` ແລະ `calculateOrderTotals` ກັບ string), `code` ຄົງທີ່ (ORDER_INVALID_STATE/RESERVATION_EXPIRED → refetch; INSUFFICIENT_STOCK → ແຖວ), `GET /customers` ແລະ `GET /variants` (Task 4, 5), 404 ຂອງ id ໃນ body ສະແດງຜ່ານ `errorMessage`.
 * **ຊື່ສອດຄ່ອງ:** `OrderFormState`/`OrderLineDraft` (order-form.ts) ໃຊ້ໃນ Task 5; `useOrderAction`+`OrderAction` (Task 1) ໃຊ້ໃນ Task 6; `useCountdown`/`formatCountdown` (Task 2) ໃຊ້ໃນ Task 6; `shortageKeys` + `extractShortages`/`shortageLines` (A6) ໃຊ້ໃນ Task 5.
-* **ສິ່ງທີ່ຍັງເປັນຂໍ້ຈຳກັດ:** `POST /orders` ຍັງບໍ່ມີ idempotency key (ກັນກົດຊ້ຳດ້ວຍການປິດປຸ່ມ); ການຮັບຄືນຜູກບິນຍັງບໍ່ມີ UI (A6).
+* **ສິ່ງທີ່ຍັງເປັນຂໍ້ຈຳກັດ:** key ຂອງ `Idempotency-Key` ຢູ່ໃນ ref ຂອງຟອມ ຈຶ່ງເສຍເມື່ອ reload/remount ຫຼັງ request ທີ່ໝົດເວລາ (ບັນທຶກໄວ້ໃນໂຄດ); ການຮັບຄືນຜູກບິນຍັງບໍ່ມີ UI (A6).
