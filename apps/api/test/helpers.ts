@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { hash } from "@node-rs/argon2";
-import { type PrismaClient, ROLE_DEFINITIONS } from "@oca/database";
+import { type ConversationStatus, type PrismaClient, ROLE_DEFINITIONS } from "@oca/database";
 import { PERMISSIONS } from "@oca/shared";
 import request from "supertest";
 import { expect } from "vitest";
@@ -41,6 +41,7 @@ export async function resetDb(db: PrismaClient): Promise<void> {
   }
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role", ' +
+      '"Message", "Conversation", ' +
       '"OrderItem", "Order", "Customer", "StockMovement", "StockLevel", "ProductImage", ' +
       '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
       '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
@@ -200,4 +201,44 @@ export async function expectLedgerMatches(db: PrismaClient): Promise<void> {
     expect(row.onHand).toBe(row.expectedOnHand);
     expect(row.reserved).toBe(row.expectedReserved);
   }
+}
+
+/** ເຄສ Messenger ສຳລັບ test. ຄ່າທີ່ບໍ່ລະບຸ = OPEN, ບໍ່ມີຂໍ້ຄວາມຄ້າງ, ບໍ່ມີຜູ້ຮັບ/ລູກຄ້າ. */
+export async function seedConversation(
+  db: PrismaClient,
+  overrides: Partial<{
+    externalThreadId: string;
+    displayName: string;
+    status: ConversationStatus;
+    unreadCount: number;
+    lastMessageAt: Date;
+    lastMessagePreview: string | null;
+    assigneeId: string | null;
+    customerId: string | null;
+  }> = {},
+) {
+  const externalThreadId = overrides.externalThreadId ?? `PSID_${Math.random().toString(36).slice(2, 10)}`;
+  return db.conversation.create({
+    data: {
+      channel: "FACEBOOK",
+      externalThreadId,
+      displayName: overrides.displayName ?? `Customer ${externalThreadId}`,
+      status: overrides.status ?? "OPEN",
+      unreadCount: overrides.unreadCount ?? 0,
+      lastMessageAt: overrides.lastMessageAt ?? new Date(),
+      lastMessagePreview: overrides.lastMessagePreview ?? null,
+      assigneeId: overrides.assigneeId ?? null,
+      customerId: overrides.customerId ?? null,
+    },
+  });
+}
+
+/** inbox-read@test.local: ມີ inbox:read ຢ່າງດຽວ (ເບິ່ງໄດ້ ຕອບບໍ່ໄດ້). ຄວນເອີ້ນຫຼັງ resetDb. */
+export async function seedInboxReader(db: PrismaClient) {
+  const role = await db.role.create({
+    data: { name: "INBOX_READ", permissions: { create: [{ permission: "inbox:read" }] } },
+  });
+  return db.user.create({
+    data: { email: "inbox-read@test.local", name: "Inbox Reader", passwordHash: await hash(TEST_PASSWORD), roleId: role.id },
+  });
 }

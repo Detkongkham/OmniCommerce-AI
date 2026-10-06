@@ -68,18 +68,35 @@ enum StockMovementType {
   TRANSFER_OUT // ຍ້າຍອອກໄປສາງອື່ນ      onHand -
 }
 
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum MessageDirection {
+  IN
+  OUT
+}
+
+// PENDING = ບັນທຶກແລ້ວ ກຳລັງເອີ້ນ channel; SENT/FAILED = ຜົນຂອງການສົ່ງ (ຂາເຂົ້າເປັນ SENT ສະເໝີ)
+enum MessageStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // ການຕັ້ງຄ່າຮ້ານ (ແຖວດຽວ, id = 1)
 // ---------------------------------------------------------------------------
 
 model StoreSetting {
-  id               Int      @id @default(1)
-  name             String
-  baseCurrency     Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
-  vatRate          Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
-  pricesIncludeVat Boolean  @default(true)
+  id                 Int      @id @default(1)
+  name               String
+  baseCurrency       Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
+  vatRate            Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
+  pricesIncludeVat   Boolean  @default(true)
   reservationMinutes Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
-  updatedAt        DateTime @updatedAt
+  updatedAt          DateTime @updatedAt
 }
 
 model ExchangeRate {
@@ -250,13 +267,14 @@ model StockMovement {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?  @unique
-  email     String?
-  orders    Order[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String         @id @default(cuid())
+  name          String
+  phone         String?        @unique
+  email         String?
+  orders        Order[]
+  conversations Conversation[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +304,8 @@ model Order {
   shippingPhone   String?
   shippingAddress String?
   note            String?
+  conversationId  String?
+  conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   // Idempotency-Key ຂອງ POST /orders: key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ. hash = sha256 ຂອງ payload
   idempotencyKey  String? @unique
@@ -306,6 +326,7 @@ model Order {
   @@index([customerId])
   @@index([channel, createdAt])
   @@index([createdAt])
+  @@index([conversationId])
 }
 
 model OrderItem {
@@ -358,18 +379,20 @@ model RolePermission {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  name          String
-  isActive      Boolean        @default(true)
-  lastLoginAt   DateTime?
-  roleId        String
-  role          Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                    String         @id @default(cuid())
+  email                 String         @unique
+  passwordHash          String
+  name                  String
+  isActive              Boolean        @default(true)
+  lastLoginAt           DateTime?
+  roleId                String
+  role                  Role           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  refreshTokens         RefreshToken[]
+  auditLogs             AuditLog[]
+  assignedConversations Conversation[]
+  sentMessages          Message[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   @@index([roleId])
 }
@@ -408,4 +431,52 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Inbox (ໂມດູນ 1): ເຄສແຊັດ ແລະ ຂໍ້ຄວາມ
+// ---------------------------------------------------------------------------
+
+// 1 ເຄສ = 1 ລູກຄ້າໃນ 1 ຊ່ອງທາງ (externalThreadId = PSID ຂອງ Messenger). ຊ່ອງທາງມາຈາກ SalesChannel ຄືກັບ Order
+model Conversation {
+  id                 String             @id @default(cuid())
+  channel            SalesChannel
+  externalThreadId   String
+  displayName        String
+  customerId         String?
+  customer           Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assigneeId         String?
+  assignee           User?              @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  status             ConversationStatus @default(OPEN)
+  lastMessageAt      DateTime
+  lastMessagePreview String?
+  unreadCount        Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  messages Message[]
+  orders   Order[]
+
+  @@unique([channel, externalThreadId])
+  @@index([status, lastMessageAt])
+  @@index([assigneeId])
+  @@index([customerId])
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      MessageDirection
+  externalId     String? // mid ຂອງ Messenger; ໃຊ້ກັນຂໍ້ຄວາມຊ້ຳ (NULL ໄດ້ຫຼາຍແຖວ)
+  text           String?
+  attachments    Json? // [{ type, url }]
+  sentByUserId   String?
+  sentBy         User?            @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+  status         MessageStatus    @default(SENT)
+  errorCode      String? // ໃຊ້ຄ່າຈາກ MESSAGE_SEND_ERRORS ຂອງ @oca/shared
+  createdAt      DateTime         @default(now())
+
+  @@unique([conversationId, externalId])
+  @@index([conversationId, createdAt])
 }
