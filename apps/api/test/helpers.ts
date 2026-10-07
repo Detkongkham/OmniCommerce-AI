@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/app.setup";
 import { parseEnv } from "../src/config/env";
 import { PRISMA } from "../src/prisma/prisma.module";
+import { testDatabaseName } from "./env";
 
 export const TEST_PASSWORD = "Password123!";
 
@@ -36,7 +37,7 @@ export async function createTestApp(
 
 export async function resetDb(db: PrismaClient): Promise<void> {
   const [row] = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
-  if (row?.name !== "oca_test") {
+  if (row?.name !== testDatabaseName()) {
     throw new Error(`Refusing to truncate non-test database "${row?.name}"`);
   }
   await db.$executeRawUnsafe(
