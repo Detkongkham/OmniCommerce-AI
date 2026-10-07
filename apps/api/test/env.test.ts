@@ -1,7 +1,11 @@
 import type { PrismaClient } from "@oca/database";
-import { describe, expect, it, vi } from "vitest";
-import { testDatabaseUrl } from "./env";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isValidTestDatabaseName, testDatabaseName, testDatabaseUrl } from "./env";
 import { resetDb } from "./helpers";
+
+// ກັນ OCA_TEST_DB_NAME ໃນ .env ຂອງເຄື່ອງມາລົບກວນ: ທຸກ test ເລີ່ມຈາກຄ່າ default
+beforeEach(() => vi.stubEnv("OCA_TEST_DB_NAME", "oca_test"));
+afterEach(() => vi.unstubAllEnvs());
 
 describe("testDatabaseUrl", () => {
   it("swaps the database name to oca_test", () => {
@@ -24,6 +28,34 @@ describe("testDatabaseUrl", () => {
   });
 });
 
+describe("test database name", () => {
+  it("accepts oca_test and suffixed names", () => {
+    expect(isValidTestDatabaseName("oca_test")).toBe(true);
+    expect(isValidTestDatabaseName("oca_test_cf")).toBe(true);
+  });
+
+  it("rejects real databases and injection attempts", () => {
+    for (const bad of ["oca", "postgres", "oca_test; drop", "OCA_TEST", "oca_test-x", ""]) {
+      expect(isValidTestDatabaseName(bad), bad).toBe(false);
+    }
+  });
+
+  it("defaults to oca_test when unset", () => {
+    expect(testDatabaseName(undefined)).toBe("oca_test");
+  });
+
+  it("uses OCA_TEST_DB_NAME and validates it", () => {
+    expect(testDatabaseName("oca_test_cf")).toBe("oca_test_cf");
+    expect(() => testDatabaseName("oca")).toThrow(/OCA_TEST_DB_NAME/);
+    expect(() => testDatabaseName("")).toThrow(/OCA_TEST_DB_NAME/);
+  });
+
+  it("builds the url with the configured name", () => {
+    const url = new URL(testDatabaseUrl("postgresql://oca:oca@localhost:5433/oca", "oca_test_cf"));
+    expect(url.pathname).toBe("/oca_test_cf");
+  });
+});
+
 describe("resetDb guard", () => {
   const fakeDb = (name: string) => {
     const executeRawUnsafe = vi.fn().mockResolvedValue(0);
@@ -38,6 +70,19 @@ describe("resetDb guard", () => {
     const { db, executeRawUnsafe } = fakeDb("oca");
     await expect(resetDb(db)).rejects.toThrow(/Refusing to truncate non-test database/);
     expect(executeRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it("refuses postgres", async () => {
+    const { db, executeRawUnsafe } = fakeDb("postgres");
+    await expect(resetDb(db)).rejects.toThrow(/Refusing to truncate non-test database/);
+    expect(executeRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it("truncates a configured oca_test_* database", async () => {
+    vi.stubEnv("OCA_TEST_DB_NAME", "oca_test_cf");
+    const { db, executeRawUnsafe } = fakeDb("oca_test_cf");
+    await resetDb(db);
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(2);
   });
 
   it("truncates oca_test", async () => {
