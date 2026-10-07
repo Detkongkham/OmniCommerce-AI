@@ -58,6 +58,8 @@ export function commentPayload(input: {
   fromId: string;
   fromName: string;
   message: string;
+  /** default = postId (ຄອມເມັ້ນລະດັບເທິງ); ໃສ່ id ຄອມເມັ້ນແມ່ເພື່ອຈຳລອງການຕອບ */
+  parentId?: string;
   verb?: "add" | "edited" | "remove";
   timestamp?: number;
 }): object {
@@ -76,7 +78,7 @@ export function commentPayload(input: {
               item: "comment",
               comment_id: input.commentId,
               post_id: input.postId,
-              parent_id: input.postId,
+              parent_id: input.parentId ?? input.postId,
               verb: input.verb ?? "add",
               message: input.message,
               created_time: seconds,

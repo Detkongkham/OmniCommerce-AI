@@ -201,6 +201,11 @@ describe("comments", () => {
     expect(events[0]).toMatchObject({ postId: "P_1", commentId: "P_1_9", authorId: "U1", message: "A1" });
     expect(events[0]?.timestamp.getTime()).toBe(1_700_000_000_000);
   });
+  it("parentId ຂອງ commentPayload: default = postId; ກຳນົດເອງໄດ້", () => {
+    const input = { pageId: "P", postId: "P_1", commentId: "P_1_9", fromId: "U1", fromName: "ກ", message: "A1" };
+    expect(parseFacebookComments(commentPayload(input))[0]?.parentId).toBe("P_1");
+    expect(parseFacebookComments(commentPayload({ ...input, parentId: "P_1_8" }))[0]?.parentId).toBe("P_1_8");
+  });
   it("verb ອື່ນຖືກຂ້າມ", () => {
     expect(parseFacebookComments(commentPayload({ pageId: "P", postId: "P_1", commentId: "c", fromId: "U1", fromName: "ກ", message: "A1", verb: "edited" }))).toEqual([]);
   });

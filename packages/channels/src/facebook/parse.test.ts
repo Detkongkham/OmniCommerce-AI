@@ -101,6 +101,7 @@ describe("parseFacebookComments", () => {
     post_id: "100_300",
     from: { id: "U1", name: "ນາງ ກ" },
     message: "A1 2",
+    parent_id: "100_300",
     created_time: 1_700_000_000,
   };
 
@@ -113,9 +114,22 @@ describe("parseFacebookComments", () => {
         authorId: "U1",
         authorName: "ນາງ ກ",
         message: "A1 2",
+        parentId: "100_300",
         timestamp: new Date(1_700_000_000_000),
       },
     ]);
+  });
+  it("parentId: top-level = post_id; reply = parent_id ຂອງຄອມເມັ້ນແມ່; ບໍ່ມີ → null", () => {
+    expect(parseFacebookComments(change({ ...base, parent_id: "100_300" }))[0]?.parentId).toBe("100_300");
+    expect(parseFacebookComments(change({ ...base, parent_id: "100_200_1" }))[0]?.parentId).toBe("100_200_1");
+    expect(parseFacebookComments(change({ ...base, parent_id: undefined }))[0]?.parentId).toBeNull();
+    expect(parseFacebookComments(change({ ...base, parent_id: "" }))[0]?.parentId).toBeNull();
+  });
+  it("id ແບບ live video ຈິງ", () => {
+    const [event] = parseFacebookComments(
+      change({ ...base, post_id: "123456789_987654321", comment_id: "123456789_987654321_555", parent_id: "123456789_987654321" }),
+    );
+    expect(event).toMatchObject({ postId: "123456789_987654321", commentId: "123456789_987654321_555" });
   });
   it("ຂ້າມ edited/remove, ປະເພດອື່ນ (reaction, post), ຄອມເມັ້ນຂອງ Page ເອງ, ຂໍ້ຄວາມວ່າງ, field ຂາດ", () => {
     expect(parseFacebookComments(change({ ...base, verb: "edited" }))).toEqual([]);

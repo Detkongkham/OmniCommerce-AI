@@ -27,6 +27,8 @@ export interface CommentEvent {
   authorId: string;
   authorName: string;
   message: string;
+  /** ແມ່ຂອງຄອມເມັ້ນ: = postId ຖ້າເປັນຄອມເມັ້ນລະດັບເທິງ; ເປັນ id ຂອງຄອມເມັ້ນອື່ນຖ້າເປັນການຕອບ; null ຖ້າ Meta ບໍ່ສົ່ງ */
+  parentId: string | null;
   timestamp: Date;
 }
 

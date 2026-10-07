@@ -89,6 +89,7 @@ function parseCommentChange(change: unknown, pageId: string | null): CommentEven
     authorId,
     authorName: name ?? `Facebook ${authorId.slice(-4)}`,
     message,
+    parentId: nonEmptyString(value.parent_id),
     timestamp,
   };
 }

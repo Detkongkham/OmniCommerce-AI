@@ -169,11 +169,19 @@ describe("FacebookAdapter comments", () => {
     expect(JSON.parse(String(init.body))).toEqual({ message: "ສະບາຍດີ" });
   });
 
+  it("sendPrivateReply ຍອມຮັບ message_id ໃນ response", async () => {
+    const fetchMock = vi.fn(async () => json(200, { message_id: "m_2" }));
+    expect(await make(fetchMock as unknown as typeof fetch).sendPrivateReply("100_200", "x")).toEqual({ ok: true, externalId: "m_2" });
+  });
+
   it("replyToComment: POST /<commentId>/comments", async () => {
     const fetchMock = vi.fn(async () => json(200, { id: "c_9" }));
     const result = await make(fetchMock as unknown as typeof fetch).replyToComment("100_200", "ຮັບແລ້ວ");
     expect(result).toEqual({ ok: true, externalId: "c_9" });
-    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe("http://graph.test/v1/100_200/comments");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/v1/100_200/comments");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    expect(JSON.parse(String(init.body))).toEqual({ message: "ຮັບແລ້ວ" });
   });
 
   it("ບໍ່ມີ token → CHANNEL_NOT_CONFIGURED; commentId ຜິດຮູບແບບ → SEND_REJECTED (ບໍ່ເອີ້ນ fetch)", async () => {

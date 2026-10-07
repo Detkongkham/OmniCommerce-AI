@@ -54,57 +54,60 @@ export class FacebookAdapter implements ChannelAdapter {
     return parseFacebookWebhook(payload);
   }
 
+  /**
+   * ຄອມເມັ້ນ/Private Reply ເປັນຂອງ Facebook ເທົ່ານັ້ນ ຕັ້ງໃຈບໍ່ໃສ່ໃນ `ChannelAdapter`
+   * (channel ອື່ນຍັງບໍ່ມີແນວຄິດນີ້; ເພີ່ມເມື່ອມີ channel ທີສອງ)
+   */
   parseComments(payload: unknown): CommentEvent[] {
     return parseFacebookComments(payload);
   }
 
   async sendText(threadId: string, text: string): Promise<SendResult> {
-    if (this.config.pageAccessToken && !SAFE_THREAD_ID.test(threadId)) {
-      return { ok: false, code: "SEND_REJECTED", detail: "Invalid thread id" };
-    }
     return this.postGraph(
       "/me/messages",
       { recipient: { id: threadId }, messaging_type: "RESPONSE", message: { text } },
-      (body) => (typeof body.message_id === "string" ? body.message_id : undefined),
+      pickMessageId,
       "Graph returned 2xx without message_id",
+      { idToValidate: threadId, idLabel: "thread" },
     );
   }
 
   /** Private Reply: ຂໍ້ຄວາມສ່ວນຕົວ 1 ຄັ້ງຕໍ່ຄອມເມັ້ນ (ພາຍໃນ 7 ວັນ) ເພື່ອເລີ່ມແຊັດກັບຜູ້ຄອມເມັ້ນ */
   async sendPrivateReply(commentId: string, text: string): Promise<SendResult> {
-    if (this.config.pageAccessToken && !SAFE_THREAD_ID.test(commentId)) {
-      return { ok: false, code: "SEND_REJECTED", detail: "Invalid comment id" };
-    }
     return this.postGraph(
       `/${commentId}/private_replies`,
       { message: text },
-      (body) => (typeof body.message_id === "string" ? body.message_id : typeof body.id === "string" ? body.id : undefined),
+      pickMessageIdOrId,
       "Graph returned 2xx without an id",
+      { idToValidate: commentId, idLabel: "comment" },
     );
   }
 
   /** ຕອບຄອມເມັ້ນສາທາລະນະ */
   async replyToComment(commentId: string, text: string): Promise<SendResult> {
-    if (this.config.pageAccessToken && !SAFE_THREAD_ID.test(commentId)) {
-      return { ok: false, code: "SEND_REJECTED", detail: "Invalid comment id" };
-    }
     return this.postGraph(
       `/${commentId}/comments`,
       { message: text },
-      (body) => (typeof body.id === "string" ? body.id : undefined),
+      pickId,
       "Graph returned 2xx without an id",
+      { idToValidate: commentId, idLabel: "comment" },
     );
   }
 
   private async postGraph(
     path: string,
     payload: unknown,
-    pickId: (body: Record<string, unknown>) => string | undefined,
+    pickExternalId: (body: Record<string, unknown>) => string | undefined,
     missingIdDetail: string,
+    guard: { idToValidate: string; idLabel: "thread" | "comment" },
   ): Promise<SendResult> {
     const token = this.config.pageAccessToken;
     if (!token) {
       return { ok: false, code: "CHANNEL_NOT_CONFIGURED", detail: "FACEBOOK_PAGE_ACCESS_TOKEN is not set" };
+    }
+    // ກວດຫຼັງ token (ລຳດັບເດີມ): id ຜິດຮູບແບບຖືກປະຕິເສດກ່ອນເອີ້ນເຄືອຂ່າຍ
+    if (!SAFE_THREAD_ID.test(guard.idToValidate)) {
+      return { ok: false, code: "SEND_REJECTED", detail: `Invalid ${guard.idLabel} id` };
     }
     let response: Response;
     try {
@@ -125,7 +128,7 @@ export class FacebookAdapter implements ChannelAdapter {
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: errorText(error) };
     }
     if (response.ok) {
-      const id = isRecord(body) ? pickId(body) : undefined;
+      const id = isRecord(body) ? pickExternalId(body) : undefined;
       if (id !== undefined) return { ok: true, externalId: id };
       // 2xx: Meta ອາດສົ່ງແລ້ວ
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: missingIdDetail };
@@ -153,6 +156,10 @@ export class FacebookAdapter implements ChannelAdapter {
     }
   }
 }
+
+const pickMessageId = (body: Record<string, unknown>) => (typeof body.message_id === "string" ? body.message_id : undefined);
+const pickId = (body: Record<string, unknown>) => (typeof body.id === "string" ? body.id : undefined);
+const pickMessageIdOrId = (body: Record<string, unknown>) => pickMessageId(body) ?? pickId(body);
 
 function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 300);
