@@ -18,6 +18,8 @@ export function normalizeCfText(value: string): string {
     // NFKC ແຕກ "ຳ" (U+0EB3) ເປັນ "ໍ"+"າ"; ປະກອບຄືນເພື່ອໃຫ້ລະຫັດສະແດງຜົນເປັນຮູບປົກກະຕິ
     .replace(/\u0ECD\u0EB2/g, "\u0EB3")
     .replace(/[໐-໙]/g, (digit) => String(digit.charCodeAt(0) - LAO_DIGIT_ZERO))
+    // ຕັດຕົວອັກສອນຄວາມກວ້າງສູນ (ZWSP/ZWNJ/ZWJ/WORD JOINER/BOM) ທີ່ມັກຕິດມາກັບຄອມເມັ້ນ ກ່ອນຍຸບຊ່ອງວ່າງ
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
     .toUpperCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -31,6 +33,8 @@ function isCodeAt(text: string, position: number, code: string): boolean {
   return MULTIPLY_THEN_DIGIT.test(text.slice(position + code.length));
 }
 
+// ໝາຍເຫດ: ລະຫັດທີ່ເປັນຕົວເລກ ຫຼື ຂຶ້ນຕົ້ນດ້ວຍ X/×/* ກຳກວມກັບຈຳນວນ (ເຊັ່ນ "1 2" ກັບລະຫັດ "1","2").
+// ຕັດສິນ: ຈຳນວນຊະນະ (greedy) → "1 2" = ລະຫັດ 1 ຈຳນວນ 2.
 function parseTokens(text: string, sortedCodes: readonly string[]): CfLine[] | null {
   const totals = new Map<string, number>();
   let position = 0;

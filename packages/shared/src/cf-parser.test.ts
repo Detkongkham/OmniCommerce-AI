@@ -8,6 +8,20 @@ describe("normalizeCfText", () => {
     expect(normalizeCfText("A໑໒")).toBe("A12");
     expect(normalizeCfText("Ａ１")).toBe("A1");
   });
+
+  it("ຕັດຕົວອັກສອນຄວາມກວ້າງສູນ (ZWSP ແລະ ຄ້າຍກັນ) ກ່ອນຍຸບຊ່ອງວ່າງ", () => {
+    expect(normalizeCfText("A\u200B1")).toBe("A1");
+    expect(normalizeCfText("A\u200B 1")).toBe("A 1");
+    expect(normalizeCfText("\uFEFFA\u200C1\u200D\u2060")).toBe("A1");
+  });
+
+  it("ປະກອບ ຳ (U+0EB3) ຄືນຫຼັງ NFKC (ຂຽນດ້ວຍ escape ເພື່ອບໍ່ໃຫ້ editor normalize)", () => {
+    // input ແຍກສ່ວນ: ດ + ໍ(U+0ECD) + າ(U+0EB2) + " M"
+    expect(normalizeCfText("\u0E94\u0ECD\u0EB2 M")).toBe("\u0E94\u0EB3 M");
+    // ມີວັນນະຍຸດ: ນ + ້(U+0EC9) + ຳ(U+0EB3)
+    expect(normalizeCfText("\u0E99\u0EC9\u0EB3")).toBe("\u0E99\u0EC9\u0EB3");
+    expect(normalizeCfText("\u0E99\u0EC9\u0ECD\u0EB2")).toBe("\u0E99\u0EC9\u0EB3");
+  });
 });
 
 describe("parseCf", () => {
@@ -60,7 +74,17 @@ describe("parseCf", () => {
     expect(parseCf("CF1", ["CF1"])).toEqual(one("CF1"));
   });
 
+  it("ZWSP ກາງລະຫັດຖືກຕັດ", () => {
+    expect(parseCf("A\u200B1", ["A1"])).toEqual(one("A1"));
+  });
+
+  it("ລະຫັດຕົວເລກ: ຈຳນວນຊະນະ (greedy) — ກຳກວມ ຈຶ່ງຖືວ່າເລກທີສອງເປັນຈຳນວນ", () => {
+    expect(parseCf("1 2", ["1", "2"])).toEqual(one("1", 2));
+  });
+
   it("ບໍ່ແມ່ນ CF → null", () => {
+    expect(parseCf(",", codes)).toBeNull();
+    expect(parseCf("CF:", codes)).toBeNull();
     expect(parseCf("A1 ລາຄາເທົ່າໃດ", codes)).toBeNull();
     expect(parseCf("ສະບາຍດີ", codes)).toBeNull();
     expect(parseCf("A12", codes)).toBeNull();

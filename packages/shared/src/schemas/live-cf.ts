@@ -30,7 +30,14 @@ const limitSchema = z.number().int().min(1).max(100_000).nullable();
 export const cfCodeSchema = z
   .string()
   .transform(normalizeCfText)
-  .pipe(z.string().min(1).max(30));
+  .pipe(
+    z
+      .string()
+      .min(1)
+      .max(30)
+      // , ; + ເປັນຕົວແຍກໃນ parser ຈຶ່ງຈັບຄູ່ລະຫັດທີ່ມີຕົວເຫຼົ່ານີ້ບໍ່ໄດ້ຈັກເທື່ອ
+      .refine((code) => !/[,;+]/.test(code), "ລະຫັດຫ້າມມີ , ; ຫຼື +"),
+  );
 
 const requireNonEmpty = (value: Record<string, unknown>) => Object.values(value).some((field) => field !== undefined);
 const NON_EMPTY_MESSAGE = "ຕ້ອງມີຢ່າງໜ້ອຍ 1 field";

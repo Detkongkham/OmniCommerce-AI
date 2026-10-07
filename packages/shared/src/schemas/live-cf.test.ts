@@ -30,6 +30,12 @@ describe("live-cf schemas", () => {
     expect(createLiveItemSchema.safeParse({ code: "   ", variantId: "v1" }).success).toBe(false);
     expect(createLiveItemSchema.safeParse({ code: "X".repeat(31), variantId: "v1" }).success).toBe(false);
   });
+  it("createLiveItem: ລະຫັດມີ , ; + ຖືກປະຕິເສດ (parser ຈັບຄູ່ບໍ່ໄດ້), ຊ່ອງວ່າງພາຍໃນໃຊ້ໄດ້", () => {
+    for (const code of ["A,1", "A;1", "A+1", ",A", "A+"]) {
+      expect(createLiveItemSchema.safeParse({ code, variantId: "v1" }).success).toBe(false);
+    }
+    expect(createLiveItemSchema.safeParse({ code: "A 1", variantId: "v1" }).success).toBe(true);
+  });
   it("updateLiveItem: ຕ້ອງມີຢ່າງໜ້ອຍ 1 field", () => {
     expect(updateLiveItemSchema.safeParse({}).success).toBe(false);
     expect(updateLiveItemSchema.parse({ limit: 5 })).toEqual({ limit: 5 });
