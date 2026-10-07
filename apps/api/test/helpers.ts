@@ -244,7 +244,11 @@ export async function seedInboxReader(db: PrismaClient) {
   });
 }
 
-/** Live/ໂພສສຳລັບ test. items = ລະຫັດ→variant (ລະຫັດຕ້ອງ normalize ແລ້ວ: ຕົວໃຫຍ່). */
+/**
+ * Live/ໂພສສຳລັບ test. items = ລະຫັດ→variant (ລະຫັດຕ້ອງ normalize ແລ້ວ: ຕົວໃຫຍ່).
+ * ຄ່າເລີ່ມຕົ້ນ status LIVE + externalPostId "POST_1" ຈະຊົນ partial unique index ຖ້າເອີ້ນ 2 ຄັ້ງໂດຍບໍ່ override
+ * (ໃຫ້ໃສ່ externalPostId ຕ່າງກັນ ຫຼື status ອື່ນ). status ENDED ຈະຕັ້ງ endedAt ໃຫ້.
+ */
 export async function seedLiveSession(
   db: PrismaClient,
   overrides: Partial<{
@@ -264,6 +268,7 @@ export async function seedLiveSession(
       externalPostId: overrides.externalPostId === undefined ? "POST_1" : overrides.externalPostId,
       publicReplyEnabled: overrides.publicReplyEnabled ?? true,
       startedAt: (overrides.status ?? "LIVE") === "DRAFT" ? null : new Date(),
+      endedAt: overrides.status === "ENDED" ? new Date() : null,
       items: {
         create: (overrides.items ?? []).map((item) => ({
           code: item.code,
