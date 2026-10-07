@@ -40,6 +40,11 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   CONVERSATION_NOT_FOUND: HttpStatus.NOT_FOUND,
   USER_NOT_FOUND: HttpStatus.NOT_FOUND,
   CHANNEL_NOT_CONFIGURED: HttpStatus.SERVICE_UNAVAILABLE,
+  LIVE_SESSION_NOT_FOUND: HttpStatus.NOT_FOUND,
+  LIVE_ITEM_NOT_FOUND: HttpStatus.NOT_FOUND,
+  CF_COMMENT_NOT_FOUND: HttpStatus.NOT_FOUND,
+  LIVE_SESSION_INVALID_STATE: HttpStatus.CONFLICT,
+  LIVE_ITEM_IN_USE: HttpStatus.CONFLICT,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

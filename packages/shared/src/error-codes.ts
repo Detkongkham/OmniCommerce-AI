@@ -40,6 +40,12 @@ export const ERROR_CODES = [
   "CONVERSATION_NOT_FOUND",
   "USER_NOT_FOUND",
   "CHANNEL_NOT_CONFIGURED",
+  // live / CF
+  "LIVE_SESSION_NOT_FOUND",
+  "LIVE_ITEM_NOT_FOUND",
+  "CF_COMMENT_NOT_FOUND",
+  "LIVE_SESSION_INVALID_STATE",
+  "LIVE_ITEM_IN_USE",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
