@@ -41,7 +41,7 @@ export async function resetDb(db: PrismaClient): Promise<void> {
   }
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role", ' +
-      '"Message", "Conversation", ' +
+      '"CfComment", "LiveSessionItem", "LiveSession", "Message", "Conversation", ' +
       '"OrderItem", "Order", "Customer", "StockMovement", "StockLevel", "ProductImage", ' +
       '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
       '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
@@ -241,5 +241,37 @@ export async function seedInboxReader(db: PrismaClient) {
   });
   return db.user.create({
     data: { email: "inbox-read@test.local", name: "Inbox Reader", passwordHash: await hash(TEST_PASSWORD), roleId: role.id },
+  });
+}
+
+/** Live/ໂພສສຳລັບ test. items = ລະຫັດ→variant (ລະຫັດຕ້ອງ normalize ແລ້ວ: ຕົວໃຫຍ່). */
+export async function seedLiveSession(
+  db: PrismaClient,
+  overrides: Partial<{
+    title: string;
+    kind: "LIVE" | "POST";
+    status: "DRAFT" | "LIVE" | "ENDED";
+    externalPostId: string | null;
+    publicReplyEnabled: boolean;
+    items: { code: string; variantId: string; limit?: number | null }[];
+  }> = {},
+) {
+  return db.liveSession.create({
+    data: {
+      title: overrides.title ?? "Test Live",
+      kind: overrides.kind ?? "LIVE",
+      status: overrides.status ?? "LIVE",
+      externalPostId: overrides.externalPostId === undefined ? "POST_1" : overrides.externalPostId,
+      publicReplyEnabled: overrides.publicReplyEnabled ?? true,
+      startedAt: (overrides.status ?? "LIVE") === "DRAFT" ? null : new Date(),
+      items: {
+        create: (overrides.items ?? []).map((item) => ({
+          code: item.code,
+          variantId: item.variantId,
+          limit: item.limit ?? null,
+        })),
+      },
+    },
+    include: { items: true },
   });
 }

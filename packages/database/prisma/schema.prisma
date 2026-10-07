@@ -85,18 +85,44 @@ enum MessageStatus {
   FAILED
 }
 
+enum LiveSessionKind {
+  LIVE
+  POST
+}
+
+enum LiveSessionStatus {
+  DRAFT
+  LIVE
+  ENDED
+}
+
+enum CfOutcome {
+  ORDERED
+  NO_MATCH
+  OUT_OF_STOCK
+  LIMIT_REACHED
+  ERROR
+}
+
+enum CfReplyStatus {
+  NONE
+  SENT
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // ການຕັ້ງຄ່າຮ້ານ (ແຖວດຽວ, id = 1)
 // ---------------------------------------------------------------------------
 
 model StoreSetting {
-  id                 Int      @id @default(1)
-  name               String
-  baseCurrency       Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
-  vatRate            Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
-  pricesIncludeVat   Boolean  @default(true)
-  reservationMinutes Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
-  updatedAt          DateTime @updatedAt
+  id                  Int      @id @default(1)
+  name                String
+  baseCurrency        Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
+  vatRate             Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
+  pricesIncludeVat    Boolean  @default(true)
+  reservationMinutes  Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
+  paymentInstructions String? // ຂໍ້ຄວາມຂໍ້ມູນໂອນເງິນ ໃສ່ໃນສະຫຼຸບບິນ CF
+  updatedAt           DateTime @updatedAt
 }
 
 model ExchangeRate {
@@ -171,24 +197,25 @@ model ProductOptionValue {
 
 // ໜ່ວຍທີ່ຂາຍ ແລະ ນັບສະຕ໋ອກຕົວຈິງ. ສິນຄ້າທີ່ບໍ່ມີຕົວເລືອກກໍມີ 1 variant
 model ProductVariant {
-  id             String               @id @default(cuid())
-  productId      String
-  product        Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sku            String               @unique
-  barcode        String?              @unique
-  name           String? // ເຊັ່ນ "ດຳ / M"; null ຖ້າສິນຄ້າບໍ່ມີຕົວເລືອກ
-  optionValues   ProductOptionValue[]
-  price          Decimal              @db.Decimal(18, 2) // baseCurrency
-  compareAtPrice Decimal?             @db.Decimal(18, 2) // ລາຄາກ່ອນຫຼຸດ
-  costPrice      Decimal              @default(0) @db.Decimal(18, 2) // ຕົ້ນທຶນ (COGS)
-  weightGrams    Int?
-  isActive       Boolean              @default(true)
-  images         ProductImage[]
-  stockLevels    StockLevel[]
-  stockMovements StockMovement[]
-  orderItems     OrderItem[]
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id               String               @id @default(cuid())
+  productId        String
+  product          Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku              String               @unique
+  barcode          String?              @unique
+  name             String? // ເຊັ່ນ "ດຳ / M"; null ຖ້າສິນຄ້າບໍ່ມີຕົວເລືອກ
+  optionValues     ProductOptionValue[]
+  price            Decimal              @db.Decimal(18, 2) // baseCurrency
+  compareAtPrice   Decimal?             @db.Decimal(18, 2) // ລາຄາກ່ອນຫຼຸດ
+  costPrice        Decimal              @default(0) @db.Decimal(18, 2) // ຕົ້ນທຶນ (COGS)
+  weightGrams      Int?
+  isActive         Boolean              @default(true)
+  images           ProductImage[]
+  stockLevels      StockLevel[]
+  stockMovements   StockMovement[]
+  orderItems       OrderItem[]
+  liveSessionItems LiveSessionItem[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   @@index([productId])
 }
@@ -267,14 +294,15 @@ model StockMovement {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id            String         @id @default(cuid())
-  name          String
-  phone         String?        @unique
-  email         String?
-  orders        Order[]
-  conversations Conversation[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  name           String
+  phone          String?        @unique
+  email          String?
+  facebookUserId String?        @unique // ລະຫັດຜູ້ຄອມເມັ້ນ (CF Engine)
+  orders         Order[]
+  conversations  Conversation[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +334,8 @@ model Order {
   note            String?
   conversationId  String?
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  liveSessionId   String?
+  liveSession     LiveSession?  @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
 
   // Idempotency-Key ຂອງ POST /orders: key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ. hash = sha256 ຂອງ payload
   idempotencyKey  String? @unique
@@ -321,12 +351,14 @@ model Order {
 
   items          OrderItem[]
   stockMovements StockMovement[]
+  cfComments     CfComment[]
 
   @@index([status, reservedUntil])
   @@index([customerId])
   @@index([channel, createdAt])
   @@index([createdAt])
   @@index([conversationId])
+  @@index([liveSessionId, customerId, status])
 }
 
 model OrderItem {
@@ -391,6 +423,7 @@ model User {
   auditLogs             AuditLog[]
   assignedConversations Conversation[]
   sentMessages          Message[]
+  liveSessions          LiveSession[]
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -479,4 +512,69 @@ model Message {
 
   @@unique([conversationId, externalId])
   @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Live & Post CF Engine (ໂມດູນ 4)
+// ---------------------------------------------------------------------------
+
+// 1 Live ຫຼື 1 ໂພສທີ່ເປີດຮັບ CF. externalPostId = post_id ທີ່ webhook feed ສົ່ງມາ.
+// ຫ້າມ 2 session ສະຖານະ LIVE ໃຊ້ externalPostId ດຽວກັນ (partial unique index ໃນ migration)
+model LiveSession {
+  id                 String            @id @default(cuid())
+  title              String
+  kind               LiveSessionKind
+  status             LiveSessionStatus @default(DRAFT)
+  externalPostId     String?
+  publicReplyEnabled Boolean           @default(true)
+  startedAt          DateTime?
+  endedAt            DateTime?
+  createdById        String?
+  createdBy          User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  items    LiveSessionItem[]
+  comments CfComment[]
+  orders   Order[]
+
+  @@index([status, externalPostId])
+}
+
+// ລະຫັດ CF → variant ຂອງ session. claimed = ຈຳນວນທີ່ CF ແລ້ວ (increment ໃນ transaction ຂອງຄອມເມັ້ນ)
+model LiveSessionItem {
+  id        String         @id @default(cuid())
+  sessionId String
+  session   LiveSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  code      String // normalize ແລ້ວ (ຕົວໃຫຍ່, ເລກ ASCII)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  limit     Int?
+  claimed   Int            @default(0)
+  createdAt DateTime       @default(now())
+
+  @@unique([sessionId, code])
+  @@index([variantId])
+}
+
+// ledger ຂອງທຸກຄອມເມັ້ນທີ່ເຂົ້າ queue (ໃຊ້ກັນຊ້ຳ, ສະແດງໃນໜ້າ admin, ຂໍ້ມູນໜ້າ Host ໃນອະນາຄົດ)
+model CfComment {
+  id                String        @id @default(cuid())
+  externalCommentId String        @unique
+  sessionId         String
+  session           LiveSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  authorExternalId  String
+  authorName        String
+  message           String
+  outcome           CfOutcome
+  lines             Json? // [{ itemId, code, quantity }]
+  orderId           String?
+  order             Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  replyStatus       CfReplyStatus @default(NONE)
+  replyErrorCode    String? // ຄ່າຈາກ MESSAGE_SEND_ERRORS
+  createdAt         DateTime      @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([sessionId, authorExternalId])
+  @@index([orderId])
 }
