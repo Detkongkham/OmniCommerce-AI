@@ -47,10 +47,16 @@ CREATE TABLE "PaymentSlip" (
 CREATE INDEX "PaymentSlip_orderId_idx" ON "PaymentSlip"("orderId");
 
 -- CreateIndex
+CREATE INDEX "PaymentSlip_conversationId_idx" ON "PaymentSlip"("conversationId");
+
+-- CreateIndex
 CREATE INDEX "PaymentSlip_imageSha256_idx" ON "PaymentSlip"("imageSha256");
 
 -- CreateIndex
 CREATE INDEX "PaymentSlip_readRefNo_idx" ON "PaymentSlip"("readRefNo");
+
+-- CreateIndex
+CREATE INDEX "PaymentSlip_confirmedRefNo_idx" ON "PaymentSlip"("confirmedRefNo");
 
 -- CreateIndex
 CREATE INDEX "PaymentSlip_status_createdAt_idx" ON "PaymentSlip"("status", "createdAt");

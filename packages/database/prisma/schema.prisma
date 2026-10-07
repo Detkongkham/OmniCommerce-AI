@@ -499,6 +499,8 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
+// ຕັ້ງໃຈເກັບສະລິບ/ຮູບໄວ້ຖາວອນເປັນຂໍ້ມູນ train (ຍັງບໍ່ມີ job ລຶບ); orderId/conversationId/messageId
+// ໃຊ້ SetNull ຕັ້ງໃຈ ເພື່ອໃຫ້ສະລິບຢູ່ຕໍ່ເມື່ອລຶບບິນ/ແຊັດ/ຂໍ້ຄວາມ
 /// ສະລິບໂອນເງິນ: ຮູບ + ຜົນອ່ານ + flag + ຄ່າທີ່ແອດມິນຢືນຢັນ (ຄູ່ ຮູບ/ຄ່າທີ່ຖືກ = ຂໍ້ມູນ train ຂອງຂັ້ນ 2)
 model PaymentSlip {
   id              String        @id @default(cuid())
@@ -545,7 +547,9 @@ model PaymentSlip {
 
   @@unique([messageId, attachmentIndex])
   @@index([orderId])
+  @@index([conversationId])
   @@index([imageSha256])
   @@index([readRefNo])
+  @@index([confirmedRefNo])
   @@index([status, createdAt])
 }
