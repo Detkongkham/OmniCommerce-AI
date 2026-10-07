@@ -165,4 +165,14 @@ describe("live sessions (e2e)", () => {
     const res = await request(server()).patch(`/live-sessions/${body.id}`).set(auth).send({ externalPostId: null }).expect(409);
     expect(res.body.code).toBe("LIVE_SESSION_INVALID_STATE");
   });
+
+  it("LIVE: PATCH ທີ່ externalPostId ເທົ່າເກົ່າ ຜ່ານ (200); ຕ່າງຈາກເກົ່າ → 409", async () => {
+    const { body } = await create().expect(201);
+    await addItem(body.id, { code: "a1", variantId: f.v1.id }).expect(201);
+    await request(server()).post(`/live-sessions/${body.id}/start`).set(auth).expect(200);
+    const same = await request(server()).patch(`/live-sessions/${body.id}`).set(auth).send({ title: "ຟອມເຕັມ", externalPostId: "P1" }).expect(200);
+    expect(same.body).toMatchObject({ title: "ຟອມເຕັມ", externalPostId: "P1" });
+    const diff = await request(server()).patch(`/live-sessions/${body.id}`).set(auth).send({ externalPostId: "P2" }).expect(409);
+    expect(diff.body.code).toBe("LIVE_SESSION_INVALID_STATE");
+  });
 });

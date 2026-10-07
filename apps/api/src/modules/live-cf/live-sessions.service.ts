@@ -71,11 +71,14 @@ export class LiveSessionsService {
 
   async update(id: string, input: UpdateLiveSessionInput, actor: AuthUser, ip: string | undefined): Promise<LiveSessionDetailDto> {
     const session = await this.requireSession(id);
-    if (input.externalPostId !== undefined && session.status === "LIVE") {
-      throw apiError("LIVE_SESSION_INVALID_STATE", "externalPostId cannot be changed while the session is live");
-    }
-    if (input.externalPostId === null && session.status === "LIVE") {
-      throw apiError("LIVE_SESSION_INVALID_STATE", "externalPostId cannot be cleared while the session is live");
+    // ຕອນ LIVE ຫ້າມປ່ຽນ/ລ້າງ externalPostId; ຄ່າເທົ່າເກົ່າ (ຟອມເຕັມ) ຜ່ານໄດ້
+    if (session.status === "LIVE" && input.externalPostId !== undefined && input.externalPostId !== session.externalPostId) {
+      throw apiError(
+        "LIVE_SESSION_INVALID_STATE",
+        input.externalPostId === null
+          ? "externalPostId cannot be cleared while the session is live"
+          : "externalPostId cannot be changed while the session is live",
+      );
     }
     await this.prisma.liveSession.update({
       where: { id },
@@ -85,6 +88,7 @@ export class LiveSessionsService {
         ...(input.publicReplyEnabled !== undefined ? { publicReplyEnabled: input.publicReplyEnabled } : {}),
       },
     });
+    if (session.status === "LIVE" && session.externalPostId) this.ingest.invalidate(session.externalPostId);
     await this.audit.record({ userId: actor.id, action: "live.update", entity: "LiveSession", entityId: id, after: { ...input }, ip });
     return this.get(id);
   }

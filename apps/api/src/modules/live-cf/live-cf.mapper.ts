@@ -1,4 +1,5 @@
 import type { Prisma } from "@oca/database";
+import type { CfOutcome, CfReplyStatus, LiveSessionKind, LiveSessionStatus } from "@oca/shared";
 
 export const SESSION_INCLUDE = {
   _count: { select: { items: true, comments: true } },
@@ -39,8 +40,8 @@ export interface LiveItemDto {
 export interface LiveSessionDto {
   id: string;
   title: string;
-  kind: string;
-  status: string;
+  kind: LiveSessionKind;
+  status: LiveSessionStatus;
   externalPostId: string | null;
   publicReplyEnabled: boolean;
   startedAt: Date | null;
@@ -60,11 +61,11 @@ export interface CfCommentDto {
   authorExternalId: string;
   authorName: string;
   message: string;
-  outcome: string;
+  outcome: CfOutcome;
   lines: unknown;
   orderId: string | null;
   orderNumber: string | null;
-  replyStatus: string;
+  replyStatus: CfReplyStatus;
   replyErrorCode: string | null;
   createdAt: Date;
 }
