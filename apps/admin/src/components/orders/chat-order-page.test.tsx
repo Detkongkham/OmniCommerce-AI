@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { clearToasts, getToasts } from "@oca/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -208,5 +208,77 @@ describe("ChatOrderPage", () => {
     release(message("SENT"));
     await waitFor(() => expect(getToasts().map((item) => item.title)).toContain("Order summary sent to the chat"));
     expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("ອອກຈາກໜ້າທັງໜ້າຂະນະ POST /orders ຍັງແລ່ນ: ບິນຖືກສ້າງ, ສະຫຼຸບຍັງຖືກສົ່ງຄັ້ງດຽວ + toast, ບໍ່ push, ບໍ່ມີ error ຈາກ React", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let release: (value: OrderDetailDto) => void = () => {};
+    const pending = new Promise<OrderDetailDto>((resolve) => {
+      release = resolve;
+    });
+    const base = vi.mocked(apiFetch).getMockImplementation() as (p: string, o?: { method?: string }) => Promise<unknown>;
+    vi.mocked(apiFetch).mockImplementation((async (path: string, options?: { method?: string }) =>
+      path === "/orders" && options?.method === "POST" ? pending : base(path, options)) as typeof apiFetch);
+    replies = [message("SENT")];
+    const { user, unmount } = renderWithProviders(<ChatOrderPage conversationId="conv1" />);
+    await submitOrder(user);
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    unmount();
+    release(createdOrder);
+    await waitFor(() => expect(messagePosts()).toHaveLength(1));
+    await waitFor(() => expect(getToasts().map((item) => item.title)).toContain("Order summary sent to the chat"));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it("ສົ່ງສະຫຼຸບ throw: alert ບອກໃຫ້ກວດແຊັດກ່ອນສົ່ງຊ້ຳ (ເຊີບເວີອາດສົ່ງແລ້ວ)", async () => {
+    replies = [new ApiError(503, "x", [], "CHANNEL_NOT_CONFIGURED")];
+    const { user } = renderWithProviders(<ChatOrderPage conversationId="conv1" />);
+    await submitOrder(user);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Check the chat before sending again");
+  });
+
+  it("ສົ່ງສະຫຼຸບ FAILED: alert ບໍ່ເວົ້າເລື່ອງກວດແຊັດ/ຊ້ຳ", async () => {
+    replies = [message("FAILED", "OUTSIDE_WINDOW")];
+    const { user } = renderWithProviders(<ChatOrderPage conversationId="conv1" />);
+    await submitOrder(user);
+    expect(await screen.findByRole("alert")).not.toHaveTextContent(/Check the chat/i);
+  });
+
+  it("a11y: ບິນຖືກສ້າງ → focus ຢູ່ຫົວຂໍ້ h1 (tabindex -1); breadcrumb ສຸດທ້າຍ = ຊື່ໜ້າ ບໍ່ຊ້ຳຫົວຂໍ້", async () => {
+    replies = [new Promise<MessageDto>(() => {}) as unknown as MessageDto];
+    const { user } = renderWithProviders(<ChatOrderPage conversationId="conv1" />);
+    await submitOrder(user);
+    const heading = await screen.findByRole("heading", { level: 1, name: /SO-000009/ });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(heading).toHaveAttribute("tabindex", "-1");
+    const crumb = within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Open order from chat");
+    expect(crumb).toHaveAttribute("aria-current", "page");
+  });
+
+  it("a11y: ສະຖານະ failed → focus ຍ້າຍໄປ alert (ທຸກຄັ້ງທີ່ລົ້ມ ລວມ retry ລົ້ມອີກ)", async () => {
+    replies = [message("FAILED", "CHANNEL_AUTH"), message("FAILED", "CHANNEL_AUTH")];
+    const { user } = renderWithProviders(<ChatOrderPage conversationId="conv1" />);
+    await submitOrder(user);
+    const alert = await screen.findByRole("alert");
+    await waitFor(() => expect(alert).toHaveFocus());
+    await user.click(screen.getByRole("button", { name: "Send summary again" }));
+    await waitFor(() => expect(messagePosts()).toHaveLength(2));
+    const again = await screen.findByRole("alert");
+    await waitFor(() => expect(again).toHaveFocus());
+  });
+
+  it("guard sending: ກົດ retry ສອງຄັ້ງໃນ tick ດຽວ (ປຸ່ມຍັງຢູ່) ສົ່ງຂໍ້ຄວາມເພີ່ມພຽງຄັ້ງດຽວ", async () => {
+    replies = [message("FAILED", "CHANNEL_AUTH"), new Promise<MessageDto>(() => {}) as unknown as MessageDto, message("SENT")];
+    const { user } = renderWithProviders(<ChatOrderPage conversationId="conv1" />);
+    await submitOrder(user);
+    const retry = await screen.findByRole("button", { name: "Send summary again" });
+    act(() => {
+      retry.click();
+      retry.click();
+    });
+    await waitFor(() => expect(messagePosts()).toHaveLength(2));
+    expect(messagePosts()).toHaveLength(2);
   });
 });

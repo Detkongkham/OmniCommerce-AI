@@ -467,7 +467,7 @@ export function useConversation(id: string | null) {
   return useQuery({
     enabled: id !== null,
     queryKey: [...queryKeys.conversations, "detail", id],
-    queryFn: () => apiFetch<ConversationDto>(`/conversations/${id}`),
+    queryFn: () => apiFetch<ConversationDto>(`/conversations/${encodeURIComponent(id ?? "")}`),
   });
 }
 
@@ -481,7 +481,7 @@ export function useMessages(conversationId: string | null) {
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       apiFetch<MessagePage>(
-        `/conversations/${conversationId}/messages${toQueryString({ limit: MESSAGE_PAGE_SIZE, beforeId: pageParam })}`,
+        `/conversations/${encodeURIComponent(conversationId ?? "")}/messages${toQueryString({ limit: MESSAGE_PAGE_SIZE, beforeId: pageParam })}`,
       ),
     getNextPageParam: (last) => (last.hasMore ? last.items.at(-1)?.id : undefined),
   });
@@ -492,7 +492,7 @@ export function useSendMessage() {
   const invalidate = useInvalidate(queryKeys.conversations);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: SendMessageInput }) =>
-      apiFetch<MessageDto>(`/conversations/${id}/messages`, { method: "POST", body: input }),
+      apiFetch<MessageDto>(`/conversations/${encodeURIComponent(id)}/messages`, { method: "POST", body: input }),
     onSuccess: invalidate,
     onError: invalidate,
   });
@@ -502,7 +502,7 @@ export function useUpdateConversation() {
   const invalidate = useInvalidate(queryKeys.conversations);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateConversationInput }) =>
-      apiFetch<ConversationDto>(`/conversations/${id}`, { method: "PATCH", body: input }),
+      apiFetch<ConversationDto>(`/conversations/${encodeURIComponent(id)}`, { method: "PATCH", body: input }),
     onSuccess: invalidate,
     onError: invalidate,
   });
@@ -511,7 +511,7 @@ export function useUpdateConversation() {
 export function useMarkConversationRead() {
   const invalidate = useInvalidate(queryKeys.conversations);
   return useMutation({
-    mutationFn: (id: string) => apiFetch<ConversationDto>(`/conversations/${id}/read`, { method: "POST" }),
+    mutationFn: (id: string) => apiFetch<ConversationDto>(`/conversations/${encodeURIComponent(id)}/read`, { method: "POST" }),
     onSuccess: invalidate,
   });
 }
@@ -521,7 +521,7 @@ export function useCreateCustomerFromChat() {
   const invalidate = useInvalidate(queryKeys.conversations, queryKeys.customers);
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: CreateCustomerFromChatInput }) =>
-      apiFetch<ConversationDto>(`/conversations/${id}/customer`, { method: "POST", body: input }),
+      apiFetch<ConversationDto>(`/conversations/${encodeURIComponent(id)}/customer`, { method: "POST", body: input }),
     onSuccess: invalidate,
   });
 }

@@ -143,6 +143,22 @@ describe("OrderForm (ໂໝດແຊັດ)", () => {
     expect(orderPosts()).toHaveLength(1);
   });
 
+  it("ອອກຈາກໜ້າຂະນະ POST ຍັງແລ່ນ: onCreated ຍັງຖືກເອີ້ນຄັ້ງດຽວ (ບິນຖືກສ້າງແລ້ວ ຕ້ອງສົ່ງສະຫຼຸບ)", async () => {
+    let release: (value: OrderDetailDto) => void = () => {};
+    const pending = new Promise<OrderDetailDto>((resolve) => {
+      release = resolve;
+    });
+    mockApi({ "/orders": pending });
+    const onCreated = vi.fn();
+    const { user, unmount } = renderWithProviders(<OrderForm chat={{ conversation: conversation(mali), onCreated }} />);
+    await addTeeAndSubmit(user);
+    await waitFor(() => expect(orderPosts()).toHaveLength(1));
+    unmount();
+    release(created);
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    expect(onCreated).toHaveBeenCalledWith(created, { sendSummary: true });
+  });
+
   it("onCreated ຖືກເອີ້ນຫຼັງ saving ຖືກລ້າງ ແລະ ບໍ່ມີ alert ຂອງຟອມ (ຢູ່ນອກ try ຂອງການສ້າງ)", async () => {
     const seen: { alerts: number } = { alerts: -1 };
     const onCreated = vi.fn(() => {

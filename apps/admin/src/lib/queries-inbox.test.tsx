@@ -205,3 +205,39 @@ describe("useAssignees", () => {
     expect(vi.mocked(apiFetch).mock.calls[0]?.[0]).toBe("/inbox/assignees");
   });
 });
+
+describe("conversation id ໃນ path ຖືກ encode", () => {
+  const raw = "a/b?x=1#h";
+  const enc = encodeURIComponent(raw);
+
+  it("hooks ທັງໝົດ encodeURIComponent id (id ມີ / ແລະ ?)", async () => {
+    vi.mocked(apiFetch).mockResolvedValue({ ...conversation, items: [], hasMore: false });
+    const { Wrapper } = wrapper();
+    const calls = () => vi.mocked(apiFetch).mock.calls.map((call) => call[0]);
+
+    renderHook(() => useConversation(raw), { wrapper: Wrapper });
+    renderHook(() => useMessages(raw), { wrapper: Wrapper });
+    await waitFor(() => expect(calls()).toContain(`/conversations/${enc}`));
+    await waitFor(() => expect(calls().some((path) => String(path).startsWith(`/conversations/${enc}/messages?`))).toBe(true));
+
+    const send = renderHook(() => useSendMessage(), { wrapper: Wrapper });
+    const update = renderHook(() => useUpdateConversation(), { wrapper: Wrapper });
+    const read = renderHook(() => useMarkConversationRead(), { wrapper: Wrapper });
+    const customer = renderHook(() => useCreateCustomerFromChat(), { wrapper: Wrapper });
+    await act(async () => {
+      await send.result.current.mutateAsync({ id: raw, input: { text: "x" } });
+      await update.result.current.mutateAsync({ id: raw, input: {} as never });
+      await read.result.current.mutateAsync(raw);
+      await customer.result.current.mutateAsync({ id: raw, input: {} as never });
+    });
+    expect(calls()).toEqual(
+      expect.arrayContaining([
+        `/conversations/${enc}/messages`,
+        `/conversations/${enc}`,
+        `/conversations/${enc}/read`,
+        `/conversations/${enc}/customer`,
+      ]),
+    );
+    expect(calls().some((path) => String(path).includes(raw))).toBe(false);
+  });
+});

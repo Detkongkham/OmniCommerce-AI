@@ -181,8 +181,9 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
       submitting.current = false;
       if (mounted.current) setSaving(false);
     }
-    // ນອກ try: ຄວາມຜິດພາດຂອງ handler (ເຊັ່ນ ສົ່ງສະຫຼຸບ) ຕ້ອງບໍ່ຖືກສະແດງເປັນ "ສ້າງບິນບໍ່ສຳເລັດ"
-    if (created && chat && mounted.current) chat.onCreated(created, { sendSummary });
+    // ນອກ try: ຄວາມຜິດພາດຂອງ handler (ເຊັ່ນ ສົ່ງສະຫຼຸບ) ຕ້ອງບໍ່ຖືກສະແດງເປັນ "ສ້າງບິນບໍ່ສຳເລັດ".
+    // ເອີ້ນແມ່ນແຕ່ຫຼັງ unmount: ບິນຖືກສ້າງ (ຈອງສະຕ໋ອກ) ແລ້ວ ຜູ້ເອີ້ນຕ້ອງໄດ້ສົ່ງສະຫຼຸບ/ແຈ້ງຜົນ (ມັນປ້ອງກັນ state ຂອງຕົນເອງ)
+    if (created && chat) chat.onCreated(created, { sendSummary });
   }
 
   const modeOptions: { value: CustomerMode; label: string }[] = [

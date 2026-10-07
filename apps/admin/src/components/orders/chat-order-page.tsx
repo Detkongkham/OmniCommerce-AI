@@ -12,7 +12,7 @@ import { useConversation, useSendMessage } from "@/lib/queries";
 import type { OrderDetailDto } from "@/lib/types";
 import { OrderForm } from "./order-form";
 
-type SummaryState = { kind: "idle" } | { kind: "sending" } | { kind: "failed"; reason: string };
+type SummaryState = { kind: "idle" } | { kind: "sending" } | { kind: "failed"; reason: string; thrown: boolean };
 
 /**
  * ເປີດບິນຈາກແຊັດ (`/orders/new?conversationId=`): ໂຫຼດເຄສ → OrderForm (ໂໝດແຊັດ) → ສົ່ງສະຫຼຸບເຂົ້າແຊັດ.
@@ -45,23 +45,37 @@ export function ChatOrderPage({ conversationId }: { conversationId: string }) {
       const message = await send.mutateAsync({ id: conversationId, input: { text: buildOrderSummary(order) } });
       // API ຕອບ 201 ແຕ່ status=FAILED (ເຊັ່ນ OUTSIDE_WINDOW) ກໍ່ຖືວ່າສົ່ງບໍ່ສຳເລັດ
       if (message.status === "FAILED") {
-        if (mounted.current) setSummary({ kind: "failed", reason: t(sendErrorKey(message.errorCode)) });
+        if (mounted.current) setSummary({ kind: "failed", reason: t(sendErrorKey(message.errorCode)), thrown: false });
         return;
       }
       toast.success(t("orders.chat.sent"));
       if (mounted.current) router.push(chatUrl);
     } catch (error) {
-      if (mounted.current) setSummary({ kind: "failed", reason: errorMessage(error, t) });
+      if (mounted.current) setSummary({ kind: "failed", reason: errorMessage(error, t), thrown: true });
     } finally {
       sending.current = false;
     }
   }
 
+  // ເອີ້ນໄດ້ແມ່ນແຕ່ຫຼັງໜ້າ unmount (ບິນຖືກສ້າງແລ້ວ): ສົ່ງສະຫຼຸບຕໍ່ (sendSummary ປ້ອງກັນຕົນເອງ) ແຕ່ບໍ່ຕັ້ງ state / ບໍ່ push
   function onCreated(order: OrderDetailDto, options: { sendSummary: boolean }) {
-    setCreated(order);
+    if (mounted.current) setCreated(order);
     if (options.sendSummary) void sendSummary(order);
-    else router.push(chatUrl);
+    else if (mounted.current) router.push(chatUrl);
   }
+
+  // a11y: ບິນຖືກສ້າງ → focus ຫົວຂໍ້; ສົ່ງສະຫຼຸບລົ້ມ → focus alert (ອ່ານອອກສຽງ + ຢູ່ໃກ້ປຸ່ມ Retry)
+  const pageRef = useRef<HTMLDivElement>(null);
+  const alertRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (!created) return;
+    const heading = pageRef.current?.querySelector("h1");
+    heading?.setAttribute("tabindex", "-1");
+    heading?.focus();
+  }, [created]);
+  useEffect(() => {
+    if (summary.kind === "failed") alertRef.current?.focus();
+  }, [summary]);
 
   const backLink = (
     <Link href={chatUrl} className={cn(buttonVariants({ variant: "outline" }), "rounded-xl")}>
@@ -71,9 +85,9 @@ export function ChatOrderPage({ conversationId }: { conversationId: string }) {
 
   if (created) {
     return (
-      <div>
+      <div ref={pageRef}>
         <PageHeader
-          breadcrumbs={[t("nav.home"), t("inbox.title"), t("orders.chat.createdTitle", { number: created.orderNumber })]}
+          breadcrumbs={[t("nav.home"), t("inbox.title"), t("orders.chat.title")]}
           title={t("orders.chat.createdTitle", { number: created.orderNumber })}
         />
         <div className="px-3 pb-10 sm:px-6">
@@ -84,8 +98,9 @@ export function ChatOrderPage({ conversationId }: { conversationId: string }) {
               </p>
             ) : null}
             {summary.kind === "failed" ? (
-              <p role="alert" className="rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-ink">
+              <p ref={alertRef} tabIndex={-1} role="alert" className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-brand border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-ink">
                 {t("orders.chat.sendFailed", { number: created.orderNumber, reason: summary.reason })}
+                {summary.thrown ? ` ${t("orders.chat.checkChatBeforeResend")}` : ""}
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2">

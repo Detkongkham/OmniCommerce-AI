@@ -24,10 +24,9 @@ describe("/orders/new page", () => {
     expect(gate.props.children.props.conversationId).toBe("conv1");
   });
 
-  it("conversationId ວ່າງ ຫຼື ເປັນ array: ເປັນຟອມປົກກະຕິ (ບໍ່ຕ້ອງ inbox:write)", async () => {
+  it("conversationId ເປັນ array ຫຼື ມີແຕ່ວ່າງ: notFound() (ບໍ່ຫຼຸດໄປຟອມປົກກະຕິແບບງຽບໆ)", async () => {
     for (const value of ["", "  ", ["a", "b"]]) {
-      const gate = await render({ conversationId: value });
-      expect([...gate.props.permission].sort()).toEqual(["inventory:read", "orders:write"]);
+      await expect(render({ conversationId: value })).rejects.toThrow();
     }
   });
 });
