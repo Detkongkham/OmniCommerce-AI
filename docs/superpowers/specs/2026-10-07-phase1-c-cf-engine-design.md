@@ -27,7 +27,7 @@
 - `Order.liveSessionId?` (FK, SetNull, index `[liveSessionId, customerId, status]`).
 - `Customer.facebookUserId?` unique.
 - `StoreSetting.paymentInstructions String?` (ຂໍ້ຄວາມຂໍ້ມູນໂອນ; ແກ້ໃນໜ້າ `/settings` ເດີມ).
-- ສິດ: `live:read`, `live:write`.
+- ສິດ: `live-cf:read`, `live-cf:write` (module `live-cf` ມີໃນ MODULES ແລະ role seed ແລ້ວ).
 
 ## 4. Parser (`@oca/shared`, function ບໍລິສຸດ)
 
@@ -58,18 +58,18 @@
 
 ## 7. API ແລະ ສິດ
 
-`apps/api/src/modules/live-cf` (ມີ module ເປົ່າຢູ່ແລ້ວ): `GET/POST /live-sessions`, `GET/PATCH /live-sessions/:id`, items CRUD, `POST /:id/start`, `POST /:id/end`, `GET /:id/comments` (ແບ່ງໜ້າ, ກອງ outcome), resend. `live:read` ອ່ານ, `live:write` ແກ້/ເລີ່ມ/ຈົບ/ສົ່ງໃໝ່. ເພີ່ມ route ເຂົ້າ permission sweep, ກວດບົດບາດ seeded, ແລະ error code ໃໝ່ເຂົ້າ `ERROR_CODES` + i18n. ທຸກ id ອ້າງອີງບໍ່ພົບ = 404. ການ start ຕ້ອງມີ `externalPostId` ແລະ ຢ່າງນ້ອຍ 1 ລະຫັດ; ຈົບ session ບໍ່ຍົກເລີກບິນທີ່ຈອງແລ້ວ.
+`apps/api/src/modules/live-cf` (ມີ module ເປົ່າຢູ່ແລ້ວ): `GET/POST /live-sessions`, `GET/PATCH /live-sessions/:id`, items CRUD, `POST /:id/start`, `POST /:id/end`, `GET /:id/comments` (ແບ່ງໜ້າ, ກອງ outcome), resend. `live-cf:read` ອ່ານ, `live-cf:write` ແກ້/ເລີ່ມ/ຈົບ/ສົ່ງໃໝ່. ເພີ່ມ route ເຂົ້າ permission sweep, ກວດບົດບາດ seeded, ແລະ error code ໃໝ່ເຂົ້າ `ERROR_CODES` + i18n. ທຸກ id ອ້າງອີງບໍ່ພົບ = 404. ການ start ຕ້ອງມີ `externalPostId` ແລະ ຢ່າງນ້ອຍ 1 ລະຫັດ; ຈົບ session ບໍ່ຍົກເລີກບິນທີ່ຈອງແລ້ວ.
 
 ## 8. Admin UI (4a-2)
 
-ໜ້າ `/live`: ລາຍການ session; ສ້າງ/ແກ້ session; ຕາຕະລາງລະຫັດ→variant (ໃຊ້ VariantPicker ເດີມ); ປຸ່ມ start/end; ຕາຕະລາງຄອມເມັ້ນ (ledger) ພ້ອມ outcome, ລິ້ງໄປບິນ, ສະຖານະຂໍ້ຄວາມ + ສົ່ງໃໝ່; refetch ທຸກ ~5 ວິ ໃນ session LIVE (ບໍ່ມີ SSE ໃນ 4a). Nav ຕາມ `live:read`; ປະຕິບັດຕາມ DESIGN.md, i18n ລາວ, a11y ຄືຂອງ 1a/2a.
+ໜ້າ `/live`: ລາຍການ session; ສ້າງ/ແກ້ session; ຕາຕະລາງລະຫັດ→variant (ໃຊ້ VariantPicker ເດີມ); ປຸ່ມ start/end; ຕາຕະລາງຄອມເມັ້ນ (ledger) ພ້ອມ outcome, ລິ້ງໄປບິນ, ສະຖານະຂໍ້ຄວາມ + ສົ່ງໃໝ່; refetch ທຸກ ~5 ວິ ໃນ session LIVE (ບໍ່ມີ SSE ໃນ 4a). Nav ຕາມ `live-cf:read`; ປະຕິບັດຕາມ DESIGN.md, i18n ລາວ, a11y ຄືຂອງ 1a/2a.
 
 ## 9. ການທົດສອບ
 
 - Parser: ຮູບແບບທັງໝົດ, ເລກລາວ, ລະຫັດມີຊ່ອງ, ຄຳທີ່ບໍ່ແມ່ນ CF, ຈຳນວນນອກຊ່ວງ, ລະຫັດຊ້ຳ.
 - Adapter: fixture ຄອມເມັ້ນ (add, edit/remove ຖືກຂ້າມ, ຂອງ Page ເອງ), Private Reply/ຕອບຄອມເມັ້ນ ຖືກ/ຜິດ.
 - API/e2e: `commentId` ຊ້ຳ, ສະຕ໋ອກບໍ່ພໍ, limit, merge + ຣີເຊັດເວລາ, all-or-nothing, CF ພ້ອມກັນຂອງຄົນດຽວບໍ່ຈອງເກີນ, ບິນໝົດເວລາ/PAID ບໍ່ merge, ສົ່ງລົ້ມ → resend ບໍ່ສ້າງບິນຊ້ຳ, post ທີ່ບໍ່ແມ່ນ session LIVE ຖືກຂ້າມ, permission sweep.
-- Admin: component test ລວມ load-error+Retry, read-only ເມື່ອບໍ່ມີ `live:write`.
+- Admin: component test ລວມ load-error+Retry, read-only ເມື່ອບໍ່ມີ `live-cf:write`.
 - Smoke ໃນ Chrome ຈິງດ້ວຍ simulator ໃນ copy/ຖານ/ພອດແຍກ (ບໍ່ແຕະ dev server ຫຼື DB `oca` ຂອງຜູ້ໃຊ້): ຄອມເມັ້ນ → ບິນ → ຂໍ້ຄວາມຂາອອກ → ໝົດເວລາ worker ຄືນສະຕ໋ອກ.
 
 ## 10. ການແບ່ງ plan
