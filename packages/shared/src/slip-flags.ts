@@ -45,11 +45,16 @@ export function accountMatches(dest: string, accountNo: string): boolean {
 }
 
 function amountMismatch(input: SlipFlagInput, order: SlipFlagOrder, amount: string): boolean {
-  if (input.currency !== null && input.currency !== order.currency) return true;
+  if (input.currency !== null && input.currency.toUpperCase() !== order.currency.toUpperCase()) return true;
   const normalized = normalizeSlipAmount(amount);
   if (normalized === null) return true;
-  const expected = new D(order.total).div(order.exchangeRate).toDecimalPlaces(2);
-  return !new D(normalized).eq(expected);
+  // ຂໍ້ມູນບິນເສຍ (ບໍ່ແມ່ນຕົວເລກ / rate 0) → ຖືວ່າບໍ່ຕົງ ແທນທີ່ຈະ throw
+  try {
+    const expected = new D(order.total).div(order.exchangeRate).toDecimalPlaces(2);
+    return !expected.isFinite() || !new D(normalized).eq(expected);
+  } catch {
+    return true;
+  }
 }
 
 /** ຄິດ flag ຂອງສະລິບ (pure). ຄືນຕາມລຳດັບ SLIP_FLAGS. */
@@ -80,6 +85,7 @@ export function computeSlipFlags(input: SlipFlagInput): SlipFlag[] {
   ) {
     found.add("ORDER_NOT_PAYABLE");
   }
+  // ຕັ້ງບັນຊີຮ້ານແລ້ວ ແຕ່ອ່ານບັນຊີປາຍທາງບໍ່ໄດ້ ຖືວ່າອ່ານບໍ່ຄົບ
   if (input.amount === null || input.refNo === null || (accountsConfigured && input.destAccount === null)) {
     found.add("UNREADABLE_FIELDS");
   }

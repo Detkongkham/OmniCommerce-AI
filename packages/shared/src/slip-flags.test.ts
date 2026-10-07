@@ -51,6 +51,35 @@ describe("computeSlipFlags", () => {
     }
   });
 
+  it("ຂໍ້ມູນບິນເສຍ (total/exchangeRate ບໍ່ແມ່ນຕົວເລກ ຫຼື rate 0) → AMOUNT_MISMATCH ບໍ່ throw", () => {
+    for (const patch of [{ exchangeRate: "abc" }, { exchangeRate: "" }, { exchangeRate: "0" }, { total: "abc" }]) {
+      expect(flags({ order: { ...order, ...patch } })).toEqual(["AMOUNT_MISMATCH"]);
+    }
+  });
+
+  it("ປັດ half-up ເປັນ 2 ຕຳແໜ່ງ", () => {
+    const third = { ...order, exchangeRate: "3" };
+    expect(flags({ order: third, amount: "33333.33" })).toEqual([]);
+    expect(flags({ order: third, amount: "33333.34" })).toEqual(["AMOUNT_MISMATCH"]);
+    const eighth = { ...order, total: "1.00", exchangeRate: "8" };
+    expect(flags({ order: eighth, amount: "0.13" })).toEqual([]);
+    expect(flags({ order: eighth, amount: "0.12" })).toEqual(["AMOUNT_MISMATCH"]);
+  });
+
+  it("ສະກຸນບໍ່ແຍກຕົວພິມໃຫຍ່/ນ້ອຍ", () => {
+    expect(flags({ currency: "lak" })).toEqual([]);
+  });
+
+  it("ຂອບເຂດ: ໂອນກ່ອນບິນພໍດີ 5 ນາທີ ບໍ່ມີ flag; reservedUntil = now → ORDER_NOT_PAYABLE", () => {
+    expect(flags({ paidAt: new Date("2026-10-07T07:55:00.000Z") })).toEqual([]);
+    expect(flags({ order: { ...order, reservedUntil: now } })).toEqual(["ORDER_NOT_PAYABLE"]);
+  });
+
+  it("ບໍ່ມີບິນ ແຕ່ຍັງຕິດ flag ທີ່ບໍ່ຂຶ້ນກັບບິນ", () => {
+    expect(flags({ order: null, duplicateRef: true })).toEqual(["DUPLICATE_REF"]);
+    expect(flags({ order: null, destAccount: "999999999999" })).toEqual(["DEST_MISMATCH"]);
+  });
+
   it("ບໍ່ມີບິນ (ຍັງບໍ່ຜູກ) → ບໍ່ກວດຍອດ/ເວລາ/ສະຖານະ", () => {
     expect(flags({ order: null, amount: "1.00" })).toEqual([]);
   });
@@ -114,7 +143,8 @@ describe("computeSlipFlags", () => {
 describe("accountMatches", () => {
   it.each([
     ["010-12-00-0123", "01012000123", true],
-    ["010 12 00 0123", "010120000123", false],
+    ["010 12 00 0123", "01012000123", true],
+    ["010-12-00-0123", "010120000123", false],
     ["xxx0123", "010120000123", true],
     ["***123", "010120000123", false], // masked ແຕ່ເຫຼືອ <4 ຫຼັກ
     ["", "123", false],
