@@ -1418,8 +1418,9 @@ export class LocalDiskStorage implements StorageService {
 
 ```
 # Slip verification
-# ໂຟເດີເກັບຮູບສະລິບ (API ແລະ worker ຕ້ອງຊີ້ໄປບ່ອນດຽວກັນ; ໃນ production ໃຊ້ volume ຮ່ວມ)
-SLIP_STORAGE_DIR=./.data/slips
+# ໂຟເດີເກັບຮູບສະລິບ (API ແລະ worker ຕ້ອງຊີ້ໄປບ່ອນດຽວກັນ; ໃນ production ໃຊ້ volume ຮ່ວມ ແລະ path ແບບ absolute)
+# path ແບບ relative ຖືກຕີຄວາມຈາກ cwd ຂອງ process (apps/api ແລະ apps/worker) ຈຶ່ງໃຊ້ ../../ ໃຫ້ຊີ້ root ຂອງ repo ຄືກັນທັງສອງ
+SLIP_STORAGE_DIR=../../.data/slips
 # fake = ບໍ່ໃຊ້ AI (ແອດມິນຕື່ມຄ່າມື). reader ຈິງຈະເພີ່ມໃນຂັ້ນ 2
 SLIP_READER=fake
 # ສະເພາະ SLIP_READER=fake: ຜົນອ່ານຈຳລອງ ເຊັ່ນ {"amount":"100000","currency":"LAK","refNo":"R1"}
