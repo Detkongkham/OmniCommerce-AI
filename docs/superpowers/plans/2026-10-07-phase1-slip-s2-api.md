@@ -30,6 +30,7 @@
 | `apps/api/src/modules/payments/slips.controller.ts` (ໃໝ່) | routes + ສິດ |
 | `apps/api/src/modules/payments/payments.module.ts` (ແກ້) | wiring |
 | `apps/api/src/modules/orders/orders.service.ts` (ແກ້) | ແຍກ `applyTransition` + ເພີ່ມ `payWithin` |
+| `packages/shared/src/schemas/inventory.ts`, `apps/api/src/modules/inventory/store-settings.service.ts` (ແກ້) | `receivingAccounts` ໃນ settings (Task 9) |
 | `apps/api/test/helpers.ts` (ແກ້) | `createTestApp(overrides, configure?)` |
 | `apps/api/test/slips.e2e.test.ts` (ໃໝ່) | e2e ຂອງ slips |
 | `apps/api/test/orders-pay-within.test.ts` (ໃໝ່) | test `payWithin` |
@@ -1780,7 +1781,77 @@ const OPEN_STATUSES = ["PENDING_READ", "READ", "READ_FAILED"] as const;
 
 ---
 
-### Task 9: ກວດລວມ + ເອກະສານ
+### Task 9: ບັນຊີຮັບເງິນຂອງຮ້ານ (`receivingAccounts`) ໃນ settings
+
+ບັນຊີຮັບເງິນຕັ້ງຜ່ານ `PATCH /settings/store` ເດີມ (ສິດ `inventory:write` ຄືກັບ field ຮ້ານອື່ນ → OWNER/MANAGER). ເປັນ [] = ບໍ່ກວດບັນຊີປາຍທາງ.
+
+**Files:**
+- Modify: `packages/shared/src/schemas/inventory.ts`, `packages/shared/src/schemas/inventory.test.ts`
+- Modify: `apps/api/src/modules/inventory/store-settings.service.ts`
+- Modify: `apps/api/test/store-settings.e2e.test.ts`
+
+- [ ] **Step 1: test ແດງ (shared)** — ໃນ `inventory.test.ts` ພາຍໃນ `describe("updateStoreSettingsSchema", ...)` ເພີ່ມ:
+
+```ts
+  it("receivingAccounts: ຮັບລາຍການຖືກ (ແລະ [] ເພື່ອລ້າງ); ປະຕິເສດ accountNo ທີ່ບໍ່ມີຕົວເລກ ແລະ >20 ລາຍການ", () => {
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: [{ bank: "BCEL", accountNo: "010-12-00-0123" }] }).success).toBe(true);
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: [] }).success).toBe(true);
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: [{ bank: "BCEL", accountNo: "abc" }] }).success).toBe(false);
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: Array.from({ length: 21 }, () => ({ bank: "A", accountNo: "1" })) }).success).toBe(false);
+  });
+```
+
+`pnpm --filter @oca/shared test -- inventory` → **FAIL** (strictObject ປະຕິເສດ key ໃໝ່). ແລ້ວໃນ `inventory.ts`: `import { receivingAccountsSchema } from "./slips";` ແລະ ໃນ `updateStoreSettingsSchema` ເພີ່ມ `receivingAccounts: receivingAccountsSchema.optional(),` ຫຼັງ `reservationMinutes`. → PASS; `pnpm --filter @oca/shared build`.
+
+- [ ] **Step 2: test ແດງ (api)** — ໃນ `apps/api/test/store-settings.e2e.test.ts`: ແກ້ test "GET ສ້າງແຖວເລີ່ມຕົ້ນ" ໃຫ້ `toEqual` ມີ `receivingAccounts: []`; ແລະ ເພີ່ມ:
+
+```ts
+  it("PATCH receivingAccounts: ບັນທຶກ + ອ່ານຄືນ + audit; ລ້າງດ້ວຍ []; ຂໍ້ມູນຜິດຮູບແບບໃນ DB ບໍ່ເຮັດໃຫ້ GET ລົ້ມ", async () => {
+    const writer = await bearerFor(app, "inv-write@test.local");
+    const accounts = [{ bank: "BCEL", accountNo: "010-12-00-0123", accountName: "OCA" }];
+    const saved = await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: accounts }).expect(200);
+    expect(saved.body.receivingAccounts).toEqual(accounts);
+    const reader = await bearerFor(app, "inv-read@test.local");
+    expect((await request(server()).get("/settings/store").set(reader).expect(200)).body.receivingAccounts).toEqual(accounts);
+    expect(await db.auditLog.count({ where: { action: "settings.store.update" } })).toBe(1);
+
+    await db.storeSetting.update({ where: { id: 1 }, data: { receivingAccounts: [{ bad: true }, accounts[0]] } });
+    expect((await request(server()).get("/settings/store").set(reader).expect(200)).body.receivingAccounts).toEqual(accounts);
+
+    const cleared = await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: [] }).expect(200);
+    expect(cleared.body.receivingAccounts).toEqual([]);
+    await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: [{ bank: "A", accountNo: "x" }] }).expect(400);
+  });
+```
+
+`pnpm --filter @oca/api test -- store-settings` → **FAIL**.
+
+- [ ] **Step 3: implement** — `store-settings.service.ts`:
+  - import `type ReceivingAccount`, `receivingAccountSchema` ຈາກ `@oca/shared`.
+  - `StoreSettingsDto` ເພີ່ມ `receivingAccounts: ReceivingAccount[];`
+  - helper ເທິງ `toStoreSettingsDto`:
+
+```ts
+/** ອ່ານ Json ຂອງ DB ຢ່າງປອດໄພ: ຂ້າມລາຍການທີ່ຮູບແບບຜິດ (ແກ້ໃນ DB ດ້ວຍມື) ແທນທີ່ຈະເຮັດໃຫ້ GET ລົ້ມ */
+function parseReceivingAccounts(value: unknown): ReceivingAccount[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const parsed = receivingAccountSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+```
+
+  - ໃນ `toStoreSettingsDto` ເພີ່ມ `receivingAccounts: parseReceivingAccounts(row.receivingAccounts),`
+  - ໃນ `update` `data` ເພີ່ມ `receivingAccounts: input.receivingAccounts as Prisma.InputJsonValue | undefined,`.
+
+- [ ] **Step 4:** `pnpm --filter @oca/api test -- store-settings` → PASS; `pnpm --filter @oca/api exec tsc --noEmit && pnpm --filter @oca/api lint`. ແລ້ວ `pnpm --filter @oca/admin exec tsc --noEmit` — ຕ້ອງມີ error ໃນ admin ທີ່ `StoreSettingsDto` ໃນ `types.ts` ບໍ່ມີ field ນີ້? (ບໍ່ error ເພາະ admin ມີ type ຂອງຕົນເອງ; ຈະເພີ່ມໃນ S4.)
+
+- [ ] **Step 5: commit** — `git add packages/shared apps/api && git commit -m "feat(settings): store receiving accounts for slip destination check"`.
+
+---
+
+### Task 10: ກວດລວມ + ເອກະສານ
 
 - [ ] **Step 1:** `pnpm --filter @oca/api test` ທັງໝົດ (ລວມ `permissions.e2e` sweep ທີ່ຕອນນີ້ຄຸມ route ໃໝ່) → ຜ່ານ; `pnpm lint && pnpm build` ຜ່ານ. ລາຍງານຈຳນວນ test.
 
