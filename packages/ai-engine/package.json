@@ -2,5 +2,25 @@
   "name": "@oca/ai-engine",
   "version": "0.0.0",
   "private": true,
-  "description": "Gemini, OCR and image processing services"
+  "description": "Slip reader, file storage and (later) AI/OCR services",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oca/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@oca/config": "workspace:*",
+    "@types/node": "^26.6.4",
+    "eslint": "^9.39.5",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
 }
