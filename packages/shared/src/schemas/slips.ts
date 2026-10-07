@@ -26,23 +26,27 @@ export type SlipStatus = (typeof SLIP_STATUSES)[number];
 export type SlipFlag = (typeof SLIP_FLAGS)[number];
 export type SlipCurrency = (typeof SLIP_CURRENCIES)[number];
 
+/** ຍອດສູງສຸດເປັນ cents ຂອງ Decimal(18,2) */
+const MAX_CENTS = 10n ** 18n - 1n;
+
 /**
  * ແປງຍອດທີ່ model/ຄົນພິມ ("1,250,000", "₭ 50 000.5") ເປັນ "1250000.00".
- * ຄືນ null ເມື່ອບໍ່ແມ່ນຕົວເລກບວກ ຫຼື ໃຫຍ່ເກີນ Decimal(18,2). ປັດ half-up.
+ * ຄືນ null ເມື່ອບໍ່ແມ່ນຍອດບວກ (ລວມ 0), ເປັນ comma ທົດສະນິຍົມ ("12,50" ກຳກວມ),
+ * ຫຼື ໃຫຍ່ເກີນ Decimal(18,2). ປັດ half-up.
  */
 export function normalizeSlipAmount(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
+  // comma ຕາມດ້ວຍ 1-2 ຫຼັກທ້າຍສຸດ = ອາດເປັນທົດສະນິຍົມແບບ ເອີຣົບ → ບໍ່ເດົາ
+  if (/,\d{1,2}$/.test(raw.trim())) return null;
   const cleaned = raw.replace(/[\s,₭฿$]/g, "");
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
   const [intPart = "", frac = ""] = cleaned.split(".");
-  const intTrimmed = intPart.replace(/^0+(?=\d)/, "");
-  if (intTrimmed.length > 16) return null;
   // ປັດ half-up ດ້ວຍ BigInt ເພື່ອບໍ່ເສຍຄວາມແມ່ນຍຳ
-  const cents = BigInt(intTrimmed + (frac + "00").slice(0, 2));
-  const rounded = (frac[2] ?? "0") >= "5" ? cents + 1n : cents;
+  const cents = BigInt(intPart + (frac + "00").slice(0, 2));
+  const rounded = Number(frac[2] ?? 0) >= 5 ? cents + 1n : cents;
+  if (rounded === 0n || rounded > MAX_CENTS) return null;
   const text = rounded.toString().padStart(3, "0");
-  const result = `${text.slice(0, -2)}.${text.slice(-2)}`;
-  return text.slice(0, -2).length > 16 ? null : result;
+  return `${text.slice(0, -2)}.${text.slice(-2)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,17 +66,17 @@ const amountField = z
   });
 
 /** ບັນຊີຮັບເງິນຂອງຮ້ານ (StoreSetting.receivingAccounts) */
-export const receivingAccountSchema = z.object({
+export const receivingAccountSchema = z.strictObject({
   bank: trimmed(50),
   accountNo: trimmed(40).refine((value) => /\d/.test(value), "accountNo must contain digits"),
-  accountName: z.string().trim().max(100).optional(),
+  accountName: trimmed(100).optional(),
 });
 export const receivingAccountsSchema = z.array(receivingAccountSchema).max(20);
 export type ReceivingAccount = z.infer<typeof receivingAccountSchema>;
 
 /** ແກ້ຄ່າທີ່ແອດມິນຢືນຢັນ ແລະ/ຫຼື ຜູກສະລິບກັບບິນ. null ລ້າງຄ່າ (ຍົກເວັ້ນ orderId). */
 export const patchSlipSchema = z
-  .object({
+  .strictObject({
     orderId: z.string().min(1),
     confirmedAmount: amountField.nullable(),
     confirmedCurrency: z.enum(SLIP_CURRENCIES).nullable(),
@@ -84,11 +88,11 @@ export const patchSlipSchema = z
   .refine((value) => Object.values(value).some((entry) => entry !== undefined), "At least one field is required");
 export type PatchSlipInput = z.infer<typeof patchSlipSchema>;
 
-export const rejectSlipSchema = z.object({ reason: trimmed(500) });
+export const rejectSlipSchema = z.strictObject({ reason: trimmed(500) });
 export type RejectSlipInput = z.infer<typeof rejectSlipSchema>;
 
 /** ຜູກຮູບ attachment ໃນແຊັດກັບບິນ */
-export const linkChatSlipSchema = z.object({
+export const linkChatSlipSchema = z.strictObject({
   orderId: z.string().min(1),
   attachmentIndex: z.number().int().min(0).max(50),
 });

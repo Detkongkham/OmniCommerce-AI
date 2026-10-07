@@ -15,12 +15,14 @@ describe("normalizeSlipAmount", () => {
     ["1 250 000.5", "1250000.50"],
     ["₭ 50,000.00", "50000.00"],
     ["12.345", "12.35"],
-    ["0", "0.00"],
+    ["1,250.5", "1250.50"],
+    ["0.995", "1.00"],
+    ["007", "7.00"],
   ])("%s → %s", (raw, expected) => {
     expect(normalizeSlipAmount(raw)).toBe(expected);
   });
 
-  it.each([[""], ["abc"], ["-5"], ["1.2.3"], [null], [undefined], ["1e5"]])("%s → null", (raw) => {
+  it.each([[""], ["abc"], ["-5"], ["1.2.3"], [null], [undefined], ["1e5"], ["0"], ["0.00"], ["0.001"], ["12,50"], ["1,5"], [".5"], ["5."], ["9".repeat(16) + ".995"]])("%s → null", (raw) => {
     expect(normalizeSlipAmount(raw as string | null | undefined)).toBeNull();
   });
 
@@ -90,5 +92,18 @@ describe("constants", () => {
       "ORDER_NOT_PAYABLE",
       "UNREADABLE_FIELDS",
     ]);
+  });
+});
+
+describe("strict body + edge cases", () => {
+  it("ປະຕິເສດ key ທີ່ບໍ່ຮູ້ຈັກ", () => {
+    expect(patchSlipSchema.safeParse({ orderId: "o1", confirmedAmmount: "1" }).success).toBe(false);
+    expect(rejectSlipSchema.safeParse({ reason: "x", extra: 1 }).success).toBe(false);
+    expect(linkChatSlipSchema.safeParse({ orderId: "o1", attachmentIndex: 0, extra: 1 }).success).toBe(false);
+    expect(receivingAccountsSchema.safeParse([{ bank: "A", accountNo: "1", extra: 1 }]).success).toBe(false);
+  });
+  it("accountName ຫວ່າງບໍ່ໄດ້; patch ທີ່ມີແຕ່ undefined ບໍ່ຜ່ານ", () => {
+    expect(receivingAccountsSchema.safeParse([{ bank: "A", accountNo: "1", accountName: "" }]).success).toBe(false);
+    expect(patchSlipSchema.safeParse({ orderId: undefined }).success).toBe(false);
   });
 });
