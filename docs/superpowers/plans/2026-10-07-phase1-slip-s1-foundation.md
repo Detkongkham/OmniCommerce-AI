@@ -363,7 +363,7 @@ const base: SlipFlagInput = {
   destAccount: "010-12-00-0123",
   refNo: "REF1",
   order,
-  receivingAccounts: [{ accountNo: "010120001230" }],
+  receivingAccounts: [{ accountNo: "01012000123" }],
   duplicateRef: false,
   duplicateImage: false,
   now,
@@ -404,7 +404,7 @@ describe("computeSlipFlags", () => {
   it("ບັນຊີປາຍທາງ: ບໍ່ຢູ່ໃນລາຍການ → DEST_MISMATCH; ລາຍການວ່າງ = ຂ້າມ; masked ຈັບ 4 ໂຕທ້າຍ", () => {
     expect(flags({ destAccount: "999999999999" })).toEqual(["DEST_MISMATCH"]);
     expect(flags({ receivingAccounts: [], destAccount: "999" })).toEqual([]);
-    expect(flags({ destAccount: "xxxx-xxxx-1230" })).toEqual([]);
+    expect(flags({ destAccount: "xxxx-xxxx-0123" })).toEqual([]);
     expect(flags({ destAccount: "xxxx-xxxx-9999" })).toEqual(["DEST_MISMATCH"]);
   });
 
@@ -453,10 +453,10 @@ describe("computeSlipFlags", () => {
 
 describe("accountMatches", () => {
   it.each([
-    ["010-12-00-0123", "010120000123", true],
-    ["010 12 00 0123", "0101200123", false],
-    ["xxx0123", "010120000123", true],
-    ["***123", "010120000123", false], // masked ແຕ່ເຫຼືອ <4 ຫຼັກ
+    ["010-12-00-0123", "01012000123", true],
+    ["010 12 00 0123", "010120000123", false],
+    ["xxx0123", "01012000123", true],
+    ["***123", "01012000123", false], // masked ແຕ່ເຫຼືອ <4 ຫຼັກ
     ["", "123", false],
     ["abc", "123", false],
   ])("%s vs %s → %s", (dest, accountNo, expected) => {
@@ -845,7 +845,7 @@ describe("evaluateSlip (Postgres ຈິງ)", () => {
   beforeEach(async () => {
     await resetDb(db);
     await db.storeSetting.create({
-      data: { id: 1, name: "t", receivingAccounts: [{ bank: "BCEL", accountNo: "010120000123" }] },
+      data: { id: 1, name: "t", receivingAccounts: [{ bank: "BCEL", accountNo: "01012000123" }] },
     });
   });
 
@@ -941,7 +941,7 @@ describe("evaluateSlip (Postgres ຈິງ)", () => {
   });
 
   it("receivingAccounts ຮູບແບບຜິດໃນ DB → ຂ້າມລາຍການທີ່ຜິດ (ບໍ່ throw)", async () => {
-    await db.storeSetting.update({ where: { id: 1 }, data: { receivingAccounts: [{ bad: true }, { bank: "A", accountNo: "010120000123" }] } });
+    await db.storeSetting.update({ where: { id: 1 }, data: { receivingAccounts: [{ bad: true }, { bank: "A", accountNo: "01012000123" }] } });
     const slip = await makeSlip();
     expect(await evaluateSlip(db, slip.id, { now })).toEqual([]);
   });
