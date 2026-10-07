@@ -44,6 +44,13 @@ export function accountMatches(dest: string, accountNo: string): boolean {
   return masked && d.length >= 4 && a.endsWith(d);
 }
 
+/** ສອງເລກບັນຊີເປັນບັນຊີດຽວກັນ (ຮູບແບບຕ່າງກັນ/ມີ mask ທັງສອງທິດ ກໍ່ນັບ) */
+export function sameAccount(a: string, b: string): boolean {
+  if (accountMatches(a, b) || accountMatches(b, a)) return true;
+  const da = digitsOf(a);
+  return da !== "" && da === digitsOf(b);
+}
+
 function amountMismatch(input: SlipFlagInput, order: SlipFlagOrder, amount: string): boolean {
   if (input.currency !== null && input.currency.toUpperCase() !== order.currency.toUpperCase()) return true;
   const normalized = normalizeSlipAmount(amount);

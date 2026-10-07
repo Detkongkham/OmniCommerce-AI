@@ -82,10 +82,54 @@ describe("evaluateSlip (Postgres ຈິງ)", () => {
     expect(await evaluateSlip(db, second.id, { now })).toEqual(["DUPLICATE_IMAGE"]);
   });
 
-  it("refNo ຕ່າງກັນແຕ່ບັນຊີ/ຮູບຕ່າງກັນ → ບໍ່ຊ້ຳ; ບໍ່ມີ refNo → ບໍ່ຊ້ຳດ້ວຍ refNo", async () => {
+  it("ບໍ່ມີ refNo → ບໍ່ຊ້ຳດ້ວຍ refNo (ແຕ່ UNREADABLE_FIELDS)", async () => {
     await makeSlip({ readRefNo: "A", imageSha256: "d".repeat(64) });
     const other = await makeSlip({ readRefNo: null, imageSha256: "e".repeat(64) });
     expect(await evaluateSlip(db, other.id, { now })).toEqual(["UNREADABLE_FIELDS"]);
+  });
+
+  it("refNo ດຽວກັນ ແຕ່ບັນຊີປາຍທາງຕ່າງກັນຈິງ → ບໍ່ຊ້ຳ", async () => {
+    await makeSlip({ imageSha256: "d".repeat(64), readDestAccount: "01012000999" });
+    const other = await makeSlip({ imageSha256: "e".repeat(64) });
+    expect(await evaluateSlip(db, other.id, { now })).toEqual([]);
+  });
+
+  it("ຊ້ຳ refNo ເຖິງແມ່ນຮູບແບບບັນຊີຕ່າງກັນ (ຂີດ/ເລກລ້ວນ/mask)", async () => {
+    await makeSlip({ imageSha256: "d".repeat(64), readDestAccount: "01012000123" });
+    const dashed = await makeSlip({ imageSha256: "e".repeat(64), readDestAccount: "010-12-00-0123" });
+    expect(await evaluateSlip(db, dashed.id, { now })).toContain("DUPLICATE_REF");
+    const masked = await makeSlip({ imageSha256: "f".repeat(64), readDestAccount: "XXXX0123" });
+    expect(await evaluateSlip(db, masked.id, { now })).toContain("DUPLICATE_REF");
+  });
+
+  it("ສະລິບອື່ນບໍ່ມີບັນຊີປາຍທາງ → ຍັງຖືວ່າຊ້ຳ", async () => {
+    await makeSlip({ imageSha256: "d".repeat(64), readDestAccount: null });
+    const other = await makeSlip({ imageSha256: "e".repeat(64) });
+    expect(await evaluateSlip(db, other.id, { now })).toContain("DUPLICATE_REF");
+  });
+
+  it("ສະລິບນີ້ບໍ່ມີບັນຊີປາຍທາງ → ຍັງຖືວ່າຊ້ຳ", async () => {
+    await makeSlip({ imageSha256: "d".repeat(64) });
+    const other = await makeSlip({ imageSha256: "e".repeat(64), readDestAccount: null });
+    expect(await evaluateSlip(db, other.id, { now })).toContain("DUPLICATE_REF");
+  });
+
+  it("ອີກໃບແກ້ refNo ແລ້ວ (confirmed ≠ read ເກົ່າ) → ບໍ່ຈັບຄ່າ read ເກົ່າ", async () => {
+    await makeSlip({ imageSha256: "d".repeat(64), readRefNo: "REF1", confirmedRefNo: "REF9" });
+    const other = await makeSlip({ imageSha256: "e".repeat(64) });
+    expect(await evaluateSlip(db, other.id, { now })).not.toContain("DUPLICATE_REF");
+  });
+
+  it("ສະລິບ CONFIRMED ຍັງນັບເປັນຊ້ຳ", async () => {
+    await makeSlip({ imageSha256: "d".repeat(64), status: "CONFIRMED" });
+    const other = await makeSlip({ imageSha256: "e".repeat(64) });
+    expect(await evaluateSlip(db, other.id, { now })).toContain("DUPLICATE_REF");
+  });
+
+  it("ສະລິບ REJECTED ບໍ່ນັບເປັນຮູບຊ້ຳ", async () => {
+    await makeSlip({ readRefNo: "X1", status: "REJECTED" });
+    const second = await makeSlip({ readRefNo: "X2" });
+    expect(await evaluateSlip(db, second.id, { now })).toEqual([]);
   });
 
   it("ບິນໝົດເວລາ/ບໍ່ຢູ່ PENDING_PAYMENT → ORDER_NOT_PAYABLE", async () => {

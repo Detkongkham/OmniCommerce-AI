@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type SlipFlagInput, accountMatches, computeSlipFlags } from "./slip-flags";
+import { type SlipFlagInput, accountMatches, computeSlipFlags, sameAccount } from "./slip-flags";
 
 const now = new Date("2026-10-07T10:00:00.000Z");
 const order = {
@@ -151,5 +151,26 @@ describe("accountMatches", () => {
     ["abc", "123", false],
   ])("%s vs %s → %s", (dest, accountNo, expected) => {
     expect(accountMatches(dest, accountNo)).toBe(expected);
+  });
+});
+
+describe("sameAccount", () => {
+  it("ຕ່າງຮູບແບບ (ຍະຫວ່າງ/ຂີດ) ແຕ່ເລກດຽວກັນ → true", () => {
+    expect(sameAccount("010-12-00-0123", "01012000123")).toBe(true);
+    expect(sameAccount("010 12 00 0123", "010-12-00-0123")).toBe(true);
+  });
+  it("mask ທັງສອງທິດ → true", () => {
+    expect(sameAccount("XXXX0123", "01012000123")).toBe(true);
+    expect(sameAccount("01012000123", "XXXX0123")).toBe(true);
+    expect(sameAccount("XXXX0123", "XXXX0123")).toBe(true);
+  });
+  it("ບັນຊີຕ່າງກັນ → false", () => {
+    expect(sameAccount("01012000123", "01012000999")).toBe(false);
+    expect(sameAccount("XXXX0124", "01012000123")).toBe(false);
+  });
+  it("ຫວ່າງ/ບໍ່ມີຕົວເລກ → false", () => {
+    expect(sameAccount("", "")).toBe(false);
+    expect(sameAccount("", "0123")).toBe(false);
+    expect(sameAccount("XXXX", "XXXX")).toBe(false);
   });
 });

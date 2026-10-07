@@ -1,4 +1,4 @@
-import { computeSlipFlags, receivingAccountSchema } from "@oca/shared";
+import { type SlipFlag, computeSlipFlags, receivingAccountSchema, sameAccount } from "@oca/shared";
 import type { PrismaClient } from "../generated/client";
 
 export interface EvaluateSlipOptions {
@@ -13,9 +13,10 @@ function effective<T>(confirmed: T | null, read: T | null): T | null {
 
 /**
  * ຄິດ flag ຂອງສະລິບ ແລະ ບັນທຶກລົງ `PaymentSlip.flags` (ໃຊ້ຮ່ວມໂດຍ API ແລະ worker).
+ * duplicate ເປັນ advisory ແລະ ບໍ່ເປັນ transaction (ປະເມີນພ້ອມກັນອາດພາດກັນ; ປະເມີນຄືນຕອນແກ້/ຢືນຢັນຈະແກ້ເອງ).
  * duplicate = ສະລິບອື່ນ (ບໍ່ແມ່ນ REJECTED, ບໍ່ແມ່ນຕົວເອງ) ທີ່ມີ refNo+ບັນຊີ ຫຼື sha256 ດຽວກັນ.
  */
-export async function evaluateSlip(db: PrismaClient, slipId: string, options: EvaluateSlipOptions = {}) {
+export async function evaluateSlip(db: PrismaClient, slipId: string, options: EvaluateSlipOptions = {}): Promise<SlipFlag[]> {
   const slip = await db.paymentSlip.findUnique({
     where: { id: slipId },
     include: { order: { select: { total: true, currency: true, exchangeRate: true, createdAt: true, status: true, reservedUntil: true } } },
@@ -33,20 +34,22 @@ export async function evaluateSlip(db: PrismaClient, slipId: string, options: Ev
   const destAccount = effective(slip.confirmedDestAccount, slip.readDestAccount);
 
   const others = { id: { not: slip.id }, status: { not: "REJECTED" as const } };
-  const [refDuplicate, imageDuplicate] = await Promise.all([
+  const [refCandidates, imageDuplicate] = await Promise.all([
     refNo
-      ? db.paymentSlip.findFirst({
-          where: {
-            ...others,
-            OR: [{ readRefNo: refNo }, { confirmedRefNo: refNo }],
-            // ເລກອ້າງອີງຊ້ຳ ແຕ່ບັນຊີປາຍທາງຕ່າງ ບໍ່ແມ່ນສະລິບຊ້ຳ (ຄົນລະທະນາຄານອາດໃຊ້ເລກຄືກັນ)
-            ...(destAccount ? { AND: [{ OR: [{ readDestAccount: destAccount }, { confirmedDestAccount: destAccount }] }] } : {}),
-          },
-          select: { id: true },
+      ? db.paymentSlip.findMany({
+          where: { ...others, OR: [{ readRefNo: refNo }, { confirmedRefNo: refNo }] },
+          select: { readRefNo: true, confirmedRefNo: true, readDestAccount: true, confirmedDestAccount: true },
+          take: 20,
         })
-      : null,
+      : [],
     db.paymentSlip.findFirst({ where: { ...others, imageSha256: slip.imageSha256 }, select: { id: true } }),
   ]);
+  // ຂາດບັນຊີປາຍທາງຝ່າຍໃດຝ່າຍໜຶ່ງ = ບໍ່ຮູ້ → ຍັງຖືວ່າຊ້ຳ (flag ເປັນຄຳແນະນຳ); ມີທັງສອງແລະຕ່າງກັນຈິງ ຈຶ່ງບໍ່ຊ້ຳ
+  const refDuplicate = refCandidates.some((candidate) => {
+    if (effective(candidate.confirmedRefNo, candidate.readRefNo) !== refNo) return false;
+    const candidateDest = effective(candidate.confirmedDestAccount, candidate.readDestAccount);
+    return !destAccount || !candidateDest || sameAccount(candidateDest, destAccount);
+  });
 
   const flags = computeSlipFlags({
     amount: amount?.toFixed(2) ?? null,
@@ -65,7 +68,7 @@ export async function evaluateSlip(db: PrismaClient, slipId: string, options: Ev
         }
       : null,
     receivingAccounts,
-    duplicateRef: refDuplicate !== null,
+    duplicateRef: refDuplicate,
     duplicateImage: imageDuplicate !== null,
     now: options.now ?? new Date(),
   });
