@@ -1,5 +1,12 @@
 import { Module } from "@nestjs/common";
+import { CfIngestService } from "./cf-ingest.service";
+import { LiveSessionsController } from "./live-sessions.controller";
+import { LiveSessionsService } from "./live-sessions.service";
 
-// Phase 1+: ຍັງບໍ່ມີ logic
-@Module({})
+/** Live & Post CF Engine: session/ລະຫັດ CF, ledger ຄອມເມັ້ນ, queue ປະມວນຜົນ. */
+@Module({
+  controllers: [LiveSessionsController],
+  providers: [CfIngestService, LiveSessionsService],
+  exports: [CfIngestService],
+})
 export class LiveCfModule {}
