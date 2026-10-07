@@ -36,9 +36,11 @@ const MAX_CENTS = 10n ** 18n - 1n;
  */
 export function normalizeSlipAmount(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) return null;
+  // ຕັດແຕ່ ຍະຫວ່າງ/ສັນຍາລັກສະກຸນ ກ່ອນ (ຍັງເກັບ comma)
+  const stripped = raw.replace(/[\s₭฿$]/g, "");
   // comma ຕາມດ້ວຍ 1-2 ຫຼັກທ້າຍສຸດ = ອາດເປັນທົດສະນິຍົມແບບ ເອີຣົບ → ບໍ່ເດົາ
-  if (/,\d{1,2}$/.test(raw.trim())) return null;
-  const cleaned = raw.replace(/[\s,₭฿$]/g, "");
+  if (/,\d{1,2}$/.test(stripped)) return null;
+  const cleaned = stripped.replace(/,/g, "");
   if (!/^\d+(\.\d+)?$/.test(cleaned)) return null;
   const [intPart = "", frac = ""] = cleaned.split(".");
   // ປັດ half-up ດ້ວຍ BigInt ເພື່ອບໍ່ເສຍຄວາມແມ່ນຍຳ
