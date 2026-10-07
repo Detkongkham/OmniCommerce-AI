@@ -9,3 +9,4 @@ export * from "./schemas/inventory";
 export * from "./error-codes";
 export * from "./schemas/inbox";
 export * from "./schemas/slips";
+export * from "./slip-flags";
