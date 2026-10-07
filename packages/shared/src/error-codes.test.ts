@@ -11,6 +11,17 @@ describe("ERROR_CODES", () => {
       expect(isErrorCode(code), code).toBe(true);
     }
   });
+  it("ມີ code ຂອງ slip", () => {
+    for (const code of [
+      "SLIP_NOT_FOUND",
+      "SLIP_ALREADY_REVIEWED",
+      "SLIP_NOT_LINKED",
+      "SLIP_FILE_INVALID",
+      "SLIP_AMOUNT_REQUIRED",
+    ]) {
+      expect(isErrorCode(code), code).toBe(true);
+    }
+  });
   it("isErrorCode", () => {
     expect(isErrorCode("INSUFFICIENT_STOCK")).toBe(true);
     expect(isErrorCode("nope")).toBe(false);

@@ -40,6 +40,12 @@ export const ERROR_CODES = [
   "CONVERSATION_NOT_FOUND",
   "USER_NOT_FOUND",
   "CHANNEL_NOT_CONFIGURED",
+  // slip
+  "SLIP_NOT_FOUND",
+  "SLIP_ALREADY_REVIEWED",
+  "SLIP_NOT_LINKED",
+  "SLIP_FILE_INVALID",
+  "SLIP_AMOUNT_REQUIRED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
