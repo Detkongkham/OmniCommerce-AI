@@ -246,7 +246,7 @@ export class OrdersService {
           channel: conversation?.channel ?? origin?.channel ?? "OFFLINE",
           source: conversation ? "CHAT" : (origin?.source ?? "MANUAL"),
           conversationId: conversation?.id,
-        liveSessionId: origin?.liveSessionId,
+          liveSessionId: origin?.liveSessionId,
           currency: settings.baseCurrency,
           exchangeRate: 1,
           subtotal: totals.subtotal,
@@ -341,6 +341,7 @@ export class OrdersService {
       if (!variant.isActive || variant.product.status !== "ACTIVE") {
         throw apiError("VARIANT_NOT_AVAILABLE", `Variant ${variant.sku} is not available for sale`, { sku: variant.sku });
       }
+      // ສົມມຸດຖານ: ບິນ CF ໃຊ້ສາງ default ສະເໝີ; ແຖວເດີມທີ່ຢູ່ສາງອື່ນຈະບໍ່ຖືກລວມ ແຕ່ໄດ້ແຖວແຍກຕ່າງຫາກ
       const existing = order.items.find((item) => item.variantId === variant.id && item.warehouseId === warehouse.id);
       if (existing) merged.set(existing.id, (merged.get(existing.id) ?? existing.quantity) + addition.quantity);
       else added.push({ variant, quantity: addition.quantity });
@@ -359,6 +360,7 @@ export class OrdersService {
         ],
         shippingFee: order.shippingFee.toFixed(2),
         vatRate: order.vatRate.toString(),
+        // ອ່ານຈາກ settings ປັດຈຸບັນ (ບໍ່ແມ່ນຄ່າ ຕອນສ້າງບິນ)
         pricesIncludeVat: settings.pricesIncludeVat,
       });
     } catch (error) {

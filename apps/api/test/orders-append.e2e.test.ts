@@ -1,5 +1,6 @@
 import type { INestApplication } from "@nestjs/common";
 import { InsufficientStockError, type PrismaClient, receive } from "@oca/database";
+import { calculateOrderTotals } from "@oca/shared";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { OrdersService } from "../src/modules/orders/orders.service";
 import { createTestApp, expectLedgerMatches, resetDb, seedCatalog } from "./helpers";
@@ -124,5 +125,49 @@ describe("OrdersService CF helpers", () => {
     await expect(
       append([{ variantId: f.v1.id, quantity: 1 }, { variantId: f.v1.id, quantity: 1 }]),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("appendItemsInTx: ຮັກສາສ່ວນຫຼຸດຂອງແຖວເດີມໃນຍອດໃໝ່", async () => {
+    const s = await session();
+    const c = await customer();
+    const id = await db.$transaction((tx) =>
+      orders.createCfOrderInTx(
+        tx,
+        { customerId: c.id, items: [{ variantId: f.v1.id, quantity: 2, discount: "50" }], shippingFee: "0" },
+        { channel: "FACEBOOK", source: "LIVE_CF", liveSessionId: s.id },
+      ),
+    );
+    await db.$transaction((tx) => orders.appendItemsInTx(tx, id, [{ variantId: f.v1.id, quantity: 1 }], null));
+    const order = await db.order.findUniqueOrThrow({ where: { id }, include: { items: true } });
+    expect(order.items[0]?.quantity).toBe(3);
+    expect(order.items[0]?.discount.toFixed(2)).toBe("50.00");
+    expect(order.items[0]?.lineTotal.toFixed(2)).toBe("250.00");
+    expect(order.discountTotal.toFixed(2)).toBe("50.00");
+    expect(order.total.toFixed(2)).toBe("250.00");
+  });
+
+  it("appendItemsInTx: VAT ແຍກ (pricesIncludeVat=false, 10%) ຍອດ = calculateOrderTotals ຂອງທຸກແຖວ", async () => {
+    await db.storeSetting.upsert({
+      where: { id: 1 },
+      create: { id: 1, name: "T", vatRate: "10", pricesIncludeVat: false },
+      update: { vatRate: "10", pricesIncludeVat: false },
+    });
+    const s = await session();
+    const c = await customer();
+    const id = await createCfOrder(s.id, c.id, [{ variantId: f.v1.id, quantity: 2 }]);
+    await db.$transaction((tx) => orders.appendItemsInTx(tx, id, [{ variantId: f.v2.id, quantity: 3 }], null));
+    const expected = calculateOrderTotals({
+      lines: [
+        { unitPrice: "100.00", quantity: 2, discount: "0" },
+        { unitPrice: "100.00", quantity: 3, discount: "0" },
+      ],
+      shippingFee: "0",
+      vatRate: "10",
+      pricesIncludeVat: false,
+    });
+    const order = await db.order.findUniqueOrThrow({ where: { id } });
+    expect(order.vatAmount.toFixed(2)).toBe(expected.vatAmount);
+    expect(order.total.toFixed(2)).toBe(expected.total);
+    expect(expected.total).toBe("550.00");
   });
 });
