@@ -3,17 +3,35 @@
   "version": "0.0.0",
   "private": true,
   "description": "Prisma schema, migrations and seed",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "prisma"
+  ],
   "scripts": {
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "prisma generate && vitest run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:validate": "prisma validate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:seed": "tsx --env-file-if-exists=../../.env prisma/seed.ts"
   },
   "dependencies": {
+    "@oca/shared": "workspace:*",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0"
   },
   "devDependencies": {
-    "prisma": "7.10.0"
+    "@node-rs/argon2": "^2.2.1",
+    "@oca/config": "workspace:*",
+    "eslint": "^9.39.5",
+    "prisma": "7.10.0",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
   }
 }

@@ -1,0 +1,267 @@
+import type { INestApplication } from "@nestjs/common";
+import type { PrismaClient } from "@oca/database";
+import { JwtService } from "@nestjs/jwt";
+import { PERMISSIONS } from "@oca/shared";
+import request from "supertest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { TokenService } from "../src/auth/token.service";
+import { TEST_PASSWORD, createTestApp, loginAs, refreshCookieOf, resetDb, seedBasics } from "./helpers";
+
+describe("auth (e2e)", () => {
+  let app: INestApplication;
+  let db: PrismaClient;
+  const server = () => app.getHttpServer();
+
+  beforeAll(async () => {
+    ({ app, db } = await createTestApp());
+  });
+  afterAll(async () => {
+    await app.close();
+  });
+  beforeEach(async () => {
+    await resetDb(db);
+    await seedBasics(db);
+  });
+
+  it("login ສຳເລັດ: ໄດ້ access token, user ແລະ cookie httpOnly (ບໍ່ມີ refresh token ໃນ body)", async () => {
+    const res = await request(server())
+      .post("/auth/login")
+      .send({ email: "Owner@Test.local", password: TEST_PASSWORD })
+      .expect(200);
+
+    expect(res.body.accessToken).toEqual(expect.any(String));
+    expect(res.body.refreshToken).toBeUndefined();
+    expect(res.body.user).toMatchObject({ email: "owner@test.local", roleName: "OWNER" });
+    expect(res.body.user.permissions).toHaveLength(PERMISSIONS.length);
+    expect(res.body.user.passwordHash).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|tokenHash/);
+
+    const cookies = (res.headers["set-cookie"] as unknown as string[]).join(";");
+    expect(cookies).toContain("oca_rt=");
+    expect(cookies).toContain("HttpOnly");
+    expect(cookies).toContain("Path=/auth");
+
+    const user = await db.user.findUniqueOrThrow({ where: { email: "owner@test.local" } });
+    expect(user.lastLoginAt).not.toBeNull();
+    expect(await db.auditLog.count({ where: { action: "auth.login", userId: user.id } })).toBe(1);
+  });
+
+  it("REFRESH_COOKIE_PATH ກຳນົດ path ຂອງ cookie (ໃຊ້ເມື່ອຜ່ານ proxy /api)", async () => {
+    const { app: proxied } = await createTestApp({ REFRESH_COOKIE_PATH: "/api/auth" });
+    try {
+      const res = await request(proxied.getHttpServer())
+        .post("/auth/login")
+        .send({ email: "owner@test.local", password: TEST_PASSWORD })
+        .expect(200);
+      const cookies = (res.headers["set-cookie"] as unknown as string[]).join(";");
+      expect(cookies).toContain("Path=/api/auth");
+      expect(cookies).not.toMatch(/Path=\/auth(;|$)/);
+    } finally {
+      await proxied.close();
+    }
+  });
+
+  it("login ຜິດ (ລະຫັດຜິດ, ບໍ່ມີ email, ບັນຊີຖືກປິດ) ໄດ້ 401 ຂໍ້ຄວາມດຽວກັນ ແລະ ບັນທຶກ audit", async () => {
+    const wrongPassword = await request(server())
+      .post("/auth/login")
+      .send({ email: "owner@test.local", password: "wrong-password" })
+      .expect(401);
+    const unknownEmail = await request(server())
+      .post("/auth/login")
+      .send({ email: "nobody@test.local", password: TEST_PASSWORD })
+      .expect(401);
+    await db.user.update({ where: { email: "viewer@test.local" }, data: { isActive: false } });
+    const inactive = await request(server())
+      .post("/auth/login")
+      .send({ email: "viewer@test.local", password: TEST_PASSWORD })
+      .expect(401);
+
+    expect(wrongPassword.body.message).toBe("Invalid credentials");
+    expect(unknownEmail.body.message).toBe("Invalid credentials");
+    expect(inactive.body.message).toBe("Invalid credentials");
+    expect(await db.auditLog.count({ where: { action: "auth.login_failed" } })).toBe(3);
+  });
+
+  it("login ດ້ວຍ body ຜິດຮູບແບບ ໄດ້ 400", async () => {
+    await request(server()).post("/auth/login").send({ email: "x", password: "short" }).expect(400);
+  });
+
+  it("GET /auth/me ຕ້ອງມີ token ທີ່ຖືກຕ້ອງ", async () => {
+    await request(server()).get("/auth/me").expect(401);
+    await request(server()).get("/auth/me").set("Authorization", "Bearer garbage").expect(401);
+
+    const { accessToken } = await loginAs(app, "viewer@test.local");
+    const res = await request(server()).get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(res.body).toMatchObject({ email: "viewer@test.local", roleName: "VIEWER", permissions: ["staff:read"] });
+  });
+
+  it("ບັນຊີທີ່ຖືກປິດຫຼັງ login: access token ເດີມໃຊ້ບໍ່ໄດ້ທັນທີ", async () => {
+    const { accessToken } = await loginAs(app, "viewer@test.local");
+    await db.user.update({ where: { email: "viewer@test.local" }, data: { isActive: false } });
+    await request(server()).get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(401);
+  });
+
+  it("refresh ຫມູນ token ໃໝ່; ການໃຊ້ token ເກົ່າຊ້ຳ revoke ທັງ family", async () => {
+    const first = await loginAs(app, "owner@test.local");
+    const second = await request(server()).post("/auth/refresh").set("Cookie", first.cookie).expect(200);
+    const rotated = refreshCookieOf(second);
+    expect(rotated).toBeDefined();
+    expect(rotated).not.toBe(first.cookie);
+    expect(second.body.accessToken).toEqual(expect.any(String));
+
+    await request(server()).post("/auth/refresh").set("Cookie", first.cookie).expect(401);
+    await request(server()).post("/auth/refresh").set("Cookie", rotated as string).expect(401);
+    expect(await db.auditLog.count({ where: { action: "auth.refresh_reuse" } })).toBe(1);
+  });
+
+  it("two concurrent refreshes with the same cookie: one wins, one 401, and the family is revoked", async () => {
+    const first = await loginAs(app, "owner@test.local");
+    const [a, b] = await Promise.all([
+      request(server()).post("/auth/refresh").set("Cookie", first.cookie),
+      request(server()).post("/auth/refresh").set("Cookie", first.cookie),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 401]);
+
+    const winnerCookie = refreshCookieOf(a.status === 200 ? a : b) as string;
+    expect(winnerCookie).toBeDefined();
+    await request(server()).post("/auth/refresh").set("Cookie", winnerCookie).expect(401);
+    expect(await db.refreshToken.count({ where: { revokedAt: null } })).toBe(0);
+  });
+
+  it("rotation is atomic: if issuing the new token fails, the old token is not consumed", async () => {
+    const { cookie } = await loginAs(app, "owner@test.local");
+    const existing = await db.refreshToken.findFirstOrThrow();
+    const tokens = app.get(TokenService);
+    // Force a unique violation on the new row by reusing the old token's hash.
+    const spy = vi
+      .spyOn(tokens, "generateRefreshToken")
+      .mockReturnValueOnce({ token: "forced", hash: existing.tokenHash });
+    try {
+      await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await db.refreshToken.findUniqueOrThrow({ where: { id: existing.id } })).revokedAt).toBeNull();
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(200);
+  });
+
+  it("an expired refresh token is rejected with 401", async () => {
+    const { cookie } = await loginAs(app, "owner@test.local");
+    await db.refreshToken.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(401);
+  });
+
+  it("refresh by a user deactivated after login is rejected with 401", async () => {
+    const { cookie } = await loginAs(app, "viewer@test.local");
+    await db.user.update({ where: { email: "viewer@test.local" }, data: { isActive: false } });
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(401);
+  });
+
+  it("refresh ໂດຍບໍ່ມີ cookie ຫຼື cookie ມົ່ວ ໄດ້ 401", async () => {
+    await request(server()).post("/auth/refresh").expect(401);
+    await request(server()).post("/auth/refresh").set("Cookie", "oca_rt=not-a-real-token").expect(401);
+  });
+
+  it("logout revoke token ແລະ ລ້າງ cookie", async () => {
+    const { cookie } = await loginAs(app, "owner@test.local");
+    const res = await request(server()).post("/auth/logout").set("Cookie", cookie).expect(200);
+    expect(refreshCookieOf(res)).toBeUndefined();
+    expect((res.headers["set-cookie"] as unknown as string[]).join(";")).toContain("oca_rt=;");
+    await request(server()).post("/auth/refresh").set("Cookie", cookie).expect(401);
+    expect(await db.auditLog.count({ where: { action: "auth.logout" } })).toBe(1);
+  });
+
+  it("login ເກີນຈຳນວນຕໍ່ນາທີ ໄດ້ 429", async () => {
+    const limited = await createTestApp({ LOGIN_RATE_LIMIT: "3" });
+    try {
+      for (let i = 0; i < 3; i++) {
+        await request(limited.app.getHttpServer())
+          .post("/auth/login")
+          .send({ email: "x@test.local", password: "wrong-password" })
+          .expect(401);
+      }
+      await request(limited.app.getHttpServer())
+        .post("/auth/login")
+        .send({ email: "x@test.local", password: "wrong-password" })
+        .expect(429);
+    } finally {
+      await limited.app.close();
+    }
+  });
+
+  it("ignores X-Forwarded-For by default (TRUST_PROXY=false)", async () => {
+    await request(server())
+      .post("/auth/login")
+      .set("X-Forwarded-For", "203.0.113.9")
+      .send({ email: "owner@test.local", password: TEST_PASSWORD })
+      .expect(200);
+    const log = await db.auditLog.findFirstOrThrow({ where: { action: "auth.login" } });
+    expect(log.ip).not.toContain("203.0.113.9");
+  });
+
+  it("uses X-Forwarded-For for the audit ip when TRUST_PROXY=1", async () => {
+    const proxied = await createTestApp({ TRUST_PROXY: "1" });
+    try {
+      await request(proxied.app.getHttpServer())
+        .post("/auth/login")
+        .set("X-Forwarded-For", "203.0.113.9")
+        .send({ email: "owner@test.local", password: TEST_PASSWORD })
+        .expect(200);
+      const log = await db.auditLog.findFirstOrThrow({ where: { action: "auth.login" } });
+      expect(log.ip).toBe("203.0.113.9");
+    } finally {
+      await proxied.app.close();
+    }
+  });
+
+  it("locks an email after LOGIN_EMAIL_MAX_FAILURES failures, even for the correct password", async () => {
+    const locked = await createTestApp({ LOGIN_EMAIL_MAX_FAILURES: "3" });
+    const s = () => locked.app.getHttpServer();
+    try {
+      for (let i = 0; i < 3; i++) {
+        await request(s()).post("/auth/login").send({ email: "Owner@test.local", password: "wrong-password" }).expect(401);
+      }
+      const res = await request(s())
+        .post("/auth/login")
+        .send({ email: "owner@test.local", password: TEST_PASSWORD })
+        .expect(429);
+      expect(res.body.message).toBe("Too many failed attempts, try again later");
+      await request(s()).post("/auth/login").send({ email: "viewer@test.local", password: TEST_PASSWORD }).expect(200);
+
+      const rows = await db.auditLog.findMany();
+      expect(JSON.stringify(rows)).not.toMatch(/owner@test\.local/i);
+      expect(rows.filter((r) => r.action === "auth.login_failed")).toHaveLength(3);
+    } finally {
+      await locked.app.close();
+    }
+  });
+
+  it("a validly signed token for a non-existent user id is rejected with 401", async () => {
+    const token = await app
+      .get(JwtService)
+      .signAsync({}, { subject: "no-such-user", secret: process.env.JWT_ACCESS_SECRET, algorithm: "HS256", expiresIn: 60 });
+    await request(server()).get("/auth/me").set("Authorization", `Bearer ${token}`).expect(401);
+  });
+
+  it("an already-expired access token is rejected with 401", async () => {
+    const user = await db.user.findUniqueOrThrow({ where: { email: "owner@test.local" } });
+    const past = Math.floor(Date.now() / 1000) - 3600;
+    const token = await app
+      .get(JwtService)
+      .signAsync(
+        { iat: past - 60, exp: past },
+        { subject: user.id, secret: process.env.JWT_ACCESS_SECRET, algorithm: "HS256" },
+      );
+    await request(server()).get("/auth/me").set("Authorization", `Bearer ${token}`).expect(401);
+  });
+
+  it("answers a CORS preflight for the configured origin with credentials allowed", async () => {
+    const origin = process.env.CORS_ORIGIN?.split(",")[0]?.trim() ?? "http://localhost:3000";
+    const res = await request(server())
+      .options("/auth/login")
+      .set("Origin", origin)
+      .set("Access-Control-Request-Method", "POST");
+    expect(res.headers["access-control-allow-origin"]).toBe(origin);
+    expect(res.headers["access-control-allow-credentials"]).toBe("true");
+  });
+});

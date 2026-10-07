@@ -2,6 +2,7 @@
   "name": "oca",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.24.0",
   "description": "OmniCommerce AI - social commerce & omnichannel platform",
   "scripts": {
     "dev": "turbo run dev",
@@ -9,7 +10,9 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "infra:local": "pnpm --filter @oca/dev-infra start",
+    "db:seed": "pnpm --filter @oca/database db:seed"
   },
   "devDependencies": {
     "turbo": "^2.0.0"

@@ -2,5 +2,28 @@
   "name": "@oca/storefront",
   "version": "0.0.0",
   "private": true,
-  "description": "Next.js public storefront (SSR/SEO)"
+  "description": "Next.js public storefront (SSR/SEO)",
+  "scripts": {
+    "dev": "next dev --port 3002",
+    "build": "next build",
+    "start": "next start --port 3002",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oca/ui": "workspace:*",
+    "next": "^16.3.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@oca/config": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3"
+  }
 }

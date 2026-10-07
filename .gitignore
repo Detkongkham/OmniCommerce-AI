@@ -6,6 +6,9 @@ dist/
 .next/
 .turbo/
 coverage/
+.vitest/
+next-env.d.ts
+*.tsbuildinfo
 
 # env
 .env
@@ -21,3 +24,6 @@ coverage/
 
 # prisma generated client
 packages/database/src/generated/
+
+# local dev infra data
+.local/

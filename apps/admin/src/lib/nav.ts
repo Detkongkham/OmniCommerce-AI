@@ -1,0 +1,61 @@
+import { type Permission, hasPermission } from "@oca/shared";
+import { Boxes, ClipboardList, FolderTree, type LucideIcon, MessageSquare, Package, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import type { TranslationKey } from "@/lib/i18n/dictionary";
+
+export interface NavItem {
+  href: string;
+  labelKey: TranslationKey;
+  icon: LucideIcon;
+  permission: Permission;
+}
+
+export interface NavGroup {
+  id: string;
+  labelKey: TranslationKey;
+  items: NavItem[];
+}
+
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    id: "inventory",
+    labelKey: "nav.group.inventory",
+    items: [
+      { href: "/products", labelKey: "nav.products", icon: Package, permission: "inventory:read" },
+      { href: "/stock", labelKey: "nav.stock", icon: Boxes, permission: "inventory:read" },
+      { href: "/orders", labelKey: "nav.orders", icon: ClipboardList, permission: "orders:read" },
+      { href: "/warehouses", labelKey: "nav.warehouses", icon: Warehouse, permission: "inventory:read" },
+      { href: "/categories", labelKey: "nav.categories", icon: FolderTree, permission: "inventory:read" },
+    ],
+  },
+  {
+    id: "chat",
+    labelKey: "nav.group.chat",
+    items: [{ href: "/inbox", labelKey: "nav.inbox", icon: MessageSquare, permission: "inbox:read" }],
+  },
+  {
+    id: "settings",
+    labelKey: "nav.group.settings",
+    items: [
+      { href: "/settings", labelKey: "nav.storeSettings", icon: Settings, permission: "inventory:read" },
+      { href: "/staff", labelKey: "nav.staff", icon: Users, permission: "staff:read" },
+      { href: "/roles", labelKey: "nav.roles", icon: ShieldCheck, permission: "staff:read" },
+    ],
+  },
+];
+
+/** ກັ່ນຕອງຕາມສິດ; ກຸ່ມທີ່ບໍ່ມີລາຍການຈະບໍ່ຖືກ render (DESIGN.md §8.3). */
+export function visibleNavGroups(permissions: readonly string[]): NavGroup[] {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => hasPermission(permissions, item.permission)),
+  })).filter((group) => group.items.length > 0);
+}
+
+/** ໜ້າທຳອິດທີ່ຜູ້ໃຊ້ເປີດໄດ້ (ລາຍການທຳອິດຂອງເມນູທີ່ເຫັນ) ໃຊ້ເປັນໜ້າຫຼັງ login; null ຖ້າບໍ່ມີເມນູທີ່ເຫັນເລີຍ. */
+export function firstAllowedHref(permissions: readonly string[]): string | null {
+  return visibleNavGroups(permissions)[0]?.items[0]?.href ?? null;
+}
+
+export function isActivePath(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}

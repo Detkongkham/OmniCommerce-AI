@@ -1,0 +1,5 @@
+{
+  "extends": "@oca/config/tsconfig.next.json",
+  "compilerOptions": { "jsx": "react-jsx" },
+  "include": ["src", "vitest.config.ts", "vitest.setup.ts"]
+}

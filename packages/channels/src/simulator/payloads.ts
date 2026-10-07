@@ -1,0 +1,51 @@
+/** ຕົວສ້າງ webhook payload ແບບ Messenger (ໃຊ້ໃນ simulator ແລະ test; ຮູບແບບຕາມເອກະສານ Meta). */
+
+export interface MessagePayloadInput {
+  pageId: string;
+  psid: string;
+  mid: string;
+  text?: string;
+  attachments?: { type: string; url: string }[];
+  timestamp?: number;
+}
+
+const wrap = (pageId: string, timestamp: number, messaging: object) => ({
+  object: "page",
+  entry: [{ id: pageId, time: timestamp, messaging: [messaging] }],
+});
+
+export function messagePayload(input: MessagePayloadInput): object {
+  const timestamp = input.timestamp ?? Date.now();
+  return wrap(input.pageId, timestamp, {
+    sender: { id: input.psid },
+    recipient: { id: input.pageId },
+    timestamp,
+    message: {
+      mid: input.mid,
+      ...(input.text !== undefined ? { text: input.text } : {}),
+      ...(input.attachments
+        ? { attachments: input.attachments.map((item) => ({ type: item.type, payload: { url: item.url } })) }
+        : {}),
+    },
+  });
+}
+
+export function echoPayload(input: { pageId: string; psid: string; mid: string; text: string; timestamp?: number }): object {
+  const timestamp = input.timestamp ?? Date.now();
+  return wrap(input.pageId, timestamp, {
+    sender: { id: input.pageId },
+    recipient: { id: input.psid },
+    timestamp,
+    message: { mid: input.mid, is_echo: true, app_id: 1, text: input.text },
+  });
+}
+
+export function deliveryPayload(input: { pageId: string; psid: string; mids: string[]; timestamp?: number }): object {
+  const timestamp = input.timestamp ?? Date.now();
+  return wrap(input.pageId, timestamp, {
+    sender: { id: input.psid },
+    recipient: { id: input.pageId },
+    timestamp,
+    delivery: { mids: input.mids, watermark: timestamp },
+  });
+}
