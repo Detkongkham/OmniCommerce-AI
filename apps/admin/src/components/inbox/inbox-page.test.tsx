@@ -62,6 +62,7 @@ beforeEach(() => {
   vi.mocked(apiFetch).mockImplementation((async (url: string) => {
     if (url.startsWith("/conversations?")) return { items: conversations, total: 2, page: 1, pageSize: 30 };
     if (url === "/inbox/assignees") return [];
+    if (url.startsWith("/orders")) return { items: [], total: 0, page: 1, pageSize: 20 };
     const detail = /^\/conversations\/(c\d)$/.exec(url);
     if (detail) return conversations.find((c) => c.id === detail[1]);
     const messages = /^\/conversations\/(c\d)\/messages/.exec(url);

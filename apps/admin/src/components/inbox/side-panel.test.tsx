@@ -43,6 +43,7 @@ beforeEach(() => {
   vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
     if (url === "/inbox/assignees") return assignees;
     if (url.startsWith("/customers")) return { items: [], total: 0, page: 1, pageSize: 8 };
+    if (url.startsWith("/orders")) return { items: [], total: 0, page: 1, pageSize: 20 };
     if (init?.method === "PATCH") return conversation;
     throw new Error(`unexpected ${url}`);
   }) as typeof apiFetch);
@@ -94,6 +95,7 @@ describe("SidePanel", () => {
   it("ເລືອກລູກຄ້າທີ່ມີ → PATCH customerId", async () => {
     vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
       if (url === "/inbox/assignees") return assignees;
+      if (url.startsWith("/orders")) return { items: [], total: 0, page: 1, pageSize: 20 };
       if (url.startsWith("/customers")) return { items: [{ id: "cu9", name: "Dala", phone: "020111111", email: null }], total: 1, page: 1, pageSize: 8 };
       if (init?.method === "PATCH") return conversation;
       throw new Error(`unexpected ${url}`);

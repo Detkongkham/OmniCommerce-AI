@@ -1,8 +1,9 @@
 "use client";
 
 import type { UpdateConversationInput } from "@oca/shared";
-import { Button, Card, Select, toast } from "@oca/ui";
-import { Lock, LockOpen, Unlink, UserPlus } from "lucide-react";
+import { Button, Card, Select, buttonVariants, cn, toast } from "@oca/ui";
+import { Lock, LockOpen, Plus, Unlink, UserPlus } from "lucide-react";
+import Link from "next/link";
 import { useId, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { CustomerPicker } from "@/components/orders/customer-picker";
@@ -10,6 +11,7 @@ import { errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
 import { useAssignees, useUpdateConversation } from "@/lib/queries";
 import type { ConversationDto } from "@/lib/types";
+import { ConversationOrders } from "./conversation-orders";
 import { CreateCustomerDialog } from "./create-customer-dialog";
 
 export interface SidePanelProps {
@@ -31,8 +33,13 @@ function SidePanelInner({ conversation, canWrite, showTitle = true }: SidePanelP
   const customerId = `${uid}-customer`;
   const assigneeId = `${uid}-assignee`;
   const statusId = `${uid}-status`;
-  // CustomerPicker ຄົ້ນລູກຄ້າຜ່ານ GET /customers ທີ່ຕ້ອງ orders:read
+  const ordersId = `${uid}-orders`;
+  // CustomerPicker ຄົ້ນລູກຄ້າຜ່ານ GET /customers ທີ່ຕ້ອງ orders:read; ລາຍການບິນຂອງເຄສ (GET /orders) ກໍ່ຕ້ອງ orders:read
   const canLinkExisting = useCan("orders:read");
+  // ເປີດບິນ = POST /orders ຜູກເຄສ: ຕ້ອງ inbox:write (canWrite) + orders:write + inventory:read (ຄືຂອງໜ້າ /orders/new)
+  const canWriteOrders = useCan("orders:write");
+  const canReadInventory = useCan("inventory:read");
+  const canOpenOrder = canWrite && canWriteOrders && canReadInventory;
   const update = useUpdateConversation();
   const assignees = useAssignees();
   const [createOpen, setCreateOpen] = useState(false);
@@ -94,6 +101,22 @@ function SidePanelInner({ conversation, canWrite, showTitle = true }: SidePanelP
           </>
         )}
       </section>
+
+      {canLinkExisting || canOpenOrder ? (
+        <section aria-labelledby={ordersId} className="space-y-2">
+          <h3 id={ordersId} className="text-xs font-semibold text-ink-secondary">{t("inbox.panel.orders")}</h3>
+          {canLinkExisting ? <ConversationOrders conversationId={conversation.id} /> : null}
+          {canOpenOrder ? (
+            <Link
+              href={`/orders/new?conversationId=${encodeURIComponent(conversation.id)}`}
+              className={cn(buttonVariants({ variant: "outlinePrimary" }), "w-full rounded-lg")}
+            >
+              <Plus aria-hidden="true" />
+              {t("inbox.panel.openOrder")}
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
 
       <section aria-labelledby={`${assigneeId}-label`} className="space-y-2">
         <label id={`${assigneeId}-label`} htmlFor={assigneeId} className="text-xs font-semibold text-ink-secondary">
