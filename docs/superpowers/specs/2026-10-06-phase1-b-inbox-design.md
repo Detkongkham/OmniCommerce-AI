@@ -46,11 +46,11 @@
 
 ## 7. ສິດ
 
-`inbox:read` ເບິ່ງລາຍການ/ຂໍ້ຄວາມ/SSE; `inbox:write` ຕອບ, ມອບໝາຍ, ປິດ/ເປີດ, ລິ້ງລູກຄ້າ. ເປີດບິນເອີ້ນ `POST /orders` ເດີມ ຈຶ່ງຕ້ອງ `orders:write` + `inventory:read`; ບໍ່ມີສິດ = ເຊື່ອງປຸ່ມ. `GET /orders` ຂອງເຄສຕ້ອງ `orders:read`. ເພີ່ມ route ໃໝ່ເຂົ້າ permission sweep test ແລະ ກວດບົດບາດ seeded ວ່າໃຜມີ inbox ແນວໃດ.
+`inbox:read` ເບິ່ງລາຍການ/ຂໍ້ຄວາມ/SSE; `inbox:write` ຕອບ, ມອບໝາຍ, ປິດ/ເປີດ, ລິ້ງລູກຄ້າ. ເປີດບິນເອີ້ນ `POST /orders` ເດີມ ພ້ອມ `conversationId` ຈຶ່ງຕ້ອງ `orders:write` + `inventory:read` + `inbox:write` (API ບັງຄັບ `inbox:write` ເມື່ອມີ `conversationId`); ບໍ່ມີສິດ = ເຊື່ອງປຸ່ມ. `channel`/`source` ບໍ່ຮັບຈາກ client: server ຕັ້ງ channel ຕາມເຄສ + `source=CHAT`. ບິນບໍ່ແກ້ `Conversation.customerId` ອັດຕະໂນມັດ. `conversationId` ໃນ DTO ຂອງບິນເຫັນໄດ້ໂດຍ `orders:read` (ເປັນ id ທີ່ເປີດອ່ານເຄສບໍ່ໄດ້ຖ້າບໍ່ມີ `inbox:read`; ຍອມຮັບ). `GET /orders` ຂອງເຄສຕ້ອງ `orders:read`. ເພີ່ມ route ໃໝ່ເຂົ້າ permission sweep test ແລະ ກວດບົດບາດ seeded ວ່າໃຜມີ inbox ແນວໃດ.
 
 ## 8. Admin UI `/inbox`
 
-3 ຖັນ: ລາຍການເຄສ (ກອງ, ຄົ້ນຫາ, badge unread) | ກະທູ້ + ຊ່ອງພິມ (Enter ສົ່ງ, ຄຳນຶງ IME composition ຄືເດີມ, ສະແດງ FAILED + ເຫດຜົນ) | ແຖບຂ້າງ (ລູກຄ້າທີ່ລິ້ງ, ຜູ້ຮັບຜິດຊອບ, ບິນຂອງເຄສ, ປຸ່ມເປີດບິນ). ເປີດບິນໃຊ້ order-form ເດີມແບບ prefill (ລູກຄ້າ, channel, source=CHAT, conversationId) ແລ້ວຫຼັງສຳເລັດສົ່ງສະຫຼຸບ (ລາຍການ, ຍອດ, ເວລາໝົດຈອງ) ເປັນຂໍ້ຄວາມເຂົ້າແຊັດ; ຖ້າສ້າງບິນສຳເລັດແຕ່ສົ່ງຂໍ້ຄວາມລົ້ມເຫຼວ ຕ້ອງບອກຊັດ ແລະ ບໍ່ສ້າງບິນຊ້ຳ. ເພີ່ມ nav ຕາມສິດ `inbox:read`; mobile = ສະແດງທີລະຖັນ. ປະຕິບັດຕາມ DESIGN.md, i18n ລາວ, table/list semantics ແລະ a11y ຄືຂອງ 1a.
+3 ຖັນ: ລາຍການເຄສ (ກອງ, ຄົ້ນຫາ, badge unread) | ກະທູ້ + ຊ່ອງພິມ (Enter ສົ່ງ, ຄຳນຶງ IME composition ຄືເດີມ, ສະແດງ FAILED + ເຫດຜົນ) | ແຖບຂ້າງ (ລູກຄ້າທີ່ລິ້ງ, ຜູ້ຮັບຜິດຊອບ, ບິນຂອງເຄສ, ປຸ່ມເປີດບິນ). ເປີດບິນໃຊ້ order-form ເດີມແບບ prefill (ລູກຄ້າ, channel, source=CHAT, conversationId) ແລ້ວຫຼັງສຳເລັດສົ່ງສະຫຼຸບ (ລາຍການ, ຍອດ, ເວລາໝົດຈອງ) ເປັນຂໍ້ຄວາມເຂົ້າແຊັດ; ຖ້າສ້າງບິນສຳເລັດແຕ່ສົ່ງຂໍ້ຄວາມລົ້ມເຫຼວ ຕ້ອງບອກຊັດ ແລະ ບໍ່ສ້າງບິນຊ້ຳ. ເປີດບິນໃຊ້ route `/orders/new?conversationId=<id>` (ບໍ່ແມ່ນ dialog); ສະຫຼຸບບິນສົ່ງຫຼັງສ້າງບິນ ແລະ retry ໄດ້ໂດຍບໍ່ສ້າງບິນຊ້ຳ (retry ຢູ່ໃນ memory ຂອງໜ້າຜົນລັບເທົ່ານັ້ນ). ເພີ່ມ nav ຕາມສິດ `inbox:read`; mobile = ສະແດງທີລະຖັນ. ປະຕິບັດຕາມ DESIGN.md, i18n ລາວ, table/list semantics ແລະ a11y ຄືຂອງ 1a.
 
 ## 9. ການທົດສອບ
 
