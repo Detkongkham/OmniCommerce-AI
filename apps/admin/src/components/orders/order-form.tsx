@@ -18,11 +18,12 @@ import {
   lineAvailable,
   lineQuantity,
   newIdempotencyKey,
+  orderFormForConversation,
   shortageKeys,
   validateOrderForm,
 } from "@/lib/order-form";
 import { useCreateOrder, useStoreSettings, useWarehouses } from "@/lib/queries";
-import type { Shortage, VariantSearchItemDto } from "@/lib/types";
+import type { ConversationDto, OrderDetailDto, Shortage, VariantSearchItemDto } from "@/lib/types";
 import { CustomerPicker } from "./customer-picker";
 
 const ERRORS_ID = "order-form-errors";
@@ -40,14 +41,28 @@ function describe(ids: (string | false | null | undefined)[]): string | undefine
   return joined || undefined;
 }
 
-export function OrderForm() {
+export interface OrderFormChat {
+  /** ເຄສທີ່ເປີດບິນຈາກ: prefill ລູກຄ້າ, ຕິດ conversationId ໃສ່ payload, ຫົວຂໍ້ ແລະ ປຸ່ມຍົກເລີກຕາມແຊັດ */
+  conversation: ConversationDto;
+  /**
+   * ເອີ້ນຫຼັງບິນຖືກສ້າງສຳເລັດແລ້ວ (ຢູ່ນອກ try ຂອງການສ້າງບິນ: ເຖິງ handler throw ກໍ່ບໍ່ຖືກລາຍງານວ່າສ້າງບິນບໍ່ສຳເລັດ).
+   * ຜູ້ເອີ້ນຮັບຜິດຊອບການສົ່ງສະຫຼຸບ/ພາໄປໜ້າອື່ນ (ຟອມບໍ່ push ໄປ /orders/[id] ໃນໂໝດນີ້)
+   */
+  onCreated: (order: OrderDetailDto, options: { sendSummary: boolean }) => void;
+}
+
+export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
   const { t } = useT();
   const router = useRouter();
   const create = useCreateOrder();
   const warehouses = useWarehouses();
   const settings = useStoreSettings();
 
-  const [form, setForm] = useState<OrderFormState>(emptyOrderForm);
+  const [form, setForm] = useState<OrderFormState>(() =>
+    chat ? orderFormForConversation(chat.conversation.customer) : emptyOrderForm(),
+  );
+  // ໂໝດແຊັດ: ສົ່ງສະຫຼຸບບິນເຂົ້າແຊັດຫຼັງສ້າງ (ເລີ່ມຕົ້ນເປີດ)
+  const [sendSummary, setSendSummary] = useState(true);
   const [issues, setIssues] = useState<FormIssues>(NO_ISSUES);
   const [shortages, setShortages] = useState<Shortage[]>([]);
   const [saving, setSaving] = useState(false);
@@ -142,16 +157,20 @@ export function OrderForm() {
       return;
     }
     setIssues(NO_ISSUES);
-    const fingerprint = JSON.stringify(result.data);
+    // ບິນຈາກແຊັດ: ຕິດ conversationId (server ກຳນົດ channel/source ຈາກເຄສ). ຢູ່ໃນ fingerprint ຈຶ່ງ key ປ່ຽນເມື່ອເຄສປ່ຽນ
+    const payload = chat ? { ...result.data, conversationId: chat.conversation.id } : result.data;
+    const fingerprint = JSON.stringify(payload);
     if (attempt.current?.fingerprint !== fingerprint) attempt.current = { fingerprint, key: newIdempotencyKey() };
     submitting.current = true;
     setSaving(true);
+    let created: OrderDetailDto | null = null;
     try {
-      const order = await create.mutateAsync({ input: result.data, idempotencyKey: attempt.current.key });
+      const order = await create.mutateAsync({ input: payload, idempotencyKey: attempt.current.key });
+      created = order;
       attempt.current = null; // ສຳເລັດແນ່ນອນ: ການສົ່ງຄັ້ງຕໍ່ໄປເປັນບິນໃໝ່
       // toast ສະແດງສະເໝີ (ບິນຖືກສ້າງ ແລະ ຈອງສະຕ໋ອກແລ້ວ ແມ່ນແຕ່ຜູ້ໃຊ້ອອກຈາກໜ້າ); ການພາໄປໜ້າບິນສະເພາະຕອນຍັງຢູ່
       toast.success(t("orders.toast.created", { number: order.orderNumber }));
-      if (mounted.current) router.push(`/orders/${order.id}`);
+      if (!chat && mounted.current) router.push(`/orders/${order.id}`);
     } catch (error) {
       if (mounted.current) {
         setShortages(extractShortages(error));
@@ -162,6 +181,8 @@ export function OrderForm() {
       submitting.current = false;
       if (mounted.current) setSaving(false);
     }
+    // ນອກ try: ຄວາມຜິດພາດຂອງ handler (ເຊັ່ນ ສົ່ງສະຫຼຸບ) ຕ້ອງບໍ່ຖືກສະແດງເປັນ "ສ້າງບິນບໍ່ສຳເລັດ"
+    if (created && chat && mounted.current) chat.onCreated(created, { sendSummary });
   }
 
   const modeOptions: { value: CustomerMode; label: string }[] = [
@@ -186,12 +207,22 @@ export function OrderForm() {
       }}
     >
       <PageHeader
-        breadcrumbs={[t("nav.home"), t("orders.title"), t("orders.form.title")]}
-        title={t("orders.form.title")}
-        description={t("orders.form.description")}
+        breadcrumbs={
+          chat
+            ? [t("nav.home"), t("inbox.title"), t("orders.chat.title")]
+            : [t("nav.home"), t("orders.title"), t("orders.form.title")]
+        }
+        title={chat ? t("orders.chat.title") : t("orders.form.title")}
+        description={chat ? t("orders.chat.description", { name: chat.conversation.displayName }) : t("orders.form.description")}
         actions={
           <>
-            <Button type="button" variant="outline" className="rounded-xl" disabled={saving} onClick={() => router.push("/orders")}>
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-xl"
+              disabled={saving}
+              onClick={() => router.push(chat ? `/inbox?c=${encodeURIComponent(chat.conversation.id)}` : "/orders")}
+            >
               {t("common.cancel")}
             </Button>
             <Button
@@ -384,6 +415,9 @@ export function OrderForm() {
                 </label>
               ))}
             </div>
+            {chat && !chat.conversation.customer ? (
+              <p className="mb-4 text-sm text-ink-secondary">{t("orders.chat.unlinkedHint")}</p>
+            ) : null}
             {form.customerMode === "existing" ? (
               <div className="max-w-md">
                 <CustomerPicker value={form.customer} onSelect={(customer) => patch({ customer })} />
@@ -503,6 +537,20 @@ export function OrderForm() {
           </dl>
           <p className="mt-3 text-xs text-ink-muted">{t("orders.summary.estimate")}</p>
         </Card>
+
+        {chat ? (
+          <Card className="max-w-md rounded-[20px] p-6">
+            <label className="flex items-start gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                className="mt-0.5 accent-[var(--color-brand)]"
+                checked={sendSummary}
+                onChange={(event) => setSendSummary(event.target.checked)}
+              />
+              <span>{t("orders.chat.sendSummary")}</span>
+            </label>
+          </Card>
+        ) : null}
       </fieldset>
     </form>
   );

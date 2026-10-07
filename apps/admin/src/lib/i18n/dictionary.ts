@@ -630,6 +630,17 @@ const lo = {
   "inbox.customerDialog.phoneHint": "ບໍ່ບັງຄັບ",
   "inbox.customerDialog.phoneInvalid": "ເບີໂທບໍ່ຖືກຕ້ອງ (ຕົວເລກ 6-15 ຫຼັກ, ມີ + ໜ້າໄດ້)",
   "inbox.customerDialog.created": "ສ້າງ ແລະ ລິ້ງລູກຄ້າແລ້ວ",
+  "orders.chat.title": "ເປີດບິນຈາກແຊັດ",
+  "orders.chat.description": "ບິນຈະຜູກກັບການສົນທະນາ Facebook ຂອງ {name} (ແຫຼ່ງ: ແຊັດ) ແລະ ຈອງສະຕ໋ອກທັນທີ",
+  "orders.chat.unlinkedHint": "ການສົນທະນານີ້ຍັງບໍ່ໄດ້ລິ້ງກັບລູກຄ້າ: ເລືອກ ຫຼື ສ້າງລູກຄ້າໃນຟອມນີ້ໄດ້ ແຕ່ລະບົບຈະບໍ່ລິ້ງການສົນທະນາໃຫ້ອັດຕະໂນມັດ",
+  "orders.chat.sendSummary": "ສົ່ງສະຫຼຸບບິນໃຫ້ລູກຄ້າໃນແຊັດ",
+  "orders.chat.createdTitle": "ສ້າງບິນ {number} ແລ້ວ",
+  "orders.chat.sending": "ກຳລັງສົ່ງສະຫຼຸບບິນເຂົ້າແຊັດ...",
+  "orders.chat.sent": "ສົ່ງສະຫຼຸບບິນເຂົ້າແຊັດແລ້ວ",
+  "orders.chat.sendFailed": "ສ້າງບິນ {number} ສຳເລັດແລ້ວ ແຕ່ສົ່ງສະຫຼຸບບິນເຂົ້າແຊັດບໍ່ສຳເລັດ: {reason}. ລະບົບຈະບໍ່ສ້າງບິນຊ້ຳ ທ່ານລອງສົ່ງສະຫຼຸບໃໝ່ໄດ້",
+  "orders.chat.retrySend": "ສົ່ງສະຫຼຸບອີກຄັ້ງ",
+  "orders.chat.back": "ກັບໄປແຊັດ",
+  "orders.chat.viewOrder": "ເບິ່ງບິນ",
 } as const;
 
 export type TranslationKey = keyof typeof lo;
@@ -1269,6 +1280,17 @@ const en: Record<TranslationKey, string> = {
   "inbox.customerDialog.phoneHint": "Optional",
   "inbox.customerDialog.phoneInvalid": "Invalid phone (6-15 digits, optional leading +)",
   "inbox.customerDialog.created": "Customer created and linked",
+  "orders.chat.title": "Open order from chat",
+  "orders.chat.description": "The order is linked to {name}'s Facebook conversation (source: chat). Stock is reserved immediately",
+  "orders.chat.unlinkedHint": "This conversation is not linked to a customer. You can pick or create one in this form, but the conversation is not linked automatically",
+  "orders.chat.sendSummary": "Send the order summary to the customer in chat",
+  "orders.chat.createdTitle": "Order {number} created",
+  "orders.chat.sending": "Sending the order summary to the chat...",
+  "orders.chat.sent": "Order summary sent to the chat",
+  "orders.chat.sendFailed": "Order {number} was created, but the summary could not be sent to the chat: {reason}. The order will not be created again; you can retry sending",
+  "orders.chat.retrySend": "Send summary again",
+  "orders.chat.back": "Back to chat",
+  "orders.chat.viewOrder": "View order",
 };
 
 export const dictionaries: Record<Language, Record<TranslationKey, string>> = { lo, en };
