@@ -9,6 +9,8 @@ import {
   buildRejectedText,
 } from "./cf-summary";
 
+const SENDING_STALE_MS = 2 * 60 * 1000;
+
 interface LedgerLine {
   itemId: string;
   code: string;
@@ -40,7 +42,7 @@ export class CfReplyService {
     } catch (error) {
       this.logger.error(`deliver failed for ${ledgerId} (${error instanceof Error ? error.name : "UnknownError"})`);
       await this.prisma.cfComment
-        .updateMany({ where: { id: ledgerId, replyStatus: { not: "SENT" } }, data: { replyStatus: "FAILED", replyErrorCode: "CHANNEL_UNAVAILABLE" } })
+        .updateMany({ where: { id: ledgerId, replyStatus: { in: ["NONE", "SENDING", "FAILED"] } }, data: { replyStatus: "FAILED", replyErrorCode: "CHANNEL_UNAVAILABLE" } })
         .catch(() => undefined);
     }
   }
@@ -52,6 +54,10 @@ export class CfReplyService {
     });
     if (!row || row.replyStatus === "SENT") return;
     if (row.outcome !== "ORDERED" && row.outcome !== "OUT_OF_STOCK" && row.outcome !== "LIMIT_REACHED") return;
+    if (row.outcome === "ORDERED" && !row.order) {
+      this.logger.warn(`ledger ${ledgerId} is ORDERED but has no order`);
+      return;
+    }
 
     let text: string;
     if (row.outcome === "ORDERED") {
@@ -73,11 +79,25 @@ export class CfReplyService {
       text = buildRejectedText(row.outcome, ledgerLines(row.lines).map((line) => line.code));
     }
 
+    // claim ແບບ atomic: ມີຜູ້ສົ່ງພ້ອມກັນຄົນດຽວເທົ່ານັ້ນ. SENDING ຄ້າງເກີນ 2 ນາທີ = ຜູ້ສົ່ງກ່ອນລົ້ມກາງທາງ ຍຶດຄືນໄດ້
+    const now = new Date();
+    const claim = await this.prisma.cfComment.updateMany({
+      where: {
+        id: ledgerId,
+        OR: [
+          { replyStatus: { in: ["NONE", "FAILED"] } },
+          { replyStatus: "SENDING", replyAttemptedAt: { lt: new Date(now.getTime() - SENDING_STALE_MS) } },
+        ],
+      },
+      data: { replyStatus: "SENDING", replyAttemptedAt: now },
+    });
+    if (claim.count === 0) return;
+
     const adapter = this.channels.facebook;
     const firstAttempt = row.replyStatus === "NONE";
     const result = await adapter.sendPrivateReply(row.externalCommentId, text);
-    await this.prisma.cfComment.update({
-      where: { id: ledgerId },
+    await this.prisma.cfComment.updateMany({
+      where: { id: ledgerId, replyStatus: "SENDING" },
       data: result.ok ? { replyStatus: "SENT", replyErrorCode: null } : { replyStatus: "FAILED", replyErrorCode: result.code },
     });
 

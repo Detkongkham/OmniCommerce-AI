@@ -34,19 +34,29 @@ export interface OrderedTextInput {
   now?: Date;
 }
 
+/** ຂີດຈຳກັດຂໍ້ຄວາມ Messenger */
+const MAX_TEXT_LENGTH = 2000;
+
 export function buildOrderedText(input: OrderedTextInput): string {
   const rows = input.lines.map((line) => `• ${line.name} x${line.quantity} = ${formatAmount(line.lineTotal)}`);
-  const parts = [`✅ ຮັບ CF ແລ້ວ ບິນ ${input.orderNumber}`, ...rows, `ລວມ ${formatAmount(input.total)} ${input.currency}`];
+  const head = `✅ ຮັບ CF ແລ້ວ ບິນ ${input.orderNumber}`;
+  const tail = [`ລວມ ${formatAmount(input.total)} ${input.currency}`];
   if (input.reservedUntil) {
-    parts.push(`ກະລຸນາໂອນກ່ອນ ${formatClock(input.reservedUntil, input.now)} (ຖ້າບໍ່ໂອນ ລະບົບຈະຄືນສິນຄ້າ)`);
+    tail.push(`ກະລຸນາໂອນກ່ອນ ${formatClock(input.reservedUntil, input.now)} (ຖ້າບໍ່ໂອນ ລະບົບຈະຄືນສິນຄ້າ)`);
   }
-  if (input.paymentInstructions?.trim()) parts.push(input.paymentInstructions.trim());
-  return parts.join("\n");
+  if (input.paymentInstructions?.trim()) tail.push(input.paymentInstructions.trim());
+  const assemble = (shown: string[], hidden: number): string =>
+    [head, ...shown, ...(hidden > 0 ? [`…ແລະອີກ ${hidden} ລາຍການ`] : []), ...tail].join("\n");
+
+  // ຕັດລາຍການຈາກທ້າຍຈົນພໍດີ; ຫົວ/ລວມ/ເວລາ/ຂໍ້ມູນໂອນຄົງໄວ້
+  let shown = rows.length;
+  while (shown > 0 && assemble(rows.slice(0, shown), rows.length - shown).length > MAX_TEXT_LENGTH) shown -= 1;
+  return assemble(rows.slice(0, shown), rows.length - shown).slice(0, MAX_TEXT_LENGTH);
 }
 
 export function buildRejectedText(kind: "OUT_OF_STOCK" | "LIMIT_REACHED", codes: string[]): string {
-  const list = codes.join(", ");
+  const target = codes.length > 0 ? `ລະຫັດ ${codes.join(", ")}` : "ສິນຄ້າທີ່ສັ່ງ";
   return kind === "OUT_OF_STOCK"
-    ? `ຂໍໂທດ ລະຫັດ ${list} ໝົດແລ້ວ ຮັບ CF ບໍ່ໄດ້`
-    : `ຂໍໂທດ ລະຫັດ ${list} ຄົບຈຳນວນທີ່ເປີດຮັບແລ້ວ`;
+    ? `ຂໍໂທດ ${target} ໝົດແລ້ວ ຮັບ CF ບໍ່ໄດ້`
+    : `ຂໍໂທດ ${target} ຄົບຈຳນວນທີ່ເປີດຮັບແລ້ວ`;
 }

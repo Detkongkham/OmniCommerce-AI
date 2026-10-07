@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CF_REPLY_STATUSES,
   cfCommentListQuerySchema,
   createLiveItemSchema,
   createLiveSessionSchema,
@@ -9,6 +10,9 @@ import {
 } from "./live-cf";
 
 describe("live-cf schemas", () => {
+  it("CF_REPLY_STATUSES ມີ SENDING (claim ການສົ່ງ)", () => {
+    expect(CF_REPLY_STATUSES).toEqual(["NONE", "SENDING", "SENT", "FAILED"]);
+  });
   it("createLiveSession: default publicReplyEnabled=true, externalPostId ບໍ່ບັງຄັບ", () => {
     const parsed = createLiveSessionSchema.parse({ title: " Live ຄືນນີ້ ", kind: "LIVE" });
     expect(parsed).toEqual({ title: "Live ຄືນນີ້", kind: "LIVE", publicReplyEnabled: true });

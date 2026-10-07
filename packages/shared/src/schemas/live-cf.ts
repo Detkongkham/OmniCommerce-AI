@@ -7,7 +7,7 @@ import { normalizeCfText } from "../cf-parser";
 export const LIVE_SESSION_KINDS = ["LIVE", "POST"] as const;
 export const LIVE_SESSION_STATUSES = ["DRAFT", "LIVE", "ENDED"] as const;
 export const CF_OUTCOMES = ["ORDERED", "NO_MATCH", "OUT_OF_STOCK", "LIMIT_REACHED", "ERROR"] as const;
-export const CF_REPLY_STATUSES = ["NONE", "SENT", "FAILED"] as const;
+export const CF_REPLY_STATUSES = ["NONE", "SENDING", "SENT", "FAILED"] as const;
 
 export type LiveSessionKind = (typeof LIVE_SESSION_KINDS)[number];
 export type LiveSessionStatus = (typeof LIVE_SESSION_STATUSES)[number];

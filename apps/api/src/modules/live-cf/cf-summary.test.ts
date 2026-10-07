@@ -55,7 +55,42 @@ describe("buildOrderedText", () => {
   });
 });
 
+describe("buildOrderedText ຂີດຈຳກັດ 2000 ຕົວອັກສອນ", () => {
+  const base = {
+    orderNumber: "SO-000012",
+    total: "250000.00",
+    currency: "LAK",
+    reservedUntil: new Date("2026-10-07T07:35:00Z"),
+    now: new Date("2026-10-07T07:00:00Z"),
+  };
+  it("200 ລາຍການ → ຕັດລາຍການ, ຍັງມີຫົວ/ລວມ/ເວລາ/ຂໍ້ມູນໂອນ ແລະ ແຖວ '…ແລະອີກ N ລາຍການ'", () => {
+    const lines = Array.from({ length: 200 }, (_, i) => ({ name: `ສິນຄ້າ ${i}`, quantity: 1, lineTotal: "1000.00" }));
+    const text = buildOrderedText({ ...base, lines, paymentInstructions: "BCEL 010-12" });
+    expect(text.length).toBeLessThanOrEqual(2000);
+    expect(text).toContain("SO-000012");
+    expect(text).toContain("ລວມ 250,000 LAK");
+    expect(text).toContain("14:35");
+    expect(text).toContain("BCEL 010-12");
+    expect(text).toMatch(/…ແລະອີກ \d+ ລາຍການ/);
+    const shown = text.split("\n").filter((l) => l.startsWith("• ")).length;
+    expect(text).toContain(`…ແລະອີກ ${200 - shown} ລາຍການ`);
+  });
+  it("ຂໍ້ມູນໂອນຍາວຜິດປົກກະຕິ → ຍັງ <= 2000 (hard slice)", () => {
+    const text = buildOrderedText({
+      ...base,
+      lines: [{ name: "ໝວກ", quantity: 1, lineTotal: "50000.00" }],
+      paymentInstructions: "x".repeat(5000),
+    });
+    expect(text.length).toBeLessThanOrEqual(2000);
+    expect(text).toContain("SO-000012");
+  });
+});
+
 describe("buildRejectedText", () => {
+  it("ລາຍການລະຫັດວ່າງ → ໃຊ້ຂໍ້ຄວາມສຳຮອງ ບໍ່ມີຊ່ອງວ່າງແປກ", () => {
+    expect(buildRejectedText("OUT_OF_STOCK", [])).not.toMatch(/ລະຫັດ\s+ໝົດ/);
+    expect(buildRejectedText("LIMIT_REACHED", [])).toContain("ຄົບ");
+  });
   it("ໝົດ / ຄົບຈຳນວນ ລະບຸລະຫັດ", () => {
     expect(buildRejectedText("OUT_OF_STOCK", ["A1", "B02"])).toContain("A1, B02");
     expect(buildRejectedText("OUT_OF_STOCK", ["A1"])).toContain("ໝົດ");

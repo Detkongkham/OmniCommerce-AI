@@ -118,6 +118,65 @@ describe("CfReplyService (e2e)", () => {
     expect((await db.cfComment.findUniqueOrThrow({ where: { id: row.id } })).replyStatus).toBe("SENT");
   });
 
+  it("ສອງ deliver ພ້ອມກັນ → ສົ່ງ private 1 ຄັ້ງ + public 1 ຄັ້ງ, SENT", async () => {
+    const { session, order } = await seedOrdered();
+    const row = await ledger(session.id, "ORDERED", order.id, "P_1_c5");
+    await Promise.all([service.deliver(row.id), service.deliver(row.id)]);
+    expect(graph.privateReplies).toHaveLength(1);
+    expect(graph.commentReplies).toHaveLength(1);
+    expect((await db.cfComment.findUniqueOrThrow({ where: { id: row.id } })).replyStatus).toBe("SENT");
+  });
+
+  it("SENDING ຄ້າງເກີນ 2 ນາທີ → ຍຶດຄືນສົ່ງ (ບໍ່ແມ່ນຄັ້ງທຳອິດ: ບໍ່ຕອບ public); SENDING ສົດ → ບໍ່ແຕະ", async () => {
+    const { session, order } = await seedOrdered();
+    const stale = await ledger(session.id, "ORDERED", order.id, "P_1_c6");
+    await db.cfComment.update({ where: { id: stale.id }, data: { replyStatus: "SENDING", replyAttemptedAt: new Date(Date.now() - 5 * 60_000) } });
+    await service.deliver(stale.id);
+    expect(graph.privateReplies).toHaveLength(1);
+    expect(graph.commentReplies).toHaveLength(0);
+    expect((await db.cfComment.findUniqueOrThrow({ where: { id: stale.id } })).replyStatus).toBe("SENT");
+
+    graph.reset();
+    const fresh = await ledger(session.id, "ORDERED", order.id, "P_1_c7");
+    await db.cfComment.update({ where: { id: fresh.id }, data: { replyStatus: "SENDING", replyAttemptedAt: new Date() } });
+    await service.deliver(fresh.id);
+    expect(graph.privateReplies).toHaveLength(0);
+    expect((await db.cfComment.findUniqueOrThrow({ where: { id: fresh.id } })).replyStatus).toBe("SENDING");
+  });
+
+  it("ORDERED + publicReplyEnabled=false → ສົ່ງສະເພາະ private", async () => {
+    const { session, order } = await seedOrdered(false);
+    const row = await ledger(session.id, "ORDERED", order.id, "P_1_c8");
+    await service.deliver(row.id);
+    expect(graph.privateReplies).toHaveLength(1);
+    expect(graph.commentReplies).toHaveLength(0);
+  });
+
+  it("outcome ERROR/NO_MATCH ບໍ່ສົ່ງຫຍັງ ແລະ ບໍ່ປ່ຽນສະຖານະ", async () => {
+    const { session } = await seedOrdered();
+    for (const [i, outcome] of (["ERROR", "NO_MATCH"] as const).entries()) {
+      const row = await db.cfComment.create({
+        data: { externalCommentId: `P_1_n${i}`, sessionId: session.id, authorExternalId: "U1", authorName: "U", message: "hi", outcome },
+      });
+      await service.deliver(row.id);
+      expect((await db.cfComment.findUniqueOrThrow({ where: { id: row.id } })).replyStatus).toBe("NONE");
+    }
+    expect(graph.privateReplies).toHaveLength(0);
+    expect(graph.commentReplies).toHaveLength(0);
+  });
+
+  it("paymentInstructions ຈາກ StoreSetting ປາກົດໃນຂໍ້ຄວາມ", async () => {
+    await db.storeSetting.upsert({
+      where: { id: 1 },
+      update: { paymentInstructions: "BCEL 010-12-00-99999999 OCA" },
+      create: { id: 1, name: "OCA", paymentInstructions: "BCEL 010-12-00-99999999 OCA" },
+    });
+    const { session, order } = await seedOrdered();
+    const row = await ledger(session.id, "ORDERED", order.id, "P_1_c9");
+    await service.deliver(row.id);
+    expect(graph.privateReplies[0]?.text).toContain("BCEL 010-12-00-99999999 OCA");
+  });
+
   it("OUT_OF_STOCK + private ລົ້ມ: ຍັງຕອບສາທາລະນະ (ຄັ້ງທຳອິດ)", async () => {
     const { session } = await seedOrdered(true);
     const row = await ledger(session.id, "OUT_OF_STOCK", null, "P_1_c4");
