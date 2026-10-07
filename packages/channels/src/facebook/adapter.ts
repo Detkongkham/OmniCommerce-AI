@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
-import type { ChannelAdapter, ChannelProfile, InboundEvent, SendResult } from "../types";
+import type { ChannelAdapter, ChannelProfile, CommentEvent, InboundEvent, SendResult } from "../types";
 import { isRecord } from "../util";
 import { mapGraphFailure } from "./graph-errors";
-import { parseFacebookWebhook } from "./parse";
+import { parseFacebookComments, parseFacebookWebhook } from "./parse";
 import { isValidSignature } from "./signature";
 
 export const DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v21.0";
@@ -54,18 +54,64 @@ export class FacebookAdapter implements ChannelAdapter {
     return parseFacebookWebhook(payload);
   }
 
+  parseComments(payload: unknown): CommentEvent[] {
+    return parseFacebookComments(payload);
+  }
+
   async sendText(threadId: string, text: string): Promise<SendResult> {
+    if (this.config.pageAccessToken && !SAFE_THREAD_ID.test(threadId)) {
+      return { ok: false, code: "SEND_REJECTED", detail: "Invalid thread id" };
+    }
+    return this.postGraph(
+      "/me/messages",
+      { recipient: { id: threadId }, messaging_type: "RESPONSE", message: { text } },
+      (body) => (typeof body.message_id === "string" ? body.message_id : undefined),
+      "Graph returned 2xx without message_id",
+    );
+  }
+
+  /** Private Reply: ຂໍ້ຄວາມສ່ວນຕົວ 1 ຄັ້ງຕໍ່ຄອມເມັ້ນ (ພາຍໃນ 7 ວັນ) ເພື່ອເລີ່ມແຊັດກັບຜູ້ຄອມເມັ້ນ */
+  async sendPrivateReply(commentId: string, text: string): Promise<SendResult> {
+    if (this.config.pageAccessToken && !SAFE_THREAD_ID.test(commentId)) {
+      return { ok: false, code: "SEND_REJECTED", detail: "Invalid comment id" };
+    }
+    return this.postGraph(
+      `/${commentId}/private_replies`,
+      { message: text },
+      (body) => (typeof body.message_id === "string" ? body.message_id : typeof body.id === "string" ? body.id : undefined),
+      "Graph returned 2xx without an id",
+    );
+  }
+
+  /** ຕອບຄອມເມັ້ນສາທາລະນະ */
+  async replyToComment(commentId: string, text: string): Promise<SendResult> {
+    if (this.config.pageAccessToken && !SAFE_THREAD_ID.test(commentId)) {
+      return { ok: false, code: "SEND_REJECTED", detail: "Invalid comment id" };
+    }
+    return this.postGraph(
+      `/${commentId}/comments`,
+      { message: text },
+      (body) => (typeof body.id === "string" ? body.id : undefined),
+      "Graph returned 2xx without an id",
+    );
+  }
+
+  private async postGraph(
+    path: string,
+    payload: unknown,
+    pickId: (body: Record<string, unknown>) => string | undefined,
+    missingIdDetail: string,
+  ): Promise<SendResult> {
     const token = this.config.pageAccessToken;
     if (!token) {
       return { ok: false, code: "CHANNEL_NOT_CONFIGURED", detail: "FACEBOOK_PAGE_ACCESS_TOKEN is not set" };
     }
-    if (!SAFE_THREAD_ID.test(threadId)) return { ok: false, code: "SEND_REJECTED", detail: "Invalid thread id" };
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.baseUrl}/me/messages`, {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ recipient: { id: threadId }, messaging_type: "RESPONSE", message: { text } }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
@@ -75,16 +121,16 @@ export class FacebookAdapter implements ChannelAdapter {
     try {
       body = await response.json();
     } catch (error) {
-      // abort/timeout/truncated/non-JSON body: the outcome is unknown, so never report a definite rejection
+      // abort/timeout/truncated/non-JSON body: ບໍ່ຮູ້ຜົນ ຈຶ່ງບໍ່ລາຍງານວ່າຖືກປະຕິເສດ
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: errorText(error) };
     }
     if (response.ok) {
-      if (isRecord(body) && typeof body.message_id === "string") return { ok: true, externalId: body.message_id };
-      // 2xx: Meta may have delivered the message
-      return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: "Graph returned 2xx without message_id" };
+      const id = isRecord(body) ? pickId(body) : undefined;
+      if (id !== undefined) return { ok: true, externalId: id };
+      // 2xx: Meta ອາດສົ່ງແລ້ວ
+      return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: missingIdDetail };
     }
-    const failure = mapGraphFailure(response.status, body);
-    return { ok: false, ...failure };
+    return { ok: false, ...mapGraphFailure(response.status, body) };
   }
 
   async fetchProfile(threadId: string): Promise<ChannelProfile | null> {

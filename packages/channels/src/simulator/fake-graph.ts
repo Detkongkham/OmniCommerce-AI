@@ -7,6 +7,12 @@ export interface SentMessage {
   authorization: string | undefined;
 }
 
+export interface CommentReply {
+  commentId: string;
+  text: string;
+  authorization: string | undefined;
+}
+
 export interface FakeGraphFailure {
   status: number;
   code: number;
@@ -27,6 +33,8 @@ export interface FakeGraph {
   readonly url: string;
   readonly sent: SentMessage[];
   readonly profiles: Map<string, string>;
+  readonly privateReplies: CommentReply[];
+  readonly commentReplies: CommentReply[];
   /** message_id ທີ່ຈະໄດ້ໃນການສົ່ງຄັ້ງຖັດໄປ */
   nextMessageId(): string;
   failNext(failure: FakeGraphFailure): void;
@@ -49,6 +57,8 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
 export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<FakeGraph> {
   const sent: SentMessage[] = [];
   const profiles = new Map<string, string>();
+  const privateReplies: CommentReply[] = [];
+  const commentReplies: CommentReply[] = [];
   const failures: FakeGraphFailure[] = [];
   let counter = 0;
 
@@ -63,6 +73,32 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
       return;
     }
     const url = new URL(request.url ?? "/", "http://localhost");
+
+    const commentRoute = /^\/(?:v[\d.]+\/)?([^/]+)\/(private_replies|comments)$/.exec(url.pathname);
+    if (request.method === "POST" && commentRoute) {
+      const failure = failures.shift();
+      if (failure) {
+        reply(failure.status, {
+          error: { message: failure.message, type: "OAuthException", code: failure.code, error_subcode: failure.subcode },
+        });
+        return;
+      }
+      const body = await readJson(request);
+      if (typeof body?.message !== "string") {
+        reply(400, { error: { message: "(#100) Invalid parameter", type: "OAuthException", code: 100 } });
+        return;
+      }
+      const entry = { commentId: decodeURIComponent(commentRoute[1] ?? ""), text: body.message, authorization };
+      counter += 1;
+      if (commentRoute[2] === "private_replies") {
+        privateReplies.push(entry);
+        reply(200, { id: `m_sim_pr_${counter}`, recipient_id: "sim" });
+      } else {
+        commentReplies.push(entry);
+        reply(200, { id: `c_sim_${counter}` });
+      }
+      return;
+    }
 
     if (request.method === "POST" && url.pathname.endsWith("/me/messages")) {
       const failure = failures.shift();
@@ -125,12 +161,16 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
     url: `http://127.0.0.1:${port}`,
     sent,
     profiles,
+    privateReplies,
+    commentReplies,
     nextMessageId: () => `m_sim_${counter + 1}`,
     failNext: (failure) => {
       failures.push(failure);
     },
     reset: () => {
       sent.length = 0;
+      privateReplies.length = 0;
+      commentReplies.length = 0;
       failures.length = 0;
       profiles.clear();
       counter = 0;

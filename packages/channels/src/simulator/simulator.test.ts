@@ -2,9 +2,9 @@ import { type IncomingMessage, createServer, request as httpRequest } from "node
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { FacebookAdapter } from "../facebook/adapter";
-import { parseFacebookWebhook } from "../facebook/parse";
+import { parseFacebookComments, parseFacebookWebhook } from "../facebook/parse";
 import { isValidSignature } from "../facebook/signature";
-import { type FakeGraph, deliveryPayload, echoPayload, messagePayload, postSignedWebhook, startFakeGraph } from "./index";
+import { type FakeGraph, commentPayload, deliveryPayload, echoPayload, messagePayload, postSignedWebhook, startFakeGraph } from "./index";
 
 describe("payload builders ກັບ parser", () => {
   it("messagePayload → message", () => {
@@ -188,6 +188,37 @@ describe("postSignedWebhook", () => {
     } finally {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+describe("comments", () => {
+  it("commentPayload ຖືກ parse ໂດຍ parseFacebookComments", () => {
+    const events = parseFacebookComments(
+      commentPayload({ pageId: "P", postId: "P_1", commentId: "P_1_9", fromId: "U1", fromName: "ກ", message: "A1", timestamp: 1_700_000_000_000 }),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ postId: "P_1", commentId: "P_1_9", authorId: "U1", message: "A1" });
+    expect(events[0]?.timestamp.getTime()).toBe(1_700_000_000_000);
+  });
+  it("verb ອື່ນຖືກຂ້າມ", () => {
+    expect(parseFacebookComments(commentPayload({ pageId: "P", postId: "P_1", commentId: "c", fromId: "U1", fromName: "ກ", message: "A1", verb: "edited" }))).toEqual([]);
+  });
+  it("fake graph ບັນທຶກ private_replies ແລະ comments; failNext ໃຊ້ກັບທັງສອງ", async () => {
+    const graph = await startFakeGraph({ token: "t" });
+    try {
+      const adapter = new FacebookAdapter({ pageAccessToken: "t", graphBaseUrl: graph.url });
+      expect(await adapter.sendPrivateReply("P_1_9", "hi")).toMatchObject({ ok: true });
+      expect(await adapter.replyToComment("P_1_9", "ok")).toMatchObject({ ok: true });
+      expect(graph.privateReplies).toEqual([{ commentId: "P_1_9", text: "hi", authorization: "Bearer t" }]);
+      expect(graph.commentReplies).toEqual([{ commentId: "P_1_9", text: "ok", authorization: "Bearer t" }]);
+      graph.failNext({ status: 400, code: 100, message: "(#100) bad" });
+      expect(await adapter.sendPrivateReply("P_1_9", "again")).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+      graph.reset();
+      expect(graph.privateReplies).toEqual([]);
+      expect(graph.commentReplies).toEqual([]);
+    } finally {
+      await graph.close();
     }
   });
 });
