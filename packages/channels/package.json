@@ -5,6 +5,23 @@
   "description": "Social channel adapters: Facebook, Instagram, TikTok, LINE",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./simulator": {
+      "types": "./dist/simulator/index.d.ts",
+      "default": "./dist/simulator/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "simulator": [
+        "./dist/simulator/index.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist"
   ],

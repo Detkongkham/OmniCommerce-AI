@@ -1,5 +1,5 @@
 import type { INestApplication } from "@nestjs/common";
-import { simulator } from "@oca/channels";
+import * as simulator from "@oca/channels/simulator";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
