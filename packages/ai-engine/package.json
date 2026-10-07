@@ -13,9 +13,6 @@
     "lint": "eslint .",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@oca/shared": "workspace:*"
-  },
   "devDependencies": {
     "@oca/config": "workspace:*",
     "@types/node": "^26.6.4",

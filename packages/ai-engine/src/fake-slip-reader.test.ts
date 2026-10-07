@@ -23,6 +23,24 @@ describe("FakeSlipReader", () => {
     await expect(new FakeSlipReader({}, { failWith: "boom" }).read(image)).rejects.toThrow("boom");
   });
 
+  it("failWith ເປັນສະຕຣິງວ່າງ ກໍ່ຍັງ throw", async () => {
+    await expect(new FakeSlipReader({}, { failWith: "" }).read(image)).rejects.toThrow();
+  });
+
+  it("raw ບໍ່ແມ່ນ object ດຽວກັບ fields ທີ່ຮັບເຂົ້າ", async () => {
+    const fields = { amount: "1.00" };
+    const result = await new FakeSlipReader(fields).read(image);
+    expect(result.raw).toEqual(fields);
+    expect(result.raw).not.toBe(fields);
+  });
+
+  it("signal ຖືກ abort ແລ້ວ → reject ດ້ວຍ reason ຂອງ signal", async () => {
+    const controller = new AbortController();
+    const reason = new Error("cancelled");
+    controller.abort(reason);
+    await expect(new FakeSlipReader().read(image, { signal: controller.signal })).rejects.toBe(reason);
+  });
+
   it("ມີ name/version", () => {
     const reader = new FakeSlipReader();
     expect(reader.name).toBe("fake");
@@ -35,6 +53,17 @@ describe("createSlipReader", () => {
     const reader = createSlipReader({ SLIP_FAKE_RESULT: '{"amount":"5.00","refNo":"Z"}' });
     expect(await reader.read(image)).toMatchObject({ amount: "5.00", refNo: "Z" });
     expect(createSlipReader({}).name).toBe("fake");
+  });
+
+  it.each(["null", "5", '"str"', "[1]", '{"amount":5}', '{"foo":"x"}'])(
+    "SLIP_FAKE_RESULT ຮູບແບບບໍ່ຖືກ (%s) → throw",
+    (value) => {
+      expect(() => createSlipReader({ SLIP_FAKE_RESULT: value })).toThrow("SLIP_FAKE_RESULT");
+    },
+  );
+
+  it("SLIP_READER ລະບຸ fake ຊັດເຈນ ໃຊ້ໄດ້", () => {
+    expect(createSlipReader({ SLIP_READER: "fake" }).name).toBe("fake");
   });
 
   it("SLIP_FAKE_RESULT ບໍ່ແມ່ນ JSON ຖືກ → throw ຕອນສ້າງ", () => {
