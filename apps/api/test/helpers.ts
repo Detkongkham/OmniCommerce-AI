@@ -1,7 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { hash } from "@node-rs/argon2";
-import { type ConversationStatus, type PrismaClient, ROLE_DEFINITIONS } from "@oca/database";
+import { type ConversationStatus, type PrismaClient, ROLE_DEFINITIONS, type SalesChannel } from "@oca/database";
 import { PERMISSIONS } from "@oca/shared";
 import request from "supertest";
 import { expect } from "vitest";
@@ -215,12 +215,13 @@ export async function seedConversation(
     lastMessagePreview: string | null;
     assigneeId: string | null;
     customerId: string | null;
+    channel: SalesChannel;
   }> = {},
 ) {
   const externalThreadId = overrides.externalThreadId ?? `PSID_${Math.random().toString(36).slice(2, 10)}`;
   return db.conversation.create({
     data: {
-      channel: "FACEBOOK",
+      channel: overrides.channel ?? "FACEBOOK",
       externalThreadId,
       displayName: overrides.displayName ?? `Customer ${externalThreadId}`,
       status: overrides.status ?? "OPEN",

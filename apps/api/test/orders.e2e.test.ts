@@ -501,6 +501,12 @@ describe("orders (e2e)", () => {
       expect(audit.after).toMatchObject({ conversationId: conversation.id });
     });
 
+    it("ເອົາ channel ຈາກແຊັດ (ບໍ່ແມ່ນ FACEBOOK), source=CHAT", async () => {
+      const conversation = await seedConversation(db, { channel: "LINE" });
+      const res = await createOrder(body(conversation.id), chat).expect(201);
+      expect(res.body).toMatchObject({ channel: "LINE", source: "CHAT", conversationId: conversation.id });
+    });
+
     it("audit ຂອງບິນທົ່ວໄປມີ conversationId = null", async () => {
       const res = await createOrder(body(), chat).expect(201);
       const audit = await db.auditLog.findFirstOrThrow({ where: { action: "order.create", entityId: res.body.id } });
