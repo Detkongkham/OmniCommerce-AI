@@ -47,6 +47,12 @@ export const ERROR_CODES = [
   "CF_COMMENT_NOT_FOUND",
   "LIVE_SESSION_INVALID_STATE",
   "LIVE_ITEM_IN_USE",
+  // logistics
+  "COURIER_NOT_FOUND",
+  "COURIER_INACTIVE",
+  "PACK_MISMATCH",
+  "PACK_NOT_VERIFIED",
+  "SHIPPING_INFO_REQUIRED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
