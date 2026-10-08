@@ -63,6 +63,16 @@ describe("store settings (e2e)", () => {
     await request(server()).patch("/settings/store").set(reader).send({ receivingAccounts: accounts }).expect(403);
   });
 
+  it("PATCH ສະເພາະ field ອື່ນ (ບໍ່ສົ່ງ receivingAccounts) ບໍ່ລ້າງບັນຊີຮັບເງິນ", async () => {
+    const writer = await bearerFor(app, "inv-write@test.local");
+    const accounts = [{ bank: "BCEL", accountNo: "010-12-00-0123" }];
+    await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: accounts }).expect(200);
+    const res = await request(server()).patch("/settings/store").set(writer).send({ name: "x" }).expect(200);
+    expect(res.body.receivingAccounts).toEqual(accounts);
+    const reader = await bearerFor(app, "inv-read@test.local");
+    expect((await request(server()).get("/settings/store").set(reader).expect(200)).body.receivingAccounts).toEqual(accounts);
+  });
+
   it("GET ພ້ອມກັນ 10 ຄັ້ງຕອນຍັງບໍ່ມີແຖວ → 200 ທັງໝົດ ແລະ ມີແຖວດຽວ", async () => {
     await db.storeSetting.deleteMany();
     const reader = await bearerFor(app, "inv-read@test.local");
