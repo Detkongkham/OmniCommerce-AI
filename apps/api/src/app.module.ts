@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module";
 import { CostRedactionInterceptor } from "./common/cost-redaction.interceptor";
 import { HttpErrorsFilter } from "./common/http-errors.filter";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
+import { StorageModule } from "./common/storage/storage.module";
 import { AppConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { FEATURE_MODULES } from "./modules";
@@ -14,6 +15,7 @@ import { PrismaModule } from "./prisma/prisma.module";
   imports: [
     AppConfigModule,
     PrismaModule,
+    StorageModule,
     AuditModule,
     AuthModule,
     HealthModule,

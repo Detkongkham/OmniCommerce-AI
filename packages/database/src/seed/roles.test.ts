@@ -30,7 +30,7 @@ describe("ROLE_DEFINITIONS", () => {
 
   it("role ຕົວຢ່າງມີສິດຕາມໜ້າທີ່", () => {
     const get = (name: string) => ROLE_DEFINITIONS.find((r) => r.name === name)?.permissions ?? [];
-    expect(get("CHAT_ADMIN")).toEqual(expect.arrayContaining(["inbox:write", "live-cf:write", "crm:read"]));
+    expect(get("CHAT_ADMIN")).toEqual(expect.arrayContaining(["inbox:write", "live-cf:write", "posting:write", "crm:read"]));
     expect(get("WAREHOUSE")).toEqual(expect.arrayContaining(["inventory:write", "logistics:write"]));
     expect(get("ACCOUNTANT")).toEqual(expect.arrayContaining(["analytics:read"]));
     expect(get("ACCOUNTANT").some((p) => p.endsWith(":write"))).toBe(false);

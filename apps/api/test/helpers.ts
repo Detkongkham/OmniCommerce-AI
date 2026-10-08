@@ -42,7 +42,7 @@ export async function resetDb(db: PrismaClient): Promise<void> {
   }
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role", ' +
-      '"Shipment", "Courier", "CfComment", "LiveSessionItem", "LiveSession", "Message", "Conversation", ' +
+      '"SocialPostMedia", "SocialPost", "MediaFile", "Shipment", "Courier", "CfComment", "LiveSessionItem", "LiveSession", "Message", "Conversation", ' +
       '"OrderItem", "Order", "Customer", "StockMovement", "StockLevel", "ProductImage", ' +
       '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
       '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
@@ -280,4 +280,16 @@ export async function seedLiveSession(
     },
     include: { items: true },
   });
+}
+
+/** PNG 1×1 ທີ່ຖືກຕ້ອງ (ອັບໂຫຼດໃນ test) */
+export const TEST_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/** ອັບໂຫຼດຮູບຜ່ານ POST /media ແລ້ວຄືນ id */
+export async function uploadTestImage(app: INestApplication, auth: { Authorization: string }, data: Buffer = TEST_PNG): Promise<{ id: string; path: string }> {
+  const res = await request(app.getHttpServer()).post("/media").set(auth).attach("file", data, "photo.png").expect(201);
+  return res.body as { id: string; path: string };
 }

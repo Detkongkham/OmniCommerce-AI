@@ -429,6 +429,9 @@ model User {
   packedShipments       Shipment[]     @relation("ShipmentPackedBy")
   verifiedShipments     Shipment[]     @relation("ShipmentVerifiedBy")
   shippedShipments      Shipment[]     @relation("ShipmentShippedBy")
+  mediaFiles            MediaFile[]
+  createdSocialPosts    SocialPost[]   @relation("SocialPostCreatedBy")
+  scheduledSocialPosts  SocialPost[]   @relation("SocialPostScheduledBy")
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -545,6 +548,8 @@ model LiveSession {
   items    LiveSessionItem[] @relation("LiveSessionItems")
   comments CfComment[]
   orders   Order[]
+  // ໂພສ (Social Posting) ທີ່ຈະ start session ນີ້ຫຼັງຂຶ້ນເພຈ
+  socialPost SocialPost?
 
   @@index([status, externalPostId])
   @@index([featuredItemId])
@@ -639,4 +644,69 @@ model Shipment {
   updatedAt            DateTime             @updatedAt
 
   @@index([courierId])
+}
+
+// ໄຟລ໌ທີ່ອັບໂຫຼດ (ເກັບເທິງ disk ທີ່ MEDIA_DIR); ໃຊ້ຮ່ວມກັນໄດ້ຫຼາຍໂມດູນ
+model MediaFile {
+  id           String            @id @default(cuid())
+  // <32 hex>.<jpg|png|webp>
+  storageKey   String            @unique
+  mimeType     String
+  size         Int
+  originalName String
+  createdById  String?
+  createdBy    User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+  postMedia    SocialPostMedia[]
+}
+
+enum SocialPostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+// ໂພສລົງ Facebook Page (ທັນທີ/ຕັ້ງເວລາ)
+model SocialPost {
+  id             String            @id @default(cuid())
+  message        String
+  status         SocialPostStatus  @default(DRAFT)
+  scheduledAt    DateTime?
+  // ເວລາທີ່ຕົວໂພສ claim (ກວດໂພສທີ່ຄ້າງ)
+  publishingAt   DateTime?
+  publishedAt    DateTime?
+  // <pageId>_<postId>
+  externalPostId String?
+  errorCode      String?
+  errorMessage   String?
+  liveSessionId  String?           @unique
+  liveSession    LiveSession?      @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
+  cfLinkError    String?
+  createdById    String?
+  createdBy      User?             @relation("SocialPostCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scheduledById  String?
+  scheduledBy    User?             @relation("SocialPostScheduledBy", fields: [scheduledById], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  media          SocialPostMedia[]
+
+  @@index([status, scheduledAt])
+  @@index([createdById])
+  @@index([scheduledById])
+}
+
+// ຮູບຂອງໂພສ: ໄຟລ໌ທີ່ອັບໂຫຼດ ຫຼື URL ພາຍນອກ (ອັນໃດອັນໜຶ່ງ, CHECK ໃນ migration)
+model SocialPostMedia {
+  id          String     @id @default(cuid())
+  postId      String
+  post        SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  position    Int
+  mediaFileId String?
+  mediaFile   MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: Restrict)
+  url         String?
+
+  @@unique([postId, position])
+  @@index([mediaFileId])
 }

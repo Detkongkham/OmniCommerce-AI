@@ -44,6 +44,10 @@ const envSchema = z
     FACEBOOK_PAGE_ACCESS_TOKEN: optionalString,
     // ຊີ້ໄປ simulator ໃນ dev; ບໍ່ຕັ້ງ = https://graph.facebook.com/v21.0
     FACEBOOK_GRAPH_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+    // ໄຟລ໌ທີ່ອັບໂຫຼດ (relative = ນັບຈາກ cwd)
+    MEDIA_DIR: z.preprocess(emptyToUndefined, z.string().min(1).default("./.data/media")),
+    // ໄລຍະກວດໂພສທີ່ຮອດເວລາ; 0 = ປິດ
+    POSTING_TICK_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).default(30_000)),
   })
   .superRefine((env, ctx) => {
     if (

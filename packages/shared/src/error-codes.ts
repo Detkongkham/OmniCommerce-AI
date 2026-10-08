@@ -53,6 +53,11 @@ export const ERROR_CODES = [
   "PACK_MISMATCH",
   "PACK_NOT_VERIFIED",
   "SHIPPING_INFO_REQUIRED",
+  // social posting / media
+  "POST_NOT_FOUND",
+  "POST_INVALID_STATE",
+  "MEDIA_NOT_FOUND",
+  "MEDIA_INVALID",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
