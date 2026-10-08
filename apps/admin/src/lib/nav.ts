@@ -1,5 +1,23 @@
 import { type Permission, hasPermission } from "@oca/shared";
-import { Boxes, ClipboardList, PackageCheck, Truck, FolderTree, type LucideIcon, Megaphone, MessageSquare, Package, Radio, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import {
+  BarChart3,
+  Boxes,
+  ClipboardList,
+  FolderTree,
+  Gauge,
+  type LucideIcon,
+  Megaphone,
+  MessageSquare,
+  Package,
+  PackageCheck,
+  Radio,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+  Truck,
+  Users,
+  Warehouse,
+} from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 
 export interface NavItem {
@@ -52,6 +70,16 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/couriers", labelKey: "nav.couriers", icon: Truck, permission: "logistics:read" },
       { href: "/staff", labelKey: "nav.staff", icon: Users, permission: "staff:read" },
       { href: "/roles", labelKey: "nav.roles", icon: ShieldCheck, permission: "staff:read" },
+    ],
+  },
+  // ລາຍງານ (ໂມດູນ 10 + 12) ຢູ່ທ້າຍສຸດ: ບໍ່ປ່ຽນໜ້າຫຼັງ login ຂອງບົດບາດເດີມ (staff:read ຍັງໄປ /staff)
+  {
+    id: "reports",
+    labelKey: "nav.group.reports",
+    items: [
+      { href: "/analytics", labelKey: "nav.analytics", icon: BarChart3, permission: "analytics:read" },
+      { href: "/staff-kpi", labelKey: "nav.staffKpi", icon: Gauge, permission: "staff:read" },
+      { href: "/audit", labelKey: "nav.audit", icon: ScrollText, permission: "staff:read" },
     ],
   },
 ];
