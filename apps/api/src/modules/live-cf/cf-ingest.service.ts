@@ -5,6 +5,7 @@ import { PRISMA } from "../../prisma/prisma.module";
 import { CfQueueService } from "./cf-queue.service";
 
 const CACHE_TTL_MS = 3000;
+const CACHE_MAX_ENTRIES = 1000;
 
 /** ຈາກ webhook: ກອງຄອມເມັ້ນຂອງໂພສທີ່ມີ session LIVE ແລ້ວໂຍນເຂົ້າ queue (ບໍ່ປະມວນຜົນໃນ request ຂອງ Meta) */
 @Injectable()
@@ -47,7 +48,20 @@ export class CfIngestService {
       where: { externalPostId: postId, status: "LIVE" },
       select: { id: true },
     });
+    // negative cache: instance ອື່ນຂອງ API ອາດພາດຄອມເມັ້ນພາຍໃນ 3 ວິນາທີຫຼັງ `start` (ປັດຈຸບັນມີ instance ດຽວ)
+    this.prune();
     this.cache.set(postId, { sessionId: session?.id ?? null, expires: Date.now() + CACHE_TTL_MS });
     return session?.id ?? null;
+  }
+
+  /** ກັນ cache ໃຫຍ່ຂຶ້ນບໍ່ມີທີ່ສິ້ນສຸດ (ຄອມເມັ້ນຈາກຫຼາຍໂພສ): ລຶບທີ່ໝົດອາຍຸກ່ອນ ແລ້ວລຶບອັນເກົ່າສຸດ (ລຳດັບ insert) */
+  private prune(): void {
+    if (this.cache.size < CACHE_MAX_ENTRIES) return;
+    const now = Date.now();
+    for (const [key, entry] of this.cache) if (entry.expires <= now) this.cache.delete(key);
+    for (const key of this.cache.keys()) {
+      if (this.cache.size < CACHE_MAX_ENTRIES) break;
+      this.cache.delete(key);
+    }
   }
 }

@@ -68,10 +68,6 @@ export class FacebookWebhookController {
     if (!adapter.canReceive) throw apiError("CHANNEL_NOT_CONFIGURED", "Facebook webhook is not configured");
     if (!req.rawBody || !adapter.verifySignature(req.rawBody, signature)) throw new UnauthorizedException();
 
-    // ຄອມເມັ້ນ CF: ເຂົ້າ queue (ລົ້ມ = 500 ໃຫ້ Meta ສົ່ງຊ້ຳ; jobId ກັນຊ້ຳ). ບໍ່ປະມວນຜົນໃນ request
-    const comments = adapter.parseComments(body);
-    const queuedComments = comments.length > 0 ? await this.cf.enqueue(comments) : 0;
-
     const events = adapter.parseWebhook(body);
     const stored = new Set<string>();
     const enrich = new Set<string>();
@@ -98,6 +94,10 @@ export class FacebookWebhookController {
       for (const conversationId of enrich) this.ingest.enrichInBackground(conversationId);
       await this.ingest.notify(stored);
     }
+    // ຄອມເມັ້ນ CF ເຂົ້າ queue ຫຼັງງານ inbox (DB ລ້ວນ ແລະ idempotent) ແລ້ວ: Redis ລົ້ມ = 500 ໃຫ້ Meta ສົ່ງຊ້ຳ
+    // ໂດຍຂໍ້ຄວາມ inbox ບໍ່ເສຍ (jobId ກັນຄອມເມັ້ນຊ້ຳ); ບໍ່ປະມວນຜົນ CF ໃນ request
+    const comments = adapter.parseComments(body);
+    const queuedComments = comments.length > 0 ? await this.cf.enqueue(comments) : 0;
     const base = failed > 0 ? { received: events.length - failed, failed } : { received: events.length };
     return queuedComments > 0 ? { ...base, comments: queuedComments } : base;
   }

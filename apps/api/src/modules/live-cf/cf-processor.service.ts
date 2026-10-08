@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { HttpException, Inject, Injectable, Logger } from "@nestjs/common";
 import { InsufficientStockError, type Prisma, type PrismaClient } from "@oca/database";
 import { parseCf } from "@oca/shared";
 import { PRISMA } from "../../prisma/prisma.module";
@@ -12,6 +12,19 @@ export interface CfCommentJob {
   authorId: string;
   authorName: string;
   message: string;
+}
+
+export interface CfProcessOptions {
+  /** ຄັ້ງສຸດທ້າຍຂອງ job (BullMQ attempts): ຄວາມຜິດພາດທີ່ບໍ່ຄາດຄິດຈຶ່ງຈະຖືກບັນທຶກເປັນ ERROR; ກ່ອນນັ້ນ throw ເພື່ອ retry */
+  isLastAttempt: boolean;
+}
+
+/** ຄວາມຜິດພາດທາງທຸລະກິດ (ມີ code ຄົງທີ່ ເຊັ່ນ VARIANT_NOT_AVAILABLE): ລອງໃໝ່ກໍຜົນເດີມ ຈຶ່ງບັນທຶກ ledger ທັນທີ */
+function isBusinessError(error: unknown): boolean {
+  if (error instanceof InsufficientStockError || error instanceof CfLimitReachedError) return true;
+  if (!(error instanceof HttpException)) return false;
+  const body = error.getResponse();
+  return typeof body === "object" && body !== null && typeof (body as { code?: unknown }).code === "string";
 }
 
 /** ເກີນ limit ຂອງລະຫັດ: ໂຍນໃນ transaction ເພື່ອ rollback */
@@ -42,11 +55,19 @@ export class CfProcessorService {
   ) {}
 
   /** ປະມວນຜົນ 1 ຄອມເມັ້ນ. ບໍ່ throw ສຳລັບຄວາມຜິດພາດຂອງທຸລະກິດ (ບັນທຶກເປັນ outcome ໃນ ledger); idempotent ດ້ວຍ externalCommentId */
-  async process(job: CfCommentJob): Promise<void> {
+  async process(job: CfCommentJob, options: CfProcessOptions = { isLastAttempt: true }): Promise<void> {
     const session = await this.prisma.liveSession.findUnique({ where: { id: job.sessionId }, include: { items: true } });
     // ຈົບ/ຍັງບໍ່ເລີ່ມແລ້ວ: ຂ້າມ (ຄອມເມັ້ນທີ່ເຂົ້າ queue ກ່ອນຈົບ ແຕ່ມາຖືກປະມວນຜົນຫຼັງຈົບ ບໍ່ຈອງ)
     if (!session || session.status !== "LIVE") return;
-    if (await this.prisma.cfComment.findUnique({ where: { externalCommentId: job.commentId }, select: { id: true } })) return;
+    const existing = await this.prisma.cfComment.findUnique({
+      where: { externalCommentId: job.commentId },
+      select: { id: true, replyStatus: true },
+    });
+    if (existing) {
+      // ledger ມີແລ້ວແຕ່ຍັງບໍ່ໄດ້ສົ່ງ (process ຫາຍກາງທາງລະຫວ່າງ commit ກັບ deliver): ສົ່ງຕໍ່ (deliver claim ແບບ atomic)
+      if (existing.replyStatus === "NONE") await this.replies.deliver(existing.id);
+      return;
+    }
 
     const parsed = parseCf(job.message, session.items.map((item) => item.code));
     if (!parsed) {
@@ -67,7 +88,7 @@ export class CfProcessorService {
     try {
       placed = await this.prisma.$transaction((tx) => this.place(tx, job, session, lines), { timeout: 20_000, maxWait: 15_000 });
     } catch (error) {
-      placed = await this.recordFailure(job, lines, error);
+      placed = await this.recordFailure(job, lines, error, options.isLastAttempt);
     }
     if (!placed.duplicate) await this.replies.deliver(placed.ledgerId);
   }
@@ -106,8 +127,17 @@ export class CfProcessorService {
       select: { id: true },
     });
     let orderId: string;
+    let appended = false;
     if (open) {
-      await this.orders.appendItemsInTx(tx, open.id, additions, null);
+      try {
+        await this.orders.appendItemsInTx(tx, open.id, additions, null);
+        appended = true;
+      } catch (error) {
+        // ບິນຖືກຈ່າຍ/ຍົກເລີກ/ໝົດເວລາລະຫວ່າງຄົ້ນຫາກັບ lock: append throw ກ່ອນຂຽນຫຍັງ ຈຶ່ງສ້າງບິນໃໝ່ໄດ້ໂດຍບໍ່ຕ້ອງ savepoint
+        if (!(error instanceof HttpException) || (error.getResponse() as { code?: string }).code !== "ORDER_INVALID_STATE") throw error;
+      }
+    }
+    if (open && appended) {
       orderId = open.id;
     } else {
       orderId = await this.orders.createCfOrderInTx(
@@ -141,11 +171,13 @@ export class CfProcessorService {
     return { duplicate: false, ledgerId: ledger.id };
   }
 
-  private async recordFailure(job: CfCommentJob, lines: ResolvedLine[], error: unknown): Promise<Placed> {
+  private async recordFailure(job: CfCommentJob, lines: ResolvedLine[], error: unknown, isLastAttempt: boolean): Promise<Placed> {
     const detail = lines.map(({ itemId, code, quantity }) => ({ itemId, code, quantity }));
     if (error instanceof InsufficientStockError) return this.record(job, { outcome: "OUT_OF_STOCK", lines: detail });
     if (error instanceof CfLimitReachedError) return this.record(job, { outcome: "LIMIT_REACHED", lines: detail });
-    // ບັນທຶກສະເພາະຊື່ error (ບໍ່ເອົາ payload/ຄວາມລັບລົງ log); ບໍ່ retry ເພື່ອບໍ່ຈອງຊ້ຳ
+    // ຄວາມຜິດພາດຊົ່ວຄາວ/ບໍ່ຄາດຄິດ (DB ຕັດ, deadlock, timeout): throw ໃຫ້ BullMQ retry (idempotent ດ້ວຍ lock + ledger)
+    if (!isLastAttempt && !isBusinessError(error)) throw error;
+    // ບັນທຶກສະເພາະຊື່ error (ບໍ່ເອົາ payload/ຄວາມລັບລົງ log)
     this.logger.error(`CF comment ${job.commentId} failed (${error instanceof Error ? error.name : "UnknownError"})`);
     return this.record(job, { outcome: "ERROR", lines: detail });
   }

@@ -2,10 +2,15 @@ import type { INestApplication } from "@nestjs/common";
 import { signBody } from "@oca/channels";
 import * as simulator from "@oca/channels/simulator";
 import { type PrismaClient, receive } from "@oca/database";
+import { Queue } from "bullmq";
+import { Redis } from "ioredis";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CfIngestService } from "../src/modules/live-cf/cf-ingest.service";
+import { type CfCommentJob, CfProcessorService } from "../src/modules/live-cf/cf-processor.service";
+import { CfReplyService } from "../src/modules/live-cf/cf-reply.service";
 import { CfQueueService } from "../src/modules/live-cf/cf-queue.service";
+import { OrdersService } from "../src/modules/orders/orders.service";
 import { createTestApp, expectLedgerMatches, resetDb, seedCatalog, seedLiveSession } from "./helpers";
 
 const SECRET = "app-secret-test";
@@ -84,8 +89,24 @@ describe("CF engine (e2e)", () => {
   afterAll(async () => {
     await app.close();
     await graph.close();
+    // ລຶບ key ຂອງ queue ສະເພາະຮອບນີ້ (prefix oca-test-<pid>) ບໍ່ໃຫ້ຄ້າງໃນ Redis; ບໍ່ແຕະ namespace ອື່ນ
+    const prefix = process.env.QUEUE_PREFIX ?? "";
+    if (prefix.startsWith("oca-test-")) {
+      const redis = new Redis(process.env.REDIS_URL ?? "");
+      try {
+        let cursor = "0";
+        do {
+          const [next, keys] = await redis.scan(cursor, "MATCH", `${prefix}:*`, "COUNT", 500);
+          cursor = next;
+          if (keys.length > 0) await redis.del(...keys);
+        } while (cursor !== "0");
+      } finally {
+        redis.disconnect();
+      }
+    }
   });
   beforeEach(async () => {
+    vi.restoreAllMocks();
     await resetDb(db);
     graph.reset();
     f = await seedCatalog(db);
@@ -367,5 +388,149 @@ describe("CF engine (e2e)", () => {
     const retry = await comment("U1", "CF A1", { commentId });
     expect(retry.res.status).toBe(200);
     expect((await settled(commentId)).outcome).toBe("ORDERED");
+  });
+
+  const jobFor = (sessionId: string, commentId: string, user = "U1", message = "CF A1"): CfCommentJob => ({
+    sessionId,
+    commentId,
+    postId: POST,
+    authorId: user,
+    authorName: `User ${user}`,
+    message,
+  });
+
+  it("17. transient failure is retried by the worker: no ERROR ledger, 2nd attempt orders", async () => {
+    await liveSession();
+    vi.spyOn(db, "$transaction").mockImplementationOnce((() => Promise.reject(new Error("connection reset"))) as never);
+    const { commentId } = await comment("U1", "CF A1");
+    const row = await vi.waitFor(
+      async () => {
+        const found = await db.cfComment.findUniqueOrThrow({ where: { externalCommentId: commentId } });
+        expect(found.replyStatus).toBe("SENT");
+        return found;
+      },
+      { timeout: 15000, interval: 100 },
+    );
+    expect(row.outcome).toBe("ORDERED");
+    expect(await db.cfComment.count()).toBe(1);
+    expect(await db.order.count()).toBe(1);
+    expect(await reserved(f.v1.id)).toBe(1);
+  });
+
+  it("18. unexpected error: rethrown before the last attempt, ERROR ledger on the last", async () => {
+    const session = await liveSession();
+    const processor = app.get(CfProcessorService);
+    vi.spyOn(db, "$transaction").mockImplementationOnce((() => Promise.reject(new Error("boom"))) as never);
+    await expect(processor.process(jobFor(session.id, `${POST}_${RUN}_t1`), { isLastAttempt: false })).rejects.toThrow("boom");
+    expect(await db.cfComment.count()).toBe(0);
+    vi.spyOn(db, "$transaction").mockImplementationOnce((() => Promise.reject(new Error("boom"))) as never);
+    await processor.process(jobFor(session.id, `${POST}_${RUN}_t1`), { isLastAttempt: true });
+    const row = await db.cfComment.findUniqueOrThrow({ where: { externalCommentId: `${POST}_${RUN}_t1` } });
+    expect(row.outcome).toBe("ERROR");
+    expect(await db.order.count()).toBe(0);
+  });
+
+  it("19. merge race: open order closed before append -> falls back to a NEW order", async () => {
+    const session = await liveSession();
+    const processor = app.get(CfProcessorService);
+    await settled((await comment("U1", "CF A1")).commentId);
+    const orders = app.get(OrdersService);
+    const original = orders.appendItemsInTx.bind(orders);
+    vi.spyOn(orders, "appendItemsInTx").mockImplementationOnce(async (tx, orderId, additions, actorId) => {
+      await tx.order.update({ where: { id: orderId }, data: { status: "PAID" } });
+      return original(tx, orderId, additions, actorId);
+    });
+    const commentId = `${POST}_${RUN}_race`;
+    await processor.process(jobFor(session.id, commentId, "U1", "CF B02"), { isLastAttempt: true });
+    const row = await settled(commentId);
+    expect(row.outcome).toBe("ORDERED");
+    expect(await db.order.count()).toBe(2);
+    expect(row.order?.status).toBe("PENDING_PAYMENT");
+    expect(row.order?.items.map((item) => item.sku)).toEqual(["SKU-2"]);
+    await expectLedgerMatches(db);
+  });
+
+  it("20. Redis outage: inbox message in the same payload is stored, webhook still 500", async () => {
+    await liveSession();
+    vi.spyOn(app.get(CfQueueService), "add").mockRejectedValueOnce(new Error("redis down"));
+    const message = simulator.messagePayload({ pageId: PAGE, psid: "PSID1", mid: `m_${RUN}_1`, text: "hello" }) as { entry: object[] };
+    const cf = simulator.commentPayload({
+      pageId: PAGE,
+      postId: POST,
+      commentId: `${POST}_${RUN}_mixed`,
+      fromId: "U1",
+      fromName: "User U1",
+      message: "CF A1",
+    }) as { entry: object[] };
+    const res = await postWebhook({ object: "page", entry: [...message.entry, ...cf.entry] });
+    expect(res.status).toBe(500);
+    expect(await db.conversation.count()).toBe(1);
+    expect(await db.cfComment.count()).toBe(0);
+  });
+
+  it("21. queue add has a bounded wait when Redis hangs", async () => {
+    await liveSession();
+    const queue = app.get(CfQueueService);
+    const previous = queue.addTimeoutMs;
+    queue.addTimeoutMs = 100;
+    vi.spyOn(Queue.prototype, "add").mockImplementation((() => new Promise(() => undefined)) as never);
+    try {
+      const started = Date.now();
+      const { res } = await comment("U1", "CF A1");
+      expect(res.status).toBe(500);
+      expect(Date.now() - started).toBeLessThan(2000);
+    } finally {
+      queue.addTimeoutMs = previous;
+      vi.mocked(Queue.prototype.add).mockRestore();
+    }
+  });
+
+  it("22. ingest cache stays bounded", async () => {
+    await liveSession();
+    const ingest = app.get(CfIngestService);
+    const events = Array.from({ length: 1100 }, (_, index) => ({
+      channel: "FACEBOOK" as const,
+      postId: `NOPOST_${index}`,
+      commentId: `NOPOST_${index}_c`,
+      authorId: "U1",
+      authorName: "U1",
+      message: "hi",
+      parentId: null,
+      timestamp: new Date(),
+    }));
+    await ingest.enqueue(events);
+    const cache = (ingest as unknown as { cache: Map<string, unknown> }).cache;
+    expect(cache.size).toBeLessThanOrEqual(1000);
+  });
+
+  it("23. existing ledger with replyStatus NONE (crash before deliver) is delivered on reprocess", async () => {
+    const session = await liveSession();
+    const processor = app.get(CfProcessorService);
+    const commentId = `${POST}_${RUN}_crash`;
+    vi.spyOn(app.get(CfReplyService), "deliver").mockResolvedValueOnce(undefined);
+    await processor.process(jobFor(session.id, commentId), { isLastAttempt: true });
+    expect((await db.cfComment.findUniqueOrThrow({ where: { externalCommentId: commentId } })).replyStatus).toBe("NONE");
+    expect(graph.privateReplies).toHaveLength(0);
+    await processor.process(jobFor(session.id, commentId), { isLastAttempt: true });
+    expect((await db.cfComment.findUniqueOrThrow({ where: { externalCommentId: commentId } })).replyStatus).toBe("SENT");
+    expect(graph.privateReplies).toHaveLength(1);
+    expect(await db.order.count()).toBe(1);
+  });
+
+  it("24. process() twice and concurrently with the same commentId: one order, one ledger, one reply", async () => {
+    const session = await liveSession();
+    const processor = app.get(CfProcessorService);
+    const sequential = `${POST}_${RUN}_seq`;
+    await processor.process(jobFor(session.id, sequential), { isLastAttempt: true });
+    await processor.process(jobFor(session.id, sequential), { isLastAttempt: true });
+    const concurrent = `${POST}_${RUN}_con`;
+    await Promise.all(
+      Array.from({ length: 4 }, () => processor.process(jobFor(session.id, concurrent, "U2"), { isLastAttempt: true })),
+    );
+    expect(await db.cfComment.count()).toBe(2);
+    expect(await db.order.count()).toBe(2);
+    expect(await reserved(f.v1.id)).toBe(2);
+    expect(graph.privateReplies).toHaveLength(2);
+    await expectLedgerMatches(db);
   });
 });
