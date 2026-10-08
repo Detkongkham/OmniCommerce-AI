@@ -1,6 +1,6 @@
 # Phase 1 ໂມດູນ 4: Live & Post CF Engine, sub-project 4b (Host screen)
 
-ວັນທີ: 2026-10-08 · ສະຖານະ: ຜູ້ໃຊ້ອະນຸມັດການອອກແບບແລ້ວ · Branch: ຕໍ່ຈາກ 4a-2 (`claude/happy-darwin-rtw7v6`)
+ວັນທີ: 2026-10-08 · ສະຖານະ: ສຳເລັດ (4b-1 + 4b-2) · Branch: ຕໍ່ຈາກ 4a-2 (`claude/happy-darwin-rtw7v6`)
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
@@ -46,8 +46,8 @@
   - ຟີດ CF ລ່າສຸດ (ຊື່ໃຫຍ່, ຄອມເມັ້ນ, ຜົນ); `aria-live="polite"` ສະເພາະລາຍການໃໝ່ສຸດ.
   - ແຖບສະຖານະ: ປ້າຍ LIVE + ເວລາທີ່ຜ່ານໄປ, ການເຊື່ອມຕໍ່ (ເຊື່ອມແລ້ວ / ກຳລັງເຊື່ອມຄືນ). DRAFT = "ຍັງບໍ່ເລີ່ມ"; ENDED = ປ້າຍ "ຈົບແລ້ວ" + ຍອດສຸດທ້າຍ (ບໍ່ເຊື່ອມ SSE).
   - refetch ລົ້ມ: ຄຳເຕືອນນ້ອຍ, ຂໍ້ມູນເກົ່າຍັງຢູ່. 404 = ບໍ່ພົບ + ກັບຄືນ.
-- Realtime: ແຍກ `runInboxStream` ເປັນ `runEventStream({ url, events, ... })` (ເກັບ reconnect/refresh/backoff ເດີມ; `runInboxStream` ເອີ້ນຕົວໃໝ່ດ້ວຍ `["conversation.updated"]` ຈຶ່ງບໍ່ປ່ຽນພຶດຕິກຳ). `useLiveRealtime(sessionId, enabled)` invalidate snapshot (ລວມ event 250 ms) ແລະ poll ທຸກ 15 ວິ ຕອນບໍ່ໄດ້ເຊື່ອມ.
-- `/live/:id`: ປຸ່ມ "Host screen" (ເປີດແທັບໃໝ່) ແລະ ປຸ່ມ "ນຳສະເໜີ" ຕໍ່ແຖວໃນຕາຕະລາງລະຫັດ (write + ບໍ່ ENDED; ແຖວທີ່ນຳສະເໜີຢູ່ມີປ້າຍ). ໜ້ານີ້ໃຊ້ SSE ດຽວກັນແທນ poll 5 ວິ ຕອນ LIVE (poll ສຳຮອງ 15 ວິ).
+- Realtime: ແຍກ `runInboxStream` ເປັນ `runEventStream({ url, events, ... })` (ເກັບ reconnect/refresh/backoff ເດີມ; `runInboxStream` ເອີ້ນຕົວໃໝ່ດ້ວຍ `["conversation.updated"]` ຈຶ່ງບໍ່ປ່ຽນພຶດຕິກຳ). `useLiveRealtime(sessionId, enabled)` invalidate snapshot (ລວມ event 250 ms) ແລະ poll ສຳຮອງທຸກ 5 ວິ ຕອນ SSE ບໍ່ເຊື່ອມ (ໃຊ້ຄ່າດຽວກັບ 4a-2; ເຊື່ອມຢູ່ = ບໍ່ poll).
+- `/live/:id`: ປຸ່ມ "Host screen" (ເປີດແທັບໃໝ່) ແລະ ປຸ່ມ "ນຳສະເໜີ" ຕໍ່ແຖວໃນຕາຕະລາງລະຫັດ (write + ບໍ່ ENDED; ແຖວທີ່ນຳສະເໜີຢູ່ມີປ້າຍ). ໜ້ານີ້ໃຊ້ SSE ດຽວກັນແທນ poll ຕອນ LIVE (poll 5 ວິ ສະເພາະຕອນ SSE ບໍ່ເຊື່ອມ).
 - i18n ລາວ/ອັງກິດ, a11y ຄື 4a-2.
 
 ## 6. ການທົດສອບ
@@ -66,3 +66,9 @@
 
 - channel Redis ບໍ່ມີ prefix ແຍກຕາມສະພາບແວດລ້ອມ (ຄື inbox): test ແລະ dev ທີ່ໃຊ້ Redis ດຽວກັນອາດເຫັນ event ຂອງກັນ; ຜົນກະທົບມີແຕ່ refetch ເກີນ.
 - CF ຫຼາຍພັນຕໍ່ນາທີ: ທຸກຄອມເມັ້ນ publish 1–2 event; client ລວມເປັນ refetch ຄັ້ງດຽວທຸກ 250 ms. snapshot query ຄວນເບົາ (ຈຳກັດ recent 20, ລວມຍອດດ້ວຍ aggregate).
+
+## 9. ຜົນການປະຕິບັດ (2026-10-08)
+
+- 4b-1 ຕາມ plan `2026-10-08-phase1-c3-host-screen-backend.md`. ການປ່ຽນ: logic Redis pub/sub ຂອງ `InboxEventsService` ຖືກແຍກເປັນ `RedisEventChannel` (common) ທີ່ inbox ແລະ live ໃຊ້ຮ່ວມ (API ຂອງ inbox ບໍ່ປ່ຽນ); worker ເພີ່ມ dependency `@oca/shared` ເພື່ອໃຊ້ `LIVE_EVENTS_CHANNEL` ດຽວກັນ.
+- 4b-2: `runInboxStream` ກາຍເປັນ wrapper ຂອງ `runEventStream` (test inbox ເດີມຜ່ານໝົດ); route group `(host)` ກວດ login ແຕ່ບໍ່ມີ shell; poll ສຳຮອງ = 5 ວິ (ເບິ່ງ §5).
+- Smoke ໃນ Chromium (API + admin build + simulator + Graph ປອມ): Host screen ເຊື່ອມ SSE, ແຕະ A1 ເປັນສິນຄ້ານຳສະເໜີ, ຄອມເມັ້ນ `CF A1 2` ຂຶ້ນຈໍ ~0.3 ວິ ຫຼັງ webhook ຕອບ ໂດຍບໍ່ reload (ເຫຼືອ 10 → 8, ຍອດລວມອັບເດດ); `/live/:id` ອັບເດດ ledger ຜ່ານ SSE; ໜ້າຈໍພາສາລາວຖືກຕ້ອງ.
