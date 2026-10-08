@@ -1,4 +1,5 @@
 import request from "supertest";
+import { Logger } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { setupSlipTest } from "./slip-fixtures";
 
@@ -246,6 +247,86 @@ describe("slip review (e2e)", () => {
       expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING_PAYMENT");
     });
 
+    // test ຂອງ race ລຸ່ມນີ້ຂຶ້ນກັບລຳດັບເອີ້ນ: findUnique ຄັ້ງທຳອິດຂອງ paymentSlip ໃນ confirm = requireRow ກ່ອນ transaction
+    const afterFirstRead = (slipId: string, mutate: () => Promise<unknown>) => {
+      const original = db.paymentSlip.findUnique.bind(db.paymentSlip) as (args: unknown) => Promise<unknown>;
+      return vi.spyOn(db.paymentSlip, "findUnique").mockImplementationOnce(((args: unknown) =>
+        original(args).then(async (row) => {
+          await mutate();
+          return row;
+        })) as never);
+    };
+
+    it("PATCH ຂອງແອດມິນອື່ນລົງມາລະຫວ່າງອ່ານກັບ claim → ໃຊ້ຄ່າໃໝ່ (ບໍ່ຖືກທັບດ້ວຍ snapshot ເກົ່າ) ທັງໃນແຖວ ແລະ audit", async () => {
+      const { slip } = await seedSlip();
+      const owner = await as("OWNER");
+      const spy = afterFirstRead(slip.id, () =>
+        db.paymentSlip.update({ where: { id: slip.id }, data: { confirmedAmount: "777", confirmedRefNo: "NEW" } }),
+      );
+      try {
+        await confirm(slip.id, owner).expect(200);
+      } finally {
+        spy.mockRestore();
+      }
+      const row = await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } });
+      expect(row.confirmedAmount?.toFixed(2)).toBe("777.00");
+      expect(row.confirmedRefNo).toBe("NEW");
+      const audit = await db.auditLog.findFirstOrThrow({ where: { action: "slip.confirm", entityId: slip.id } });
+      expect(audit.after).toMatchObject({ amount: "777.00" });
+    });
+
+    it("ຍອດຖືກລຶບ (null) ລະຫວ່າງອ່ານກັບ claim → 422 SLIP_AMOUNT_REQUIRED ແລະ rollback (ຍັງ READ, ບິນບໍ່ PAID)", async () => {
+      const { order, slip } = await seedSlip();
+      const owner = await as("OWNER");
+      const spy = afterFirstRead(slip.id, () => db.paymentSlip.update({ where: { id: slip.id }, data: { readAmount: null } }));
+      try {
+        const res = await confirm(slip.id, owner).expect(422);
+        expect(res.body.code).toBe("SLIP_AMOUNT_REQUIRED");
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("READ");
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING_PAYMENT");
+    });
+
+    it("ສະລິບຖືກຍ້າຍໄປບິນອື່ນລະຫວ່າງອ່ານກັບ claim (ຍັງເປີດ) → 409 CONFLICT ບໍ່ແມ່ນ SLIP_ALREADY_REVIEWED; ບໍ່ pay ບິນໃດ", async () => {
+      const { order, slip } = await seedSlip();
+      const other = await makeOrder();
+      const owner = await as("OWNER");
+      const spy = afterFirstRead(slip.id, () => db.paymentSlip.update({ where: { id: slip.id }, data: { orderId: other.id } }));
+      try {
+        const res = await confirm(slip.id, owner).expect(409);
+        expect(res.body.code).toBe("CONFLICT");
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("READ");
+      for (const id of [order.id, other.id]) {
+        expect((await db.order.findUniqueOrThrow({ where: { id } })).status).toBe("PENDING_PAYMENT");
+      }
+    });
+
+    it("ສອງສະລິບຄົນລະໃບຂອງບິນດຽວກັນ confirm ພ້ອມກັນ → ໃບດຽວ 200, ອີກໃບ 409 ORDER_INVALID_STATE ແລະ ບໍ່ຖືກ claim; ບິນ pay ຄັ້ງດຽວ", async () => {
+      const { order, slip } = await seedSlip();
+      const second = await db.paymentSlip.create({
+        data: {
+          source: "UPLOAD", orderId: order.id, imageKey: "slips/s2", imageMime: "image/png", imageBytes: 1,
+          imageSha256: "e".repeat(64), status: "READ", readAmount: "100000", readCurrency: "LAK",
+        },
+      });
+      const owner = await as("OWNER");
+      const results = await Promise.all([confirm(slip.id, owner), confirm(second.id, owner)]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      expect(results.find((r) => r.status === 409)?.body.code).toBe("ORDER_INVALID_STATE");
+      const rows = await db.paymentSlip.findMany({ where: { orderId: order.id } });
+      expect(rows.filter((r) => r.status === "CONFIRMED")).toHaveLength(1);
+      const loser = rows.find((r) => r.status !== "CONFIRMED");
+      expect(loser?.status).toBe("READ");
+      expect(loser?.confirmedAmount).toBeNull();
+      expect(loser?.reviewedByUserId).toBeNull();
+      expect(await db.auditLog.count({ where: { action: "order.pay", entityId: order.id } })).toBe(1);
+    });
+
     it("order.pay audit ມີ slipId ແລະ slip.confirm ບັນທຶກຍອດ", async () => {
       const { order, slip } = await seedSlip();
       await confirm(slip.id, await as("OWNER")).expect(200);
@@ -258,11 +339,17 @@ describe("slip review (e2e)", () => {
     it("audit ລົ້ມຫຼັງ commit → ຍັງ 200 (ເງິນ/ບິນປ່ຽນແລ້ວ ບໍ່ຕອບ 500)", async () => {
       const { order, slip } = await seedSlip();
       const owner = await as("OWNER");
-      const spy = vi.spyOn(db.auditLog, "create").mockRejectedValue(new Error("audit down"));
+      const spy = vi.spyOn(db.auditLog, "create").mockRejectedValue(new Error("audit down: secret-payload"));
+      const logSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
       try {
         await confirm(slip.id, owner).expect(200);
+        // ຕ້ອງ log ການລົ້ມ (ມີ action + id) ແຕ່ບໍ່ຮົ່ວ message ດິບທີ່ອາດມີ payload
+        const logged = logSpy.mock.calls.map((call) => String(call[0]));
+        expect(logged.some((m) => m.includes("slip.confirm") && m.includes(slip.id))).toBe(true);
+        expect(logged.join("\n")).not.toContain("secret-payload");
       } finally {
         spy.mockRestore();
+        logSpy.mockRestore();
       }
       expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PAID");
       expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("CONFIRMED");

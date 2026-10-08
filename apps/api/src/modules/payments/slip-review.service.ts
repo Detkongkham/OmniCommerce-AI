@@ -94,27 +94,45 @@ export class SlipReviewService {
     if (!slip.orderId) throw apiError("SLIP_NOT_LINKED", "Link the slip to an order before confirming");
     const orderId = slip.orderId;
 
-    // ຄ່າສຸດທ້າຍ = ທີ່ແອດມິນແກ້ ກ່ອນ ບໍ່ດັ່ງນັ້ນທີ່ເຄື່ອງອ່ານ; ເກັບຄືນໃສ່ confirmed* ໃຫ້ຄົບ
-    const amount = slip.confirmedAmount ?? slip.readAmount;
-    if (amount === null) throw apiError("SLIP_AMOUNT_REQUIRED", "Enter the slip amount before confirming");
+    // ກວດເບື້ອງຕົ້ນເພື່ອໄດ້ code ທີ່ຊັດ; ການກວດຍອດທີ່ຕັດສິນແທ້ຢູ່ໃນ transaction ດ້ວຍແຖວສົດ
+    if ((slip.confirmedAmount ?? slip.readAmount) === null) {
+      throw apiError("SLIP_AMOUNT_REQUIRED", "Enter the slip amount before confirming");
+    }
 
-    await this.prisma.$transaction(async (tx) => {
+    const amount = await this.prisma.$transaction(async (tx) => {
+      // (a) claim ກ່ອນ: ຕັ້ງສະເພາະສະຖານະ+ຜູ້ກວດ (ໄດ້ lock ແຖວ ຈຶ່ງ PATCH ຂອງຄົນອື່ນຕ້ອງລໍຈົນ commit ແລ້ວຈະຖືກ 409).
+      // orderId ຢູ່ໃນ where: ຖ້າຍ້າຍບິນລະຫວ່າງອ່ານ ຈະບໍ່ຢືນຢັນຜິດບິນ; status ກັນ confirm/reject ພ້ອມກັນ
       const { count } = await tx.paymentSlip.updateMany({
-        // orderId ຢູ່ໃນ where: ຖ້າມີຄົນຍ້າຍບິນລະຫວ່າງອ່ານ claim ຈະບໍ່ຢືນຢັນຜິດບິນ; status ກັນ confirm ພ້ອມກັນ
         where: { id, orderId, status: { in: ["READ", "READ_FAILED"] } },
+        data: { status: "CONFIRMED", reviewedByUserId: actor.id, reviewedAt: new Date() },
+      });
+      if (count === 0) {
+        const current = await tx.paymentSlip.findUnique({ where: { id }, select: { status: true } });
+        if (!current) throw apiError("SLIP_NOT_FOUND", "Slip not found");
+        if (current.status === "CONFIRMED" || current.status === "REJECTED") {
+          throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+        }
+        throw apiError("CONFLICT", "The slip was changed concurrently; reload and retry");
+      }
+      // (b) ອ່ານແຖວສົດຫຼັງ lock: ຄ່ານິ່ງແລ້ວ ບໍ່ໃຊ້ snapshot ເກົ່າທີ່ອາດຖືກແກ້ໄປ
+      const fresh = await tx.paymentSlip.findUniqueOrThrow({ where: { id } });
+      const finalAmount = fresh.confirmedAmount ?? fresh.readAmount;
+      // (c) ບໍ່ມີຍອດ → throw ເພື່ອ rollback claim
+      if (finalAmount === null) throw apiError("SLIP_AMOUNT_REQUIRED", "Enter the slip amount before confirming");
+      // (d) ຄ່າສຸດທ້າຍ = ທີ່ແອດມິນແກ້ ກ່ອນ ບໍ່ດັ່ງນັ້ນທີ່ເຄື່ອງອ່ານ; ເກັບໃສ່ confirmed* ໃຫ້ຄົບ
+      await tx.paymentSlip.update({
+        where: { id },
         data: {
-          status: "CONFIRMED",
-          confirmedAmount: amount,
-          confirmedCurrency: slip.confirmedCurrency ?? slip.readCurrency,
-          confirmedPaidAt: slip.confirmedPaidAt ?? slip.readPaidAt,
-          confirmedRefNo: slip.confirmedRefNo ?? slip.readRefNo,
-          confirmedDestAccount: slip.confirmedDestAccount ?? slip.readDestAccount,
-          reviewedByUserId: actor.id,
-          reviewedAt: new Date(),
+          confirmedAmount: finalAmount,
+          confirmedCurrency: fresh.confirmedCurrency ?? fresh.readCurrency,
+          confirmedPaidAt: fresh.confirmedPaidAt ?? fresh.readPaidAt,
+          confirmedRefNo: fresh.confirmedRefNo ?? fresh.readRefNo,
+          confirmedDestAccount: fresh.confirmedDestAccount ?? fresh.readDestAccount,
         },
       });
-      if (count === 0) throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+      // (e) pay ໃນ transaction ດຽວກັນ: ລົ້ມ → rollback ທັງ claim
       await this.orders.payWithin(tx, orderId, actor);
+      return finalAmount;
     });
 
     // ຫຼັງ commit ເງິນ/ບິນປ່ຽນແລ້ວ: audit ລົ້ມຕ້ອງບໍ່ເຮັດໃຫ້ endpoint ຕອບ 500 (best-effort, ບັນທຶກ log)
@@ -141,7 +159,10 @@ export class SlipReviewService {
     try {
       await this.audit.record(entry);
     } catch (error) {
-      this.logger.error(`Failed to record audit ${entry.action} ${entry.entityId ?? ""}: ${error instanceof Error ? error.message : String(error)}`);
+      // ບໍ່ log message ດິບ (Prisma ອາດຝັງ payload): ສະເພາະຊື່/code ຂອງ error
+      const code = (error as { code?: unknown } | null)?.code;
+      const name = error instanceof Error ? error.name : "UnknownError";
+      this.logger.error(`Failed to record audit ${entry.action} ${entry.entityId ?? ""} (${name}${typeof code === "string" ? ` ${code}` : ""})`);
     }
   }
 
