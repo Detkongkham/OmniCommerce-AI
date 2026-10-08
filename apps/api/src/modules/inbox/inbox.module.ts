@@ -14,6 +14,7 @@ import { InboxIngestService } from "./inbox-ingest.service";
   imports: [ChannelsModule, LiveCfModule],
   controllers: [FacebookWebhookController, ConversationsController, InboxAssigneesController, InboxEventsController],
   providers: [InboxEventsService, InboxIngestService, ConversationsService],
-  exports: [InboxEventsService],
+  // ConversationsService: logistics ສົ່ງ tracking ເຂົ້າແຊັດຜ່ານເສັ້ນທາງດຽວກັບແອດມິນ (ບັນທຶກເຂົ້າ Inbox)
+  exports: [InboxEventsService, ConversationsService],
 })
 export class InboxModule {}

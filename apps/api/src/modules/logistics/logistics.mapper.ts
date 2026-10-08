@@ -1,5 +1,5 @@
 import type { Prisma } from "@oca/database";
-import { type ShipmentNotifyStatus, buildTrackingUrl } from "@oca/shared";
+import { type ShipmentNotifyStatus, buildTrackingMessage, buildTrackingUrl } from "@oca/shared";
 
 export interface CourierDto {
   id: string;
@@ -68,4 +68,19 @@ export function toShipmentDto(row: ShipmentRow): ShipmentDto {
     notifyErrorCode: row.notifyErrorCode,
     notifiedAt: row.notifiedAt,
   };
+}
+
+/** ຂໍ້ຄວາມແຈ້ງ tracking ຂອງບິນ; null ຖ້າຍັງບໍ່ມີ courier/tracking */
+export function trackingTextOf(order: {
+  orderNumber: string;
+  shipment: { trackingNumber: string | null; courier: { name: string; trackingUrlTemplate: string | null } | null } | null;
+}): string | null {
+  const shipment = order.shipment;
+  if (!shipment?.courier || !shipment.trackingNumber) return null;
+  return buildTrackingMessage({
+    orderNumber: order.orderNumber,
+    courierName: shipment.courier.name,
+    trackingNumber: shipment.trackingNumber,
+    trackingUrl: buildTrackingUrl(shipment.courier.trackingUrlTemplate, shipment.trackingNumber),
+  });
 }

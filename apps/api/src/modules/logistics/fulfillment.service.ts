@@ -2,12 +2,11 @@ import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma, PrismaClient } from "@oca/database";
 import {
   type FulfillmentListQuery,
+  type NotifyShipmentInput,
   type OverridePackInput,
   type ShipOrderInput,
   type UpdateShippingInput,
   type VerifyPackInput,
-  buildTrackingMessage,
-  buildTrackingUrl,
 } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import { apiError } from "../../common/api-error";
@@ -15,7 +14,8 @@ import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { PRISMA } from "../../prisma/prisma.module";
 import { OrdersService } from "../orders/orders.service";
-import { SHIPMENT_INCLUDE, type ShipmentDto, toShipmentDto } from "./logistics.mapper";
+import { SHIPMENT_INCLUDE, type ShipmentDto, toShipmentDto, trackingTextOf } from "./logistics.mapper";
+import { ShipmentNotifierService } from "./shipment-notifier.service";
 
 const QUEUE_STATUSES = ["PAID", "PACKING"] as const;
 const SHIPPED_STATUSES = new Set(["SHIPPED", "COMPLETED"]);
@@ -80,6 +80,7 @@ export class FulfillmentService {
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(OrdersService) private readonly orders: OrdersService,
+    @Inject(ShipmentNotifierService) private readonly notifier: ShipmentNotifierService,
   ) {}
 
   async list(query: FulfillmentListQuery): Promise<Page<FulfillmentListItemDto>> {
@@ -242,6 +243,23 @@ export class FulfillmentService {
       // override/verify ຖືກລ້າງລະຫວ່າງກວດ ແລະ ສົ່ງ (ບໍ່ຄວນເກີດ): rollback ທັງສະຖານະ ແລະ ສະຕ໋ອກ
       if (count === 0) throw apiError("PACK_NOT_VERIFIED", "Scan and verify every item before shipping");
     });
+    // ຫຼັງ commit: ສົ່ງ tracking ທາງແຊັດ (ບໍ່ throw; ລົ້ມ = FAILED/MANUAL ໃຫ້ສົ່ງໃໝ່ ຫຼື copy)
+    await this.notifier.notify(orderId, actor);
+    return this.detail(orderId);
+  }
+
+  /** ສົ່ງແຈ້ງ tracking ຄືນ; ສົ່ງສຳເລັດແລ້ວ (SENT) ຕ້ອງ force ເພື່ອບໍ່ໃຫ້ລູກຄ້າໄດ້ຊ້ຳໂດຍບໍ່ຕັ້ງໃຈ */
+  async notify(orderId: string, input: NotifyShipmentInput, actor: AuthUser): Promise<FulfillmentDetailDto> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, shipment: { select: { trackingNumber: true, notifyStatus: true } } },
+    });
+    if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
+    if (!SHIPPED_STATUSES.has(order.status) || !order.shipment?.trackingNumber) throw invalidState(order.status, "notify");
+    if (order.shipment.notifyStatus === "SENT" && !input.force) {
+      throw apiError("CONFLICT", "Tracking was already sent; pass force to send again");
+    }
+    await this.notifier.notify(orderId, actor);
     return this.detail(orderId);
   }
 
@@ -254,17 +272,6 @@ export class FulfillmentService {
 
 function invalidState(status: string, action: string) {
   return apiError("ORDER_INVALID_STATE", `Cannot ${action} an order that is ${status}`, { status });
-}
-
-export function trackingTextOf(row: Pick<DetailRow, "orderNumber" | "shipment">): string | null {
-  const shipment = row.shipment;
-  if (!shipment?.courier || !shipment.trackingNumber) return null;
-  return buildTrackingMessage({
-    orderNumber: row.orderNumber,
-    courierName: shipment.courier.name,
-    trackingNumber: shipment.trackingNumber,
-    trackingUrl: buildTrackingUrl(shipment.courier.trackingUrlTemplate, shipment.trackingNumber),
-  });
 }
 
 function toDetail(row: DetailRow, storeName: string): FulfillmentDetailDto {

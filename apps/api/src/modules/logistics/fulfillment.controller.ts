@@ -1,11 +1,13 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import {
   type FulfillmentListQuery,
+  type NotifyShipmentInput,
   type OverridePackInput,
   type ShipOrderInput,
   type UpdateShippingInput,
   type VerifyPackInput,
   fulfillmentListQuerySchema,
+  notifyShipmentSchema,
   overridePackSchema,
   shipOrderSchema,
   updateShippingSchema,
@@ -81,5 +83,16 @@ export class FulfillmentController {
     @Req() req: Request,
   ) {
     return this.fulfillment.ship(orderId, body, actor, req.ip);
+  }
+
+  @Post(":orderId/notify")
+  @HttpCode(200)
+  @RequirePermissions("logistics:write")
+  notify(
+    @Param("orderId") orderId: string,
+    @Body(new ZodValidationPipe(notifyShipmentSchema)) body: NotifyShipmentInput,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.fulfillment.notify(orderId, body, actor);
   }
 }
