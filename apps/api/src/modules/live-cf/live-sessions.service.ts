@@ -26,6 +26,7 @@ import {
   toSessionDto,
 } from "./live-cf.mapper";
 import { CfIngestService } from "./cf-ingest.service";
+import { LiveEventsService } from "./live-events.service";
 
 @Injectable()
 export class LiveSessionsService {
@@ -33,6 +34,7 @@ export class LiveSessionsService {
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(CfIngestService) private readonly ingest: CfIngestService,
+    @Inject(LiveEventsService) private readonly events: LiveEventsService,
   ) {}
 
   async list(query: LiveSessionListQuery): Promise<Page<LiveSessionDto>> {
@@ -91,6 +93,7 @@ export class LiveSessionsService {
     });
     if (session.status === "LIVE" && session.externalPostId) this.ingest.invalidate(session.externalPostId);
     await this.audit.record({ userId: actor.id, action: "live.update", entity: "LiveSession", entityId: id, after: { ...input }, ip });
+    await this.events.sessionUpdated(id);
     return this.get(id);
   }
 
@@ -114,6 +117,7 @@ export class LiveSessionsService {
     }
     this.ingest.invalidate(session.externalPostId);
     await this.audit.record({ userId: actor.id, action: "live.start", entity: "LiveSession", entityId: id, ip });
+    await this.events.sessionUpdated(id);
     return this.get(id);
   }
 
@@ -128,6 +132,7 @@ export class LiveSessionsService {
     }
     if (session.externalPostId) this.ingest.invalidate(session.externalPostId);
     await this.audit.record({ userId: actor.id, action: "live.end", entity: "LiveSession", entityId: id, ip });
+    await this.events.sessionUpdated(id);
     return this.get(id);
   }
 
@@ -140,6 +145,7 @@ export class LiveSessionsService {
         data: { sessionId, code: input.code, variantId: input.variantId, limit: input.limit ?? null },
         include: ITEM_INCLUDE,
       });
+      await this.events.sessionUpdated(sessionId);
       return toItemDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) throw apiError("DUPLICATE_VALUE", "This code already exists in the session", { fields: ["code"] });
@@ -183,6 +189,7 @@ export class LiveSessionsService {
       throw error;
     }
     const row = await this.prisma.liveSessionItem.findUniqueOrThrow({ where: { id: itemId }, include: ITEM_INCLUDE });
+    await this.events.sessionUpdated(sessionId);
     return toItemDto(row);
   }
 
@@ -194,6 +201,7 @@ export class LiveSessionsService {
     // ເງື່ອນໄຂ claimed=0 ໃນ WHERE: ແຂ່ງກັບ CF ທີ່ເຂົ້າມາພ້ອມກັນໄດ້ຢ່າງປອດໄພ
     const { count } = await this.prisma.liveSessionItem.deleteMany({ where: { id: itemId, claimed: 0 } });
     if (count === 0) throw apiError("LIVE_ITEM_IN_USE", "This code already has CF orders and cannot be removed");
+    await this.events.sessionUpdated(sessionId);
   }
 
   /** ຕັ້ງ/ລ້າງສິນຄ້າທີ່ກຳລັງນຳສະເໜີ (Host screen); item ຕ້ອງເປັນຂອງ session ນີ້ */
@@ -203,6 +211,7 @@ export class LiveSessionsService {
     if (input.itemId !== null) await this.requireItem(id, input.itemId);
     await this.prisma.liveSession.update({ where: { id }, data: { featuredItemId: input.itemId } });
     await this.audit.record({ userId: actor.id, action: "live.feature", entity: "LiveSession", entityId: id, after: { itemId: input.itemId }, ip });
+    await this.events.sessionUpdated(id);
     return this.get(id);
   }
 

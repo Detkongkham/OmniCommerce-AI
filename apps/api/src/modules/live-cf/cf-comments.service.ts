@@ -5,6 +5,7 @@ import { apiError } from "../../common/api-error";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { PRISMA } from "../../prisma/prisma.module";
 import { CfReplyService, SENDING_STALE_MS } from "./cf-reply.service";
+import { LiveEventsService } from "./live-events.service";
 import { COMMENT_INCLUDE, type CfCommentDto, toCommentDto } from "./live-cf.mapper";
 
 @Injectable()
@@ -12,6 +13,7 @@ export class CfCommentsService {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(CfReplyService) private readonly replies: CfReplyService,
+    @Inject(LiveEventsService) private readonly events: LiveEventsService,
   ) {}
 
   async list(sessionId: string, query: CfCommentListQuery): Promise<Page<CfCommentDto>> {
@@ -47,6 +49,7 @@ export class CfCommentsService {
       throw apiError("CONFLICT", `Reply status is ${row.replyStatus}; only FAILED replies can be resent`);
     }
     await this.replies.deliver(row.id);
+    await this.events.sessionUpdated(sessionId);
     const updated = await this.prisma.cfComment.findUniqueOrThrow({ where: { id: row.id }, include: COMMENT_INCLUDE });
     return toCommentDto(updated);
   }

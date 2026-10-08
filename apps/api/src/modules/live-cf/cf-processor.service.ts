@@ -4,6 +4,7 @@ import { parseCf } from "@oca/shared";
 import { PRISMA } from "../../prisma/prisma.module";
 import { OrdersService } from "../orders/orders.service";
 import { CfReplyService } from "./cf-reply.service";
+import { LiveEventsService } from "./live-events.service";
 
 export interface CfCommentJob {
   sessionId: string;
@@ -52,6 +53,7 @@ export class CfProcessorService {
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(OrdersService) private readonly orders: OrdersService,
     @Inject(CfReplyService) private readonly replies: CfReplyService,
+    @Inject(LiveEventsService) private readonly events: LiveEventsService,
   ) {}
 
   /** ປະມວນຜົນ 1 ຄອມເມັ້ນ. ບໍ່ throw ສຳລັບຄວາມຜິດພາດຂອງທຸລະກິດ (ບັນທຶກເປັນ outcome ໃນ ledger); idempotent ດ້ວຍ externalCommentId */
@@ -59,6 +61,19 @@ export class CfProcessorService {
     const session = await this.prisma.liveSession.findUnique({ where: { id: job.sessionId }, include: { items: true } });
     // ຈົບ/ຍັງບໍ່ເລີ່ມແລ້ວ: ຂ້າມ (ຄອມເມັ້ນທີ່ເຂົ້າ queue ກ່ອນຈົບ ແຕ່ມາຖືກປະມວນຜົນຫຼັງຈົບ ບໍ່ຈອງ)
     if (!session || session.status !== "LIVE") return;
+    try {
+      await this.processLive(job, session, options);
+    } finally {
+      // Host screen: ledger/ບິນ/ສະຖານະຂໍ້ຄວາມອາດປ່ຽນ (publish ບໍ່ throw)
+      await this.events.sessionUpdated(session.id);
+    }
+  }
+
+  private async processLive(
+    job: CfCommentJob,
+    session: { id: string; title: string; kind: "LIVE" | "POST"; items: { id: string; code: string; variantId: string }[] },
+    options: CfProcessOptions,
+  ): Promise<void> {
     const existing = await this.prisma.cfComment.findUnique({
       where: { externalCommentId: job.commentId },
       select: { id: true, replyStatus: true },
@@ -90,7 +105,10 @@ export class CfProcessorService {
     } catch (error) {
       placed = await this.recordFailure(job, lines, error, options.isLastAttempt);
     }
-    if (!placed.duplicate) await this.replies.deliver(placed.ledgerId);
+    if (placed.duplicate) return;
+    // ບິນເກີດແລ້ວ: ແຈ້ງ Host screen ທັນທີ ບໍ່ຕ້ອງລໍການສົ່ງຂໍ້ຄວາມ (Graph API) ຈົບ
+    await this.events.sessionUpdated(session.id);
+    await this.replies.deliver(placed.ledgerId);
   }
 
   private async place(
