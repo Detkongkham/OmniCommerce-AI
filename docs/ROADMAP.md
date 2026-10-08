@@ -15,7 +15,7 @@
 | 4 | 9. Slip Verification | AI ອ່ານສະລິບ ແລະ ປັບສະຖານະບິນ |
 
 ## Phase 2: ປະຕິບັດການ
-* 8. Smart Logistics Hub
+* 8. Smart Logistics Hub — **8a ສຳເລັດ**: ລາຍການລໍແພັກ, Scan-to-Pack (ເຄື່ອງຍິງ + ກ້ອງ), ໃບປະໜ້າ 100×150 mm, ສົ່ງອອກພ້ອມ tracking, ແຈ້ງລູກຄ້າທາງແຊັດ. ເຫຼືອ: API ບໍລິສັດຂົນສົ່ງ, ເລືອກສາງອັດຕະໂນມັດ, COD, ຕິດຕາມສະຖານະພັດສະດຸ
 * 12. Staff Management (KPI, Audit Trail ເຕັມຮູບແບບ)
 * 10. Analytics & Financial Reports
 

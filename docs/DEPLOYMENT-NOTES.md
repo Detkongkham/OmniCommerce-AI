@@ -91,3 +91,11 @@
 - **ກໍລະນີ comment ຫາຍແບບງຽບ (ຮູ້ແລ້ວ 2 ກໍລະນີ)**: (ກ) comment ທີ່ເຂົ້າຄິວກ່ອນ session ຈົບ ແຕ່ຖືກປະມວນຜົນຫຼັງຈົບ ຖືກຂ້າມໂດຍບໍ່ມີແຖວ ledger; (ຂ) ຖ້າ attempt ສຸດທ້າຍລົ້ມ ແລະ ການຂຽນ ledger ກໍລົ້ມນຳ (ເຊັ່ນ DB ລົ່ມ) job BullMQ ທີ່ລົ້ມ (jobId = commentId, ຢູ່ໃນ failed set) ຈະເຮັດໃຫ້ Meta retry ຖືກ dedupe ແລະ comment ຫາຍ. ໂອກາດເກີດຕ່ຳ.
 - **Retry**: processor retry ຄວາມຜິດພາດຊົ່ວຄາວ 3 ຄັ້ງແບບ backoff ແລະຂຽນ ERROR ໃນ ledger ສະເພາະ attempt ສຸດທ້າຍ (ຕ່າງຈາກ spec ທີ່ວ່າ "ບໍ່ retry").
 - **Connection pool**: ແຕ່ລະ transaction ຂອງ processor ຖື DB connection ໃນລະຫວ່າງລໍ advisory lock ຕໍ່ session; concurrency 4 ອາດຄ້າງ connection ໄດ້ເຖິງ 4 ໃນ session ທີ່ຮ້ອນ.
+
+## 13. Logistics (8a)
+
+- ຕ້ອງ `pnpm --filter @oca/database db:deploy` ເພື່ອໃຫ້ migration `20261008010000_logistics` (Courier, Shipment) ຖືກໃຊ້. ໃຫ້ຮ້ານເພີ່ມບໍລິສັດຂົນສົ່ງທີ່ `/couriers` ກ່ອນສົ່ງເຄື່ອງອອກ.
+- ແຈ້ງ tracking ໃຊ້ Messenger ເສັ້ນທາງດຽວກັບ Inbox: ຕ້ອງຕັ້ງ `FACEBOOK_PAGE_ACCESS_TOKEN` ແລະ ຢູ່ໃນໜ້າຕ່າງ 24 ຊມ ນັບແຕ່ລູກຄ້າທັກຫຼ້າສຸດ (ບໍ່ດັ່ງນັ້ນ FAILED/OUTSIDE_WINDOW ແລ້ວພະນັກງານ copy ຂໍ້ຄວາມໄປສົ່ງເອງ). ບິນ CF ທີ່ບໍ່ມີເຄສແຊັດຂອງລູກຄ້າ = MANUAL.
+- ສະແກນດ້ວຍກ້ອງຕ້ອງເປີດໜ້າ admin ຜ່ານ **HTTPS** (browser ອະນຸຍາດກ້ອງສະເພາະ secure context; localhost ຍົກເວັ້ນ). Chrome ໃຊ້ BarcodeDetector; Safari/iOS ໂຫຼດ `@zxing/browser` ຕອນກົດປຸ່ມກ້ອງ.
+- ໃບປະໜ້າໃຊ້ `@page { size: 100mm 150mm }`: ໃນໜ້າຕ່າງພິມໃຫ້ເລືອກເຄື່ອງພິມ thermal ແລະ ຂະໜາດເຈ້ຍ 100×150 mm, margin = none, scale 100%.
+

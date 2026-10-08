@@ -1,6 +1,6 @@
 # Phase 2 ໂມດູນ 8: Smart Logistics Hub, sub-project 8a (ແພັກ → ສົ່ງ → ແຈ້ງລູກຄ້າ)
 
-ວັນທີ: 2026-10-08 · ສະຖານະ: ຜູ້ໃຊ້ອະນຸມັດການອອກແບບແລ້ວ · Branch: ຕໍ່ຈາກ `main` (Phase 1 ຂໍ້ 1–3)
+ວັນທີ: 2026-10-08 · ສະຖານະ: ສຳເລັດ (8a-1 + 8a-2) · Branch: ຕໍ່ຈາກ `main` (Phase 1 ຂໍ້ 1–3)
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
@@ -61,3 +61,9 @@
 ## 8. ການແບ່ງ plan
 
 - **8a-1** backend (§3–§5). **8a-2** admin (§6) + smoke.
+
+## 9. ຜົນການປະຕິບັດ (2026-10-08)
+
+- ການປ່ຽນຈາກ spec: ໜ້າຕັ້ງຄ່າບໍລິສັດຂົນສົ່ງຢູ່ `/couriers` (ບໍ່ແມ່ນ `/settings/couriers`) ເພື່ອບໍ່ໃຫ້ເມນູ "ຕັ້ງຄ່າຮ້ານ" ສະຫວ່າງນຳ (sidebar ຈັບຄູ່ຕາມ prefix); ບໍ່ບັນທຶກເວລາພິມໃບປະໜ້າ (YAGNI, ຕາມ §1). ບາໂຄດ Code128 ຂຽນເອງ (ບໍ່ມີ dependency); ກ້ອງໃຊ້ `@zxing/browser` ເປັນ fallback.
+- Smoke ໃນ Chromium (API + admin build + simulator + Graph ປອມ): ລູກຄ້າທັກແຊັດ → ເປີດບິນຈາກແຊັດ + ຈ່າຍ → ເພີ່ມ courier ທີ່ `/couriers` → ຍິງເລກບິນ (ຕົວນ້ອຍ) ໃນລາຍການ → ໜ້າແພັກ → ເລີ່ມແພັກ → ຍິງ code ຜິດ (ຖືກປະຕິເສດ) + SKU 2 ເທື່ອ → server verify → ໃບປະໜ້າ 378×567 px (= 100×150 mm) + ພິມອັດຕະໂນມັດ → ສົ່ງອອກ (courier + tracking) → ຂໍ້ຄວາມ tracking + ລິ້ງໄປຮອດ Graph ປອມ (Messenger ຂອງລູກຄ້າ) → ລາຍລະອຽດບິນສະແດງ courier + tracking.
+
