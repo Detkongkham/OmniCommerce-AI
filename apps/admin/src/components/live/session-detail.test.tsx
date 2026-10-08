@@ -13,6 +13,13 @@ vi.mock("@oca/ui", async (importOriginal) => {
 });
 const auth = vi.hoisted(() => ({ permissions: ["live-cf:write", "orders:read"] as string[] }));
 vi.mock("@/components/auth/auth-provider", () => ({ useCan: (permission: string) => auth.permissions.includes(permission) }));
+const realtime = vi.hoisted(() => ({ status: "connected" as string, calls: [] as [string, boolean][] }));
+vi.mock("@/lib/use-live-realtime", () => ({
+  useLiveRealtime: (id: string, enabled: boolean) => {
+    realtime.calls.push([id, enabled]);
+    return enabled ? realtime.status : "disconnected";
+  },
+}));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   apiFetch: vi.fn(),
@@ -28,6 +35,8 @@ function mockSession(session: LiveSessionDetailDto, after: Partial<LiveSessionDe
 }
 
 beforeEach(() => {
+  realtime.status = "connected";
+  realtime.calls = [];
   auth.permissions = ["live-cf:write", "orders:read"];
   vi.mocked(apiFetch).mockReset();
   vi.mocked(toast.success).mockReset();
@@ -53,7 +62,7 @@ describe("SessionDetail", () => {
     await user.click(await screen.findByRole("button", { name: "Start" }));
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/live-sessions/s1/start", { method: "POST" }));
     expect(await screen.findByRole("button", { name: "End session" })).toBeInTheDocument();
-    expect(screen.getByText("Refreshing every 5 seconds")).toBeInTheDocument();
+    expect(screen.getByText("Live updates on")).toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith("Session started: capturing CF comments");
   });
 
@@ -120,5 +129,19 @@ describe("SessionDetail", () => {
     mockSession(SESSION);
     await user.click(retry);
     expect(await screen.findByRole("heading", { level: 1, name: "Friday live" })).toBeInTheDocument();
+  });
+
+  it("ລິ້ງ Host screen ເປີດແທັບໃໝ່; realtime ເປີດສະເພາະຕອນ LIVE ແລະ ສະແດງສະຖານະ", async () => {
+    const { unmount } = renderWithProviders(<SessionDetail id="s1" />);
+    const link = await screen.findByRole("link", { name: "Open host screen" });
+    expect(link).toHaveAttribute("href", "/live/s1/host");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(realtime.calls.at(-1)).toEqual(["s1", false]);
+    unmount();
+    mockSession({ ...SESSION, status: "LIVE" });
+    realtime.status = "reconnecting";
+    renderWithProviders(<SessionDetail id="s1" />);
+    expect(await screen.findByText("Reconnecting… (refreshing every 5 s)")).toBeInTheDocument();
+    expect(realtime.calls.at(-1)).toEqual(["s1", true]);
   });
 });

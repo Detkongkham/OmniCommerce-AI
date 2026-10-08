@@ -13,12 +13,12 @@ import {
   TableRow,
   toast,
 } from "@oca/ui";
-import { Pencil, Plus, Tags, Trash2 } from "lucide-react";
+import { Pencil, Plus, Star, Tags, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
-import { useDeleteLiveItem } from "@/lib/queries";
+import { useDeleteLiveItem, useSetFeatured } from "@/lib/queries";
 import type { LiveItemDto, LiveSessionDetailDto } from "@/lib/types";
 import { ItemFormDialog } from "./item-form-dialog";
 
@@ -28,6 +28,7 @@ export function SessionItemsCard({ session }: { session: LiveSessionDetailDto })
   // API ບໍ່ໃຫ້ແກ້ລະຫັດຂອງ session ທີ່ຈົບແລ້ວ
   const editable = canWrite && session.status !== "ENDED";
   const remove = useDeleteLiveItem();
+  const feature = useSetFeatured();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<LiveItemDto | null>(null);
   const [deleting, setDeleting] = useState<LiveItemDto | null>(null);
@@ -45,6 +46,16 @@ export function SessionItemsCard({ session }: { session: LiveSessionDetailDto })
       toast.error(errorMessage(error, t));
     } finally {
       setDeleting(null);
+    }
+  }
+
+  async function toggleFeatured(item: LiveItemDto) {
+    if (feature.isPending) return;
+    try {
+      await feature.mutateAsync({ sessionId: session.id, itemId: session.featuredItemId === item.id ? null : item.id });
+      toast.success(t("live.items.toast.featured"));
+    } catch (error) {
+      toast.error(errorMessage(error, t));
     }
   }
 
@@ -91,6 +102,11 @@ export function SessionItemsCard({ session }: { session: LiveSessionDetailDto })
                 <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
                   <th scope="row" className="px-4 py-3 text-left font-mono font-semibold text-ink">
                     {item.code}
+                    {session.featuredItemId === item.id ? (
+                      <span className="ml-2 rounded-full bg-brand-soft px-2 py-0.5 font-sans text-xs font-medium text-brand-ink">
+                        {t("live.items.featured")}
+                      </span>
+                    ) : null}
                   </th>
                   <TableCell>
                     <p className="text-ink">
@@ -105,6 +121,19 @@ export function SessionItemsCard({ session }: { session: LiveSessionDetailDto })
                   {editable ? (
                     <TableCell className="text-right">
                       <div className="inline-flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t(session.featuredItemId === item.id ? "live.items.unfeature" : "live.items.feature", { code: item.code })}
+                          aria-pressed={session.featuredItemId === item.id}
+                          disabled={feature.isPending}
+                          onClick={() => void toggleFeatured(item)}
+                        >
+                          <Star
+                            aria-hidden="true"
+                            className={session.featuredItemId === item.id ? "fill-current text-brand" : undefined}
+                          />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"

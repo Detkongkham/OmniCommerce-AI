@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Card, ConfirmDialog, EmptyState, PageHeader, Skeleton, buttonVariants, cn, toast } from "@oca/ui";
-import { AlertCircle, ArrowLeft, Pencil, Play, RefreshCw, Square } from "lucide-react";
+import { AlertCircle, ArrowLeft, MonitorPlay, Pencil, Play, Radio, RefreshCw, Square } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
@@ -12,6 +12,8 @@ import { useT } from "@/lib/i18n/language-provider";
 import { startBlocker } from "@/lib/live";
 import { type LiveSessionAction, useLiveSession, useLiveSessionAction } from "@/lib/queries";
 import type { LiveSessionDetailDto } from "@/lib/types";
+import type { StreamStatus } from "@/lib/event-stream";
+import { useLiveRealtime } from "@/lib/use-live-realtime";
 import { CommentLedgerCard } from "./comment-ledger-card";
 import { LiveStatusPill } from "./live-status";
 import { SessionFormDialog } from "./session-form-dialog";
@@ -31,7 +33,12 @@ function BackLink() {
 
 export function SessionDetail({ id }: { id: string }) {
   const { t } = useT();
-  const query = useLiveSession(id);
+  // SSE ສະເພາະຕອນ LIVE; ເຊື່ອມຢູ່ = ບໍ່ poll (event ສັ່ງ refetch), ບໍ່ເຊື່ອມ = poll ສຳຮອງທຸກ 5 ວິ
+  const [live, setLive] = useState(false);
+  const realtime = useLiveRealtime(id, live);
+  const query = useLiveSession(id, { poll: realtime !== "connected" });
+  const isLive = query.data?.status === "LIVE";
+  if (isLive !== live) setLive(isLive);
 
   if (!query.data) {
     if (query.isError) {
@@ -65,7 +72,7 @@ export function SessionDetail({ id }: { id: string }) {
       </div>
     );
   }
-  return <SessionDetailBody session={query.data} stale={query.isRefetchError} />;
+  return <SessionDetailBody session={query.data} stale={query.isRefetchError} realtime={realtime} />;
 }
 
 function InfoItem({ label, children }: { label: string; children: ReactNode }) {
@@ -77,7 +84,7 @@ function InfoItem({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function SessionDetailBody({ session, stale }: { session: LiveSessionDetailDto; stale: boolean }) {
+function SessionDetailBody({ session, stale, realtime }: { session: LiveSessionDetailDto; stale: boolean; realtime: StreamStatus }) {
   const { t } = useT();
   const canWrite = useCan("live-cf:write");
   const act = useLiveSessionAction();
@@ -104,6 +111,15 @@ function SessionDetailBody({ session, stale }: { session: LiveSessionDetailDto; 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
       <BackLink />
+      <Link
+        href={`/live/${session.id}/host`}
+        target="_blank"
+        rel="noopener"
+        className={cn(buttonVariants({ variant: "outline" }), "h-9 gap-1.5 rounded-xl px-3")}
+      >
+        <MonitorPlay className="size-4" aria-hidden="true" />
+        {t("live.detail.hostScreen")}
+      </Link>
       {canWrite && session.status !== "ENDED" ? (
         <Button variant="outline" className="h-9 rounded-xl" onClick={() => setEditOpen(true)}>
           <Pencil aria-hidden="true" />
@@ -160,9 +176,13 @@ function SessionDetailBody({ session, stale }: { session: LiveSessionDetailDto; 
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <LiveStatusPill status={session.status} />
             {live ? (
-              <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-                <RefreshCw className="size-3.5" aria-hidden="true" />
-                {t("live.detail.polling")}
+              <span role="status" className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
+                {realtime === "connected" ? (
+                  <Radio className="size-3.5 text-success" aria-hidden="true" />
+                ) : (
+                  <RefreshCw className="size-3.5" aria-hidden="true" />
+                )}
+                {realtime === "connected" ? t("live.realtime.connected") : t("live.realtime.reconnecting")}
               </span>
             ) : null}
           </div>
@@ -184,7 +204,8 @@ function SessionDetailBody({ session, stale }: { session: LiveSessionDetailDto; 
         </Card>
 
         <SessionItemsCard session={session} />
-        <CommentLedgerCard sessionId={session.id} live={live} />
+        {/* ledger poll ສະເພາະຕອນ SSE ບໍ່ເຊື່ອມ (ເຊື່ອມຢູ່ = event ສັ່ງ refetch) */}
+        <CommentLedgerCard sessionId={session.id} live={live && realtime !== "connected"} />
       </div>
 
       {canWrite ? (

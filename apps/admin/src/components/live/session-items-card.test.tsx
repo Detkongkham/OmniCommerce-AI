@@ -85,4 +85,18 @@ describe("SessionItemsCard", () => {
     expect(screen.queryByRole("button", { name: "Add code" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete code A1" })).toBeNull();
   });
+
+  it("ນຳສະເໜີ: ແຖວທີ່ນຳສະເໜີມີປ້າຍ; ກົດ → PUT featured (ກົດອັນທີ່ນຳສະເໜີຢູ່ = ລ້າງ)", async () => {
+    const { user } = renderWithProviders(<SessionItemsCard session={{ ...SESSION, items: [ITEM, CLAIMED], featuredItemId: "i2" }} />);
+    expect(within(screen.getByTestId("row-item-i2")).getByText("Featured")).toBeInTheDocument();
+    const feature = screen.getByRole("button", { name: "Feature A1" });
+    expect(feature).toHaveAttribute("aria-pressed", "false");
+    await user.click(feature);
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/live-sessions/s1/featured", { method: "PUT", body: { itemId: "i1" } }));
+    expect(toast.success).toHaveBeenCalledWith("Featured product updated");
+    const stop = screen.getByRole("button", { name: "Stop featuring B2" });
+    expect(stop).toHaveAttribute("aria-pressed", "true");
+    await user.click(stop);
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/live-sessions/s1/featured", { method: "PUT", body: { itemId: null } }));
+  });
 });
