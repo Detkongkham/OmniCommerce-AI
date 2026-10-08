@@ -35,9 +35,11 @@
 | `readerName`, `readerVersion` | ຜູ້ອ່ານ/ເວີຊັນ (ໄວ້ທຽບ model ໃນຂັ້ນ 2) |
 | `readAmount?`, `readCurrency?`, `readPaidAt?`, `readDestAccount?`, `readRefNo?`, `readRaw` (Json) | ຜົນອ່ານດິບ; `readRaw` = untrusted |
 | `flags` | `String[]`: `AMOUNT_MISMATCH`, `DUPLICATE_REF`, `DUPLICATE_IMAGE`, `DEST_MISMATCH`, `PAID_BEFORE_ORDER`, `ORDER_NOT_PAYABLE`, `UNREADABLE_FIELDS` |
-| `confirmedAmount?`, `confirmedPaidAt?`, `confirmedRefNo?`, `confirmedDestAccount?` | ຄ່າຫຼັງແອດມິນກວດ/ແກ້ = ປ້າຍກຳກັບສຳລັບຂັ້ນ 2 |
+| `confirmedAmount?`, `confirmedCurrency?`, `confirmedPaidAt?`, `confirmedRefNo?`, `confirmedDestAccount?` | ຄ່າຫຼັງແອດມິນກວດ/ແກ້ = ປ້າຍກຳກັບສຳລັບຂັ້ນ 2; `confirmedCurrency` ມີເພາະຍອດບໍ່ມີຄວາມໝາຍຖ້າບໍ່ມີສະກຸນ |
 | `reviewedByUserId?`, `reviewedAt?`, `rejectReason?` | |
 | `createdAt` | |
+
+index ເພີ່ມເຕີມ: `confirmedRefNo` ແລະ `conversationId` (ໄວ້ຄົ້ນສະລິບຊ້ຳ ແລະ ລາຍການຕາມແຊັດ).
 
 `StoreSetting.receivingAccounts Json` — ລາຍການ `{ bank, accountNo, accountName }` ຂອງຮ້ານ. ເປັນ `[]` = ຂ້າມການກວດບັນຊີ (ບໍ່ໃສ່ flag ຜິດ).
 
@@ -50,20 +52,20 @@
    - UPLOAD: ແອດມິນອັບໂຫຼດໃນໜ້າບິນ (`orderId` ຮູ້ຢູ່ແລ້ວ).
 2. **Read (worker)**: job ໃນຄິວ `slips` ເອີ້ນ `SlipReader.read(image)` → ບັນທຶກ `read*` ແລະ ຄຳນວນ `flags` (§4) → `READ`; ຖ້າ reader throw/ໝົດເວລາ → `READ_FAILED` (retry ຈຳກັດ, ແລ້ວແອດມິນກົດ retry ມື).
 3. **Review (admin)**: ເຫັນຮູບ + ຄ່າທີ່ອ່ານ + flag ຂ້າງກັນ, ແກ້ຄ່າໄດ້ → **ຢືນຢັນ** ຫຼື **ປະຕິເສດ** (ເຫດຜົນບັງຄັບ).
-4. **Confirm**: ໃນ transaction ດຽວ — ຂຽນ `confirmed*` + `status=CONFIRMED` + ເອີ້ນ `OrdersService.pay` (state machine ເດີມ; ສິດ `payments:write`; audit log ເດີມ). ຖ້າ `pay` ລົ້ມ (ບິນບໍ່ຢູ່ `PENDING_PAYMENT` / ໝົດເວລາຈອງ) → rollback ທັງໝົດ, ຕອບ 409 `ORDER_NOT_PAYABLE`.
+4. **Confirm**: ໃນ transaction ດຽວ — ຂຽນ `confirmed*` + `status=CONFIRMED` + ເອີ້ນ `OrdersService.pay` (state machine ເດີມ; ສິດ `payments:write`; audit log ເດີມ). ຖ້າ `pay` ລົ້ມ (ບິນບໍ່ຢູ່ `PENDING_PAYMENT` / ໝົດເວລາຈອງ) → rollback ທັງໝົດ, ຕອບ 409 ດ້ວຍ code ທີ່ `pay` ໃຫ້ (`ORDER_INVALID_STATE` / `RESERVATION_EXPIRED`); `ORDER_NOT_PAYABLE` ເປັນ flag ເທົ່ານັ້ນ ບໍ່ແມ່ນ error code. ຖ້າ confirm ໂດຍບໍ່ມີຍອດ (ທັງ `confirmedAmount` ແລະ `readAmount` ຫວ່າງ) → 422 `SLIP_AMOUNT_REQUIRED`.
 
 ## 4. ການກວດ (ຄິດໃນ worker ຫຼັງອ່ານ ແລະ ຄິດໃໝ່ເມື່ອຜູກບິນ/ແກ້ຄ່າ)
 
 ຫຼັກ: ຄ່າຄິດຈາກ `confirmed*` ຖ້າມີ ບໍ່ດັ່ງນັ້ນ `read*`. ຟັງຊັນ pure ໃນ `@oca/shared` ເພື່ອ test ງ່າຍ.
 
-- `AMOUNT_MISMATCH`: ຍອດ ≠ `Order.total` (ເປັນສະກຸນຂອງບິນ; ສະກຸນຕ່າງ = ຄືກັນ mismatch). ໃຊ້ Decimal ບໍ່ແມ່ນ float.
-- `DUPLICATE_REF` / `DUPLICATE_IMAGE`: `readRefNo`+ບັນຊີປາຍທາງ ຫຼື `imageSha256` ຊ້ຳກັບສະລິບອື່ນ (ບໍ່ນັບ `REJECTED`).
+- `AMOUNT_MISMATCH`: ຍອດ ≠ ຍອດທີ່ຄາດຫວັງ = `Order.total ÷ Order.exchangeRate` ປັດ 2 ຕຳແໜ່ງ (`Order.total` ເກັບເປັນ baseCurrency; `currency` + `exchangeRate` ຂອງບິນບອກສະກຸນທີ່ລູກຄ້າຈ່າຍ; ສະກຸນຕ່າງຈາກບິນ = ຄືກັນ mismatch). ໃຊ້ Decimal ບໍ່ແມ່ນ float. `normalizeSlipAmount` ປະຕິເສດຍອດສູນ ແລະ ຍອດທີ່ຈຸດທົດສະນິຍົມເປັນ comma ແບບກຳກວມ.
+- `DUPLICATE_REF` / `DUPLICATE_IMAGE`: refNo ທີ່ມີຜົນ (`confirmedRefNo` ຖ້າມີ ບໍ່ດັ່ງນັ້ນ `readRefNo`) + ບັນຊີປາຍທາງ ຫຼື `imageSha256` ຊ້ຳກັບສະລິບອື່ນ (ບໍ່ນັບ `REJECTED`). ປຽບທຽບບັນຊີດ້ວຍ `sameAccount` ທີ່ທົນຕໍ່ຮູບແບບການຂຽນເລກບັນຊີຕ່າງກັນ; ຖ້າສະລິບໃດໜຶ່ງບໍ່ມີບັນຊີປາຍທາງ ນັບເປັນຊ້ຳ (ເປັນຄຳເຕືອນເທົ່ານັ້ນ).
 - `DEST_MISMATCH`: ບັນຊີປາຍທາງບໍ່ຢູ່ໃນ `receivingAccounts` (ປຽບທຽບຫຼັງ normalize ຕົວເລກ; ອະນຸຍາດ masked ເຊັ່ນ `xxx1234` ກັບ 4 ຕົວທ້າຍ).
 - `PAID_BEFORE_ORDER`: `paidAt` < `Order.createdAt` (ມີ tolerance ນ້ອຍເພື່ອ clock skew).
 - `ORDER_NOT_PAYABLE`: ບິນບໍ່ຢູ່ `PENDING_PAYMENT` (ຫຼືໝົດເວລາຈອງ).
-- `UNREADABLE_FIELDS`: ຂາດ amount ຫຼື refNo.
+- `UNREADABLE_FIELDS`: ຂາດ amount ຫຼື refNo; ແລະ ຖ້າຮ້ານຕັ້ງ `receivingAccounts` ແລ້ວ ແຕ່ອ່ານບັນຊີປາຍທາງບໍ່ໄດ້ ກໍໃສ່ flag ນີ້ (ແທນ `DEST_MISMATCH`).
 
-flag ທັງໝົດເປັນຂໍ້ມູນຊ່ວຍຕັດສິນ ບໍ່ບລັອກ ຍົກເວັ້ນ `ORDER_NOT_PAYABLE` (confirm ຖືກບລັອກໂດຍ `pay`).
+flag ທັງໝົດເປັນຂໍ້ມູນຊ່ວຍຕັດສິນ ບໍ່ບລັອກ; ສຳລັບ `ORDER_NOT_PAYABLE` ການ confirm ຖືກບລັອກໂດຍ `pay` (§3.4).
 
 ## 5. ບິນໝົດເວລາ/ຍົກເລີກ
 
@@ -72,23 +74,25 @@ flag ທັງໝົດເປັນຂໍ້ມູນຊ່ວຍຕັດສິ
 ## 6. Interface
 
 ```ts
-// ຢູ່ packages/ai-engine (package ນີ້ມີແຕ່ stub ຢູ່ຕອນນີ້)
+// ຢູ່ packages/ai-engine
 interface SlipReader {
   readonly name: string;
   readonly version: string;
-  read(image: { bytes: Uint8Array; mime: string }): Promise<SlipReadResult>;
+  read(image: { bytes: Uint8Array; mime: string }, signal?: AbortSignal): Promise<SlipReadResult>;
 }
 type SlipReadResult = {
   amount?: string; currency?: string; paidAt?: string /* ISO */;
   destAccount?: string; refNo?: string; raw: unknown;
 };
 
-// ຢູ່ API
+// ຢູ່ packages/ai-engine (ບໍ່ແມ່ນ API; API ແລະ worker import ໄປໃຊ້)
 interface StorageService {
   put(key: string, bytes: Uint8Array, mime: string): Promise<void>;
   get(key: string): Promise<{ bytes: Uint8Array; mime: string }>;
 }
 ```
+- ສັນຍາ error ຂອງ `SlipReader.read`: throw ຖ້າ reader ເອງລົ້ມເຫຼວ (→ `READ_FAILED`); ຖ້າສະລິບອ່ານບໍ່ອອກ ໃຫ້ຄືນຜົນທີ່ທຸກ field ເປັນ `undefined` (→ `READ` + `UNREADABLE_FIELDS`). `signal` ໃຊ້ຍົກເລີກເມື່ອໝົດເວລາ.
+- error ຂອງ `StorageService` ເປັນ class ມີ type (`StorageError` ແລະ subclass) ພ້ອມ `code`: `NOT_FOUND` / `INVALID_KEY` / `ALREADY_EXISTS`.
 - `LocalDiskStorage` (root ຈາກ env `SLIP_STORAGE_DIR`; key = `slips/<yyyy>/<mm>/<cuid>`; ກັນ path traversal ໂດຍ key ມາຈາກລະບົບເທົ່ານັ້ນ).
 - `FakeSlipReader`: ຄືນຜົນຕາມ fixture/ຕົວແປ env ສຳລັບ dev + test. ເລືອກ reader ຈາກ `SLIP_READER` (`fake` ເປັນຄ່າເລີ່ມຕົ້ນ; ຖ້າບໍ່ມີ reader ຈິງ ສະລິບຈະຄ້າງ `READ` ດ້ວຍຜົນວ່າງ → ແອດມິນຕື່ມມື ແລະ ກົດຢືນຢັນໄດ້ ຈຶ່ງໃຊ້ງານໄດ້ໂດຍບໍ່ມີ AI).
 
@@ -105,7 +109,7 @@ interface StorageService {
 | `POST /slips/:id/confirm` | `payments:write` | §3.4 |
 | `POST /slips/:id/reject` | `payments:write` | ຕ້ອງມີ `reason` |
 
-ທຸກ id ບໍ່ພົບ = 404; error `code` ຄົງທີ່ໃນ `ERROR_CODES` (`SLIP_NOT_FOUND`, `SLIP_ALREADY_REVIEWED`, `SLIP_NOT_LINKED`, `ORDER_NOT_PAYABLE`, `SLIP_FILE_INVALID`) ພ້ອມ i18n lo/en. `CostRedactionInterceptor` ບໍ່ກ່ຽວ.
+ທຸກ id ບໍ່ພົບ = 404; error `code` ຄົງທີ່ໃນ `ERROR_CODES` (`SLIP_NOT_FOUND`, `SLIP_ALREADY_REVIEWED`, `SLIP_NOT_LINKED`, `SLIP_AMOUNT_REQUIRED`, `SLIP_FILE_INVALID`; ບໍ່ມີ `ORDER_NOT_PAYABLE` — confirm ໃຊ້ `ORDER_INVALID_STATE` / `RESERVATION_EXPIRED` ທີ່ມີຢູ່) ພ້ອມ i18n lo/en. `CostRedactionInterceptor` ບໍ່ກ່ຽວ.
 
 ## 8. UI (admin)
 
