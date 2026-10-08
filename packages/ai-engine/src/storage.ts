@@ -16,6 +16,8 @@ export interface StoredFile {
 export interface StorageService {
   put(key: string, bytes: Uint8Array, mime: string): Promise<void>;
   get(key: string): Promise<StoredFile>;
+  /** ລຶບໄຟລ໌ + sidecar; idempotent (ບໍ່ມີ = ບໍ່ເປັນ error). ໃຊ້ເກັບກວາດໄຟລ໌ກຳພ້າ */
+  delete(key: string): Promise<void>;
 }
 
 /** error ທັງໝົດຂອງ storage ມີ `code` ໃຫ້ຜູ້ເອີ້ນແຍກປະເພດ */
@@ -127,5 +129,18 @@ export class LocalDiskStorage implements StorageService {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new StorageNotFoundError(key);
       throw error;
     }
+  }
+
+  async delete(key: string): Promise<void> {
+    const target = this.pathFor(key);
+    try {
+      // ກັນ symlink ຂອງໂຟເດີ: ໂຟເດີຈິງຕ້ອງຢູ່ໃນ root ຈິງ (ໂຟເດີບໍ່ມີ = ບໍ່ມີຫຍັງໃຫ້ລຶບ)
+      if (!isInside(await realpath(this.root), await realpath(path.dirname(target)))) throw new StorageInvalidKeyError(key);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    // rm ໄຟລ໌ symlink ລຶບຕົວ link ເອງ ບໍ່ຕາມໄປລຶບປາຍທາງ; force = ບໍ່ມີກໍ່ບໍ່ error
+    await Promise.all([rm(target, { force: true }), rm(`${target}.mime`, { force: true })]);
   }
 }

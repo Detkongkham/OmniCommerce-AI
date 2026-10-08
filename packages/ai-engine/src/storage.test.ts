@@ -30,6 +30,27 @@ describe("LocalDiskStorage", () => {
     expect(got.mime).toBe("image/png");
   });
 
+  it("delete ລຶບໄຟລ໌ + sidecar ແລ້ວ get → NOT_FOUND ແລະ put key ເດີມໃໝ່ໄດ້", async () => {
+    await storage.put("slips/a/b", new Uint8Array([1, 2]), "image/png");
+    await storage.delete("slips/a/b");
+    await expect(storage.get("slips/a/b")).rejects.toBeInstanceOf(StorageNotFoundError);
+    expect(await readdir(path.join(dir, "slips/a"))).toEqual([]);
+    await storage.put("slips/a/b", new Uint8Array([3]), "image/jpeg");
+    expect((await storage.get("slips/a/b")).mime).toBe("image/jpeg");
+  });
+
+  it("delete key ທີ່ບໍ່ມີ (ຫຼື ໂຟເດີບໍ່ມີ) = no-op ບໍ່ throw", async () => {
+    await expect(storage.delete("slips/none/x")).resolves.toBeUndefined();
+    await storage.put("slips/a/b", new Uint8Array([1]), "image/png");
+    await storage.delete("slips/a/b");
+    await expect(storage.delete("slips/a/b")).resolves.toBeUndefined();
+  });
+
+  it("delete ປະຕິເສດ key ທີ່ບໍ່ປອດໄພ", async () => {
+    await expect(storage.delete("../x")).rejects.toBeInstanceOf(StorageInvalidKeyError);
+    await expect(storage.delete("a/b.mime")).rejects.toBeInstanceOf(StorageInvalidKeyError);
+  });
+
   it("get key ທີ່ບໍ່ມີ → throw ພ້ອມ code NOT_FOUND", async () => {
     const error = await storage.get("slips/none").catch((e: unknown) => e);
     expect(error).toBeInstanceOf(StorageNotFoundError);
