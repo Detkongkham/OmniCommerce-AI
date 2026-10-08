@@ -50,7 +50,7 @@
 
 ສິດ: ອ່ານ `posting:read`, ຂຽນ `posting:write`. role `CHAT_ADMIN` ໄດ້ `posting` read/write (seed). ທຸກ route ເຂົ້າ permission sweep.
 
-- `GET /posts?status&from&to&page&pageSize`: `from/to` (ISO) ກອງດ້ວຍ `scheduledAt` ຫຼື `publishedAt` ຢູ່ໃນຊ່ວງ (ໃຊ້ໃນປະຕິທິນ); ລຽງ `coalesce(scheduledAt, publishedAt, createdAt)` ໃໝ່→ເກົ່າ. ແຖວ = `SocialPostDto`.
+- `GET /posts?status&from&to&page&pageSize`: `from/to` (ISO) ກອງດ້ວຍ `scheduledAt` ຫຼື `publishedAt` ຢູ່ໃນຊ່ວງ (ໃຊ້ໃນປະຕິທິນ); ລຽງ `createdAt` ໃໝ່→ເກົ່າ (ປະຕິທິນຈັດລຽງເອງ). ແຖວ = `SocialPostDto`.
 - `GET /posts/:id`, `POST /posts` (`{ message, media: [{ mediaFileId } | { url }], liveSessionId? }` → DRAFT), `PATCH /posts/:id` (field ດຽວກັນ, optional; media ແທນທັງຊຸດ), `POST /posts/:id/schedule` (`{ scheduledAt? }`; ບໍ່ສົ່ງ = ທັນທີ; ຕ້ອງ > now−1 ນາທີ ແລະ ≤ 180 ວັນ; ໄດ້ຈາກ DRAFT ຫຼື SCHEDULED (ປ່ຽນເວລາ)), `POST /posts/:id/cancel`, `POST /posts/:id/retry`, `DELETE /posts/:id` (204).
 - ກົດ: ຂໍ້ຄວາມ trim ຫຼື ຮູບ ຕ້ອງມີຢ່າງໜ້ອຍອັນດຽວ; ຮູບ ≤ 10; `mediaFileId` ຕ້ອງມີ (404 `MEDIA_NOT_FOUND`); URL ຕ້ອງ https.
 - `SocialPostDto`: `id, message, status, scheduledAt, publishedAt, externalPostId, permalinkUrl` (`https://www.facebook.com/<externalPostId>`), `errorCode, errorMessage, cfLinkError, liveSession {id,title,status}|null, media [{ id, position, mediaFileId, url }]` (`url` = path ຂອງໄຟລ໌ ຫຼື URL ພາຍນອກ), `createdBy {id,name}|null, createdAt, updatedAt`.
