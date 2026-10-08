@@ -38,7 +38,11 @@ export class SlipsController {
     return this.slips.get(id);
   }
 
-  /** ຮູບຜ່ານ API ເພື່ອກວດສິດ (ບໍ່ເປີດ public) */
+  /**
+   * ຮູບຜ່ານ API ເພື່ອກວດສິດ (ບໍ່ເປີດ public).
+   * ໃຊ້ @Res() + res.end ແທນ StreamableFile ເພາະ storage ຄືນ buffer ທັງກ້ອນຢູ່ແລ້ວ (ຮູບນ້ອຍ) ແລະ ຕ້ອງຄວບຄຸມ header ຄົບ
+   * (ທີ່ throw ກ່ອນ res.set ຍັງຜ່ານ exception filter ປົກກະຕິ).
+   */
   @Get("slips/:id/image")
   @RequirePermissions("orders:read")
   async image(@Param("id") id: string, @Res() res: Response): Promise<void> {
@@ -49,7 +53,10 @@ export class SlipsController {
       "Content-Disposition": "inline",
       "X-Content-Type-Options": "nosniff",
       "Cache-Control": "private, no-store",
+      // ກັນຮູບທີ່ຖືກເປີດເປັນເອກະສານ: ບໍ່ໃຫ້ໂຫຼດ/ຣັນຫຍັງ
+      "Content-Security-Policy": "default-src 'none'; sandbox",
     });
-    res.end(Buffer.from(bytes));
+    // view ຂອງ buffer ເດີມ ບໍ່ copy
+    res.end(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length));
   }
 }

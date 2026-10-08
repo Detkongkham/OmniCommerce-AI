@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { INestApplication } from "@nestjs/common";
@@ -8,7 +8,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { SLIP_QUEUE } from "../src/modules/payments/slip.providers";
 import { bearerFor, createTestApp, resetDb, seedRoleUsers } from "./helpers";
 
-export const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+const JPEG = Buffer.from("ffd8ffe000104a464946", "hex");
+const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.from([0, 0, 0, 0]), Buffer.from("WEBPVP8 ")]);
 const GIF = Buffer.from("474946383961000000000000", "hex");
 
 describe("slips (e2e)", () => {
@@ -30,6 +32,9 @@ describe("slips (e2e)", () => {
     await rm(dir, { recursive: true, force: true });
   });
   beforeEach(async () => {
+    // ລ້າງ storage ທຸກ test ເພື່ອກວດ orphan ໄດ້ແນ່ນອນ
+    await rm(dir, { recursive: true, force: true });
+    await mkdir(dir, { recursive: true });
     await resetDb(db);
     await seedRoleUsers(db);
     enqueueRead.mockClear();
@@ -55,7 +60,51 @@ describe("slips (e2e)", () => {
   const upload = (orderId: string, headers: { Authorization: string }, file: Buffer = PNG, filename = "slip.png") =>
     request(server()).post(`/orders/${orderId}/slips`).set(headers).attach("file", file, filename);
 
+  /** GET ຮູບແບບ buffer ຖ້າເປັນ binary (reuse ໃນ task ຕໍ່ໄປ) */
+  const getImage = (slipId: string, headers: { Authorization: string }) =>
+    request(server())
+      .get(`/slips/${slipId}/image`)
+      .set(headers)
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(chunks)));
+      });
+
+  /** ລາຍຊື່ໄຟລ໌ທັງໝົດ (ບໍ່ລວມໂຟເດີ) ໃນ storage ຊົ່ວຄາວ */
+  const storedFiles = async () =>
+    (await readdir(dir, { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile());
+
   describe("ອັບໂຫຼດ", () => {
+    it("JPEG ແລະ WebP ຖືກຮັບ ແລະ imageMime ຖືກຕາມ magic bytes", async () => {
+      const order = await makeOrder();
+      const owner = await as("OWNER");
+      const jpeg = await upload(order.id, owner, JPEG, "a.bin").expect(201);
+      const webp = await upload(order.id, owner, WEBP, "b.bin").expect(201);
+      expect(jpeg.body.imageMime).toBe("image/jpeg");
+      expect(webp.body.imageMime).toBe("image/webp");
+    });
+
+    it("ບໍ່ມີ token → 401 ທັງ POST ແລະ GET ລາຍການ", async () => {
+      const order = await makeOrder();
+      await request(server()).post(`/orders/${order.id}/slips`).attach("file", PNG, "slip.png").expect(401);
+      await request(server()).get(`/orders/${order.id}/slips`).expect(401);
+    });
+
+    it("DB create ລົ້ມ → ລຶບໄຟລ໌ທີ່ເກັບໄປແລ້ວ (ບໍ່ມີ orphan), ຕອບ 500, ບໍ່ enqueue", async () => {
+      const order = await makeOrder();
+      const owner = await as("OWNER");
+      const spy = vi.spyOn(db.paymentSlip, "create").mockRejectedValueOnce(new Error("db down"));
+      try {
+        await upload(order.id, owner).expect(500);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await storedFiles()).toHaveLength(0);
+      expect(enqueueRead).not.toHaveBeenCalled();
+    });
+
     it("201: ເກັບຮູບ, ສ້າງ PENDING_READ, enqueue ອ່ານ, ບັນທຶກ audit; ຕອບ DTO ທີ່ບໍ່ຮົ່ວ imageKey", async () => {
       const order = await makeOrder();
       const res = await upload(order.id, await as("CHAT_ADMIN")).expect(201);
@@ -75,7 +124,10 @@ describe("slips (e2e)", () => {
       expect(enqueueRead).toHaveBeenCalledWith(res.body.id);
       const row = await db.paymentSlip.findUniqueOrThrow({ where: { id: res.body.id } });
       expect(row.imageSha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(await db.auditLog.count({ where: { action: "slip.create", entityId: res.body.id } })).toBe(1);
+      const audits = await db.auditLog.findMany({ where: { action: "slip.create", entityId: res.body.id } });
+      expect(audits).toHaveLength(1);
+      const chatAdmin = await db.user.findUniqueOrThrow({ where: { email: "chat_admin@role.test" } });
+      expect(audits[0]?.userId).toBe(chatAdmin.id);
     });
 
     it("ຊະນິດຮູບຖືກກວດຈາກ magic bytes ບໍ່ແມ່ນຊື່ໄຟລ໌/Content-Type: gif ປອມເປັນ .png → 422 SLIP_FILE_INVALID", async () => {
@@ -148,24 +200,27 @@ describe("slips (e2e)", () => {
       expect(res.body.code).toBe("SLIP_NOT_FOUND");
     });
 
+    it("GET /slips/:id/image ເມື່ອໄຟລ໌ໃນ storage ຫາຍ → 404 JSON SLIP_NOT_FOUND", async () => {
+      const order = await makeOrder();
+      const owner = await as("OWNER");
+      const created = await upload(order.id, owner).expect(201);
+      await rm(dir, { recursive: true, force: true });
+      const res = await request(server()).get(`/slips/${created.body.id}/image`).set(owner).expect(404);
+      expect(res.body.code).toBe("SLIP_NOT_FOUND");
+    });
+
     it("GET /slips/:id/image: bytes ເດີມ + header ປອດໄພ; ຕ້ອງ login", async () => {
       const order = await makeOrder();
       const owner = await as("OWNER");
       const created = await upload(order.id, owner).expect(201);
-      const res = await request(server())
-        .get(`/slips/${created.body.id}/image`)
-        .set(owner)
-        .buffer(true)
-        .parse((response, callback) => {
-          const chunks: Buffer[] = [];
-          response.on("data", (chunk: Buffer) => chunks.push(chunk));
-          response.on("end", () => callback(null, Buffer.concat(chunks)));
-        })
-        .expect(200);
+      const res = await getImage(created.body.id, owner).expect(200);
       expect(Buffer.compare(res.body as Buffer, PNG)).toBe(0);
       expect(res.headers["content-type"]).toBe("image/png");
+      expect(res.headers["content-length"]).toBe(String(PNG.length));
+      expect(res.headers["content-disposition"]).toBe("inline");
       expect(res.headers["x-content-type-options"]).toBe("nosniff");
-      expect(res.headers["cache-control"]).toContain("no-store");
+      expect(res.headers["content-security-policy"]).toBe("default-src 'none'; sandbox");
+      expect(res.headers["cache-control"]).toBe("private, no-store");
       await request(server()).get(`/slips/${created.body.id}/image`).expect(401);
     });
   });

@@ -13,7 +13,6 @@ import { type SlipDto, type SlipRow, slipInclude, toSlipDto } from "./slips.mapp
 
 export interface UploadedImage {
   buffer: Buffer;
-  size: number;
 }
 
 interface CreateSlipInput {
@@ -75,7 +74,7 @@ export class SlipsService {
   // ---------------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------------
-  protected validateImage(buffer: Uint8Array | undefined): { bytes: Uint8Array; mime: string } {
+  private validateImage(buffer: Uint8Array | undefined): { bytes: Uint8Array; mime: string } {
     if (!buffer || buffer.length === 0) throw apiError("SLIP_FILE_INVALID", "An image file is required");
     if (buffer.length > SLIP_MAX_BYTES) throw apiError("SLIP_FILE_INVALID", "Image is too large");
     const mime = detectImageMime(buffer);
@@ -83,24 +82,26 @@ export class SlipsService {
     return { bytes: buffer, mime };
   }
 
-  protected async requireOrder(orderId: string): Promise<void> {
+  private async requireOrder(orderId: string): Promise<void> {
     const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
     if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
   }
 
-  protected async requireRow(id: string): Promise<SlipRow> {
+  private async requireRow(id: string): Promise<SlipRow> {
     const row = await this.prisma.paymentSlip.findUnique({ where: { id }, include: slipInclude });
     if (!row) throw apiError("SLIP_NOT_FOUND", "Slip not found");
     return row;
   }
 
   /** ເກັບຮູບ → ສ້າງແຖວ → audit → enqueue (enqueue ລົ້ມ = ຍັງຖືວ່າສຳເລັດ; ສະລິບຄ້າງ PENDING_READ ໃຫ້ retry) */
-  protected async createSlip(input: CreateSlipInput): Promise<SlipDto> {
-    // ໝາຍເຫດ: ຖ້າ storage.put ສຳເລັດແຕ່ DB create ລົ້ມ ຈະເຫຼືອໄຟລ໌ກຳພ້າ (orphan) ໃນ storage —
-    // ຍອມຮັບໄດ້ (ຂະໜາດນ້ອຍ, ບໍ່ມີແຖວອ້າງ, ບໍ່ເປີດເຜີຍ); ສາມາດກວາດລ້າງດ້ວຍວຽກແຍກພາຍຫຼັງ
+  private async createSlip(input: CreateSlipInput): Promise<SlipDto> {
+    // ຖ້າ storage.put ສຳເລັດແຕ່ DB create ລົ້ມ: ລຶບໄຟລ໌ຄືນ (best effort) ເພື່ອບໍ່ໃຫ້ມີໄຟລ໌ກຳພ້າ.
+    // ຖ້າ delete ກໍ່ລົ້ມ (ເຊັ່ນ process ຕາຍກາງທາງ) ຍັງອາດເຫຼືອ orphan ໜ້ອຍໜຶ່ງ — ຍອມຮັບໄດ້ (ບໍ່ມີແຖວອ້າງ, ບໍ່ເປີດເຜີຍ)
     const key = newStorageKey("slips");
     await this.storage.put(key, input.bytes, input.mime);
-    const row = await this.prisma.paymentSlip.create({
+    let row: SlipRow;
+    try {
+      row = await this.prisma.paymentSlip.create({
       data: {
         source: input.source,
         orderId: input.orderId,
@@ -114,6 +115,12 @@ export class SlipsService {
       },
       include: slipInclude,
     });
+    } catch (error) {
+      await this.storage.delete(key).catch((deleteError: unknown) => {
+        this.logger.warn(`Failed to delete orphan slip image ${key}: ${deleteError instanceof Error ? deleteError.message : String(deleteError)}`);
+      });
+      throw error;
+    }
     await this.audit.record({
       userId: input.actor.id,
       action: "slip.create",
