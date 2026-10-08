@@ -18,6 +18,6 @@ import { LiveSessionsService } from "./live-sessions.service";
   imports: [ChannelsModule, LiveEventsModule, OrdersModule],
   controllers: [LiveSessionsController, CfCommentsController, LiveEventsController],
   providers: [CfCommentsService, CfIngestService, CfProcessorService, CfQueueService, CfReplyService, LiveHostService, LiveSessionsService],
-  exports: [CfIngestService, CfReplyService],
+  exports: [CfIngestService, CfReplyService, LiveSessionsService],
 })
 export class LiveCfModule {}

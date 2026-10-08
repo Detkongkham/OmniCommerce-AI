@@ -13,12 +13,16 @@ import type { Request } from "express";
 import type { AuthUser } from "../../common/auth-types";
 import { CurrentUser, RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { PostPublisherService } from "./post-publisher.service";
 import { PostsService } from "./posts.service";
 
 /** ເບິ່ງ = posting:read; ສ້າງ/ແກ້/ຕັ້ງເວລາ/ຍົກເລີກ/ລອງໃໝ່/ລຶບ = posting:write */
 @Controller("posts")
 export class PostsController {
-  constructor(@Inject(PostsService) private readonly posts: PostsService) {}
+  constructor(
+    @Inject(PostsService) private readonly posts: PostsService,
+    @Inject(PostPublisherService) private readonly publisher: PostPublisherService,
+  ) {}
 
   @Get()
   @RequirePermissions("posting:read")
@@ -52,13 +56,16 @@ export class PostsController {
   @Post(":id/schedule")
   @HttpCode(200)
   @RequirePermissions("posting:write")
-  schedule(
+  async schedule(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(schedulePostSchema)) body: SchedulePostInput,
     @CurrentUser() actor: AuthUser,
     @Req() req: Request,
   ) {
-    return this.posts.schedule(id, body, actor, req.ip);
+    const post = await this.posts.schedule(id, body, actor, req.ip);
+    // ໂພສທັນທີ: ບໍ່ລໍ tick ຂອງຕົວໂພສ
+    if (body.scheduledAt === undefined) this.publisher.kick();
+    return post;
   }
 
   @Post(":id/cancel")
@@ -71,8 +78,10 @@ export class PostsController {
   @Post(":id/retry")
   @HttpCode(200)
   @RequirePermissions("posting:write")
-  retry(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
-    return this.posts.retry(id, actor, req.ip);
+  async retry(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    const post = await this.posts.retry(id, actor, req.ip);
+    this.publisher.kick();
+    return post;
   }
 
   @Delete(":id")

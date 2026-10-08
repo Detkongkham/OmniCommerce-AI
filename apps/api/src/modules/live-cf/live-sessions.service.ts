@@ -97,7 +97,8 @@ export class LiveSessionsService {
     return this.get(id);
   }
 
-  async start(id: string, actor: AuthUser, ip: string | undefined): Promise<LiveSessionDetailDto> {
+  /** actor.id = null: ເລີ່ມໂດຍລະບົບ (ໂພສຕາມເວລາທີ່ຜູ້ຕັ້ງຖືກລຶບແລ້ວ) */
+  async start(id: string, actor: { id: string | null }, ip: string | undefined): Promise<LiveSessionDetailDto> {
     const session = await this.requireSession(id);
     if (session.status !== "DRAFT") {
       throw apiError("LIVE_SESSION_INVALID_STATE", `Session is ${session.status}; only DRAFT sessions can start`, { status: session.status });
