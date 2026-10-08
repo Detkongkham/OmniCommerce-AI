@@ -3,11 +3,17 @@ import { PERMISSIONS } from "@oca/shared";
 import { NAV_GROUPS, firstAllowedHref, isActivePath, visibleNavGroups } from "./nav";
 
 describe("visibleNavGroups", () => {
-  it("ຜູ້ມີ staff:read ເຫັນສະເພາະ staff ແລະ roles", () => {
+  it("ຜູ້ມີ staff:read ເຫັນ staff, roles ແລະ ລາຍງານ KPI/Audit (ກຸ່ມລາຍງານຢູ່ທ້າຍ)", () => {
     const groups = visibleNavGroups(["staff:read"]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.id).toBe("settings");
+    expect(groups.map((group) => group.id)).toEqual(["settings", "reports"]);
     expect(groups[0]?.items.map((item) => item.href)).toEqual(["/staff", "/roles"]);
+    expect(groups[1]?.items.map((item) => item.href)).toEqual(["/staff-kpi", "/audit"]);
+  });
+
+  it("analytics:read ເຫັນລາຍງານຍອດຂາຍ", () => {
+    const groups = visibleNavGroups(["analytics:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["reports"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/analytics"]);
   });
 
   it("ຜູ້ມີ inventory:read ເຫັນກຸ່ມສະຕ໊ອກ (ສິນຄ້າ, ສະຕ໋ອກ, ສາງ, ໝວດໝູ່) ແລະ ຕັ້ງຄ່າຮ້ານ", () => {
@@ -113,6 +119,7 @@ describe("firstAllowedHref (ໜ້າຫຼັງ login)", () => {
   it("ມີແຕ່ orders:read -> /orders; ມີແຕ່ staff:read -> /staff", () => {
     expect(firstAllowedHref(["orders:read"])).toBe("/orders");
     expect(firstAllowedHref(["staff:read"])).toBe("/staff");
+    expect(firstAllowedHref(["analytics:read"])).toBe("/analytics");
   });
 
   it("ບໍ່ມີສິດທີ່ເຫັນໃນເມນູເລີຍ: null", () => {

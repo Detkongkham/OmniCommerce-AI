@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  apiDownload,
   apiFetch,
   getAccessToken,
   loginRequest,
@@ -251,5 +252,33 @@ describe("refreshSession cross-tab lock", () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0]?.[0]).toBe("oca-refresh");
     expect(getAccessToken()).toBe("new");
+  });
+});
+
+describe("apiDownload", () => {
+  it("ແນບ token, ຄືນ blob ແລະ ຊື່ໄຟລ໌ຈາກ Content-Disposition; refresh ເມື່ອ 401", async () => {
+    setAccessToken("old");
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/auth/refresh") return json(200, session("new"));
+      if (headersOf(init).Authorization === "Bearer old") return json(401, { message: "expired" });
+      return new Response("a,b\r\n", {
+        status: 200,
+        headers: { "Content-Type": "text/csv", "Content-Disposition": 'attachment; filename="sales-2026-10-01-2026-10-07.csv"' },
+      });
+    });
+
+    const file = await apiDownload("/analytics/export.csv?from=2026-10-01&to=2026-10-07", "sales.csv");
+    expect(file.filename).toBe("sales-2026-10-01-2026-10-07.csv");
+    expect(await file.blob.text()).toBe("a,b\r\n");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("ບໍ່ ok → ApiError ພ້ອມ code; ບໍ່ມີ Content-Disposition → fallback", async () => {
+    setAccessToken("tok");
+    mockFetch(() => json(403, { message: "Insufficient permissions", code: "FORBIDDEN" }));
+    await expect(apiDownload("/x", "f.csv")).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+
+    mockFetch(() => new Response("x", { status: 200 }));
+    expect((await apiDownload("/x", "f.csv")).filename).toBe("f.csv");
   });
 });

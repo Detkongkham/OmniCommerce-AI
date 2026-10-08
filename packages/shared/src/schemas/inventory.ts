@@ -91,7 +91,7 @@ const boolQuery = z.enum(["true", "false"]).transform((value) => value === "true
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function dateBound(edge: "from" | "to") {
+export function dateBound(edge: "from" | "to") {
   return z
     .string()
     .trim()

@@ -33,12 +33,21 @@ import type {
   UpdateWarehouseInput,
   createProductSchema,
   variantInputSchema,
+  AuditLogDto,
+  ChannelReportDto,
+  DailySalesDto,
+  DeadstockItemDto,
+  SalesSummaryDto,
+  StaffKpiDailyDto,
+  StaffKpiRowDto,
+  TopProductDto,
 } from "@oca/shared";
 import type { z } from "zod";
 import { useCallback } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { toQueryString } from "./query-string";
+import type { DateRange } from "./reports";
 import type {
   AssigneeDto,
   CategoryDto,
@@ -782,5 +791,90 @@ export function useUpdateShipping(orderId: string) {
     mutationFn: (input: UpdateShippingInput) =>
       apiFetch<FulfillmentDetailDto>(`/fulfillment/${encodeURIComponent(orderId)}/shipping`, { method: "PATCH", body: input }),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ລາຍງານ (ໂມດູນ 10) ແລະ KPI/Audit (ໂມດູນ 12): ອ່ານຢ່າງດຽວ, ຂໍ້ມູນເກົ່າຢູ່ຂະນະປ່ຽນຊ່ວງວັນທີ
+// ---------------------------------------------------------------------------
+
+export const reportKeys = {
+  analytics: ["analytics"] as const,
+  staffKpi: ["staff-kpi"] as const,
+  auditLogs: ["audit-logs"] as const,
+};
+
+function useReport<T>(key: readonly unknown[], path: string, enabled = true) {
+  return useQuery({
+    queryKey: [...key, path],
+    queryFn: () => apiFetch<T>(path),
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+export function useAnalyticsSummary(range: DateRange, enabled = true) {
+  return useReport<SalesSummaryDto>(reportKeys.analytics, `/analytics/summary${toQueryString({ ...range })}`, enabled);
+}
+
+export function useAnalyticsDaily(range: DateRange, enabled = true) {
+  return useReport<{ days: DailySalesDto[] }>(reportKeys.analytics, `/analytics/daily${toQueryString({ ...range })}`, enabled);
+}
+
+export function useAnalyticsChannels(range: DateRange, enabled = true) {
+  return useReport<ChannelReportDto>(reportKeys.analytics, `/analytics/channels${toQueryString({ ...range })}`, enabled);
+}
+
+export function useTopProducts(range: DateRange, limit: number, enabled = true) {
+  return useReport<TopProductDto[]>(
+    reportKeys.analytics,
+    `/analytics/top-products${toQueryString({ ...range, limit })}`,
+    enabled,
+  );
+}
+
+export function useDeadstock(params: { days: number; page: number; pageSize: number }) {
+  return useReport<Page<DeadstockItemDto> & { days: number }>(
+    reportKeys.analytics,
+    `/analytics/deadstock${toQueryString({ ...params })}`,
+  );
+}
+
+export function useStaffKpi(range: DateRange, enabled = true) {
+  return useReport<{ from: string; to: string; rows: StaffKpiRowDto[] }>(
+    reportKeys.staffKpi,
+    `/staff-kpi${toQueryString({ ...range })}`,
+    enabled,
+  );
+}
+
+export function useStaffKpiDaily(userId: string | null, range: DateRange) {
+  return useReport<StaffKpiDailyDto>(
+    reportKeys.staffKpi,
+    `/staff-kpi/${encodeURIComponent(userId ?? "")}/daily${toQueryString({ ...range })}`,
+    userId !== null,
+  );
+}
+
+export interface AuditLogParams {
+  userId?: string;
+  action?: string;
+  entity?: string;
+  entityId?: string;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useAuditLogs(params: AuditLogParams) {
+  return useReport<Page<AuditLogDto>>(reportKeys.auditLogs, `/audit-logs${toQueryString({ ...params })}`);
+}
+
+export function useAuditFacets() {
+  return useQuery({
+    queryKey: [...reportKeys.auditLogs, "facets"],
+    queryFn: () => apiFetch<{ actions: string[]; entities: string[] }>("/audit-logs/facets"),
+    staleTime: 60_000,
   });
 }
