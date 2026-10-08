@@ -292,6 +292,12 @@ describe("updateStoreSettingsSchema", () => {
     expect(updateStoreSettingsSchema.safeParse({ baseCurrency: "USD" }).success).toBe(false);
     expect(updateStoreSettingsSchema.safeParse({}).success).toBe(false);
   });
+  it("receivingAccounts: ຮັບລາຍການຖືກ (ແລະ [] ເພື່ອລ້າງ); ປະຕິເສດ accountNo ທີ່ບໍ່ມີຕົວເລກ ແລະ >20 ລາຍການ", () => {
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: [{ bank: "BCEL", accountNo: "010-12-00-0123" }] }).success).toBe(true);
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: [] }).success).toBe(true);
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: [{ bank: "BCEL", accountNo: "abc" }] }).success).toBe(false);
+    expect(updateStoreSettingsSchema.safeParse({ receivingAccounts: Array.from({ length: 21 }, () => ({ bank: "A", accountNo: "1" })) }).success).toBe(false);
+  });
   it.each(["0", "7", "10", "12.5", "0.01", "0.3", "33.33", "99.99", "100", "100.00"])("vatRate %s ຖືກຕ້ອງ (≤2 ທົດສະນິຍົມ)", (vatRate) => {
     expect(updateStoreSettingsSchema.safeParse({ vatRate }).success).toBe(true);
   });
