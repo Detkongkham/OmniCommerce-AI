@@ -37,11 +37,15 @@
 | `flags` | `String[]`: `AMOUNT_MISMATCH`, `DUPLICATE_REF`, `DUPLICATE_IMAGE`, `DEST_MISMATCH`, `PAID_BEFORE_ORDER`, `ORDER_NOT_PAYABLE`, `UNREADABLE_FIELDS` |
 | `confirmedAmount?`, `confirmedCurrency?`, `confirmedPaidAt?`, `confirmedRefNo?`, `confirmedDestAccount?` | ຄ່າຫຼັງແອດມິນກວດ/ແກ້ = ປ້າຍກຳກັບສຳລັບຂັ້ນ 2; `confirmedCurrency` ມີເພາະຍອດບໍ່ມີຄວາມໝາຍຖ້າບໍ່ມີສະກຸນ |
 | `reviewedByUserId?`, `reviewedAt?`, `rejectReason?` | |
-| `createdAt` | |
+| `createdAt`, `updatedAt` | `updatedAt` ອັບເດດອັດຕະໂນມັດ (`@updatedAt`) |
+
+ຄວາມສຳພັນ `order`/`conversation`/`message`/`reviewedBy` ໃຊ້ `onDelete: SetNull`: ຖ້າບິນຖືກລຶບ ສະລິບຈະກາຍເປັນ orphan (`orderId = null`) ແລະ ຍັງຢູ່ ໂດຍເຈດຕະນາ ເພື່ອເກັບເປັນຂໍ້ມູນ train. ສະກຸນເງິນ (`readCurrency`/`confirmedCurrency`) ຈຳກັດ `LAK`/`THB`/`USD`. ໃນ patch ຂອງແອດມິນ `null` ລ້າງຄ່າ `confirmed*` ທີ່ຢືນຢັນໄວ້ ຍົກເວັ້ນ `orderId` (ລ້າງບໍ່ໄດ້).
 
 index ເພີ່ມເຕີມ: `confirmedRefNo` ແລະ `conversationId` (ໄວ້ຄົ້ນສະລິບຊ້ຳ ແລະ ລາຍການຕາມແຊັດ).
 
 `StoreSetting.receivingAccounts Json` — ລາຍການ `{ bank, accountNo, accountName }` ຂອງຮ້ານ. ເປັນ `[]` = ຂ້າມການກວດບັນຊີ (ບໍ່ໃສ່ flag ຜິດ).
+
+ໝາຍເຫດ env: ການ validate env ຂອງ API/worker ຕ້ອງຍອມຮັບ `SLIP_FAKE_RESULT` ທີ່ເປັນສະຕຣິງ**ຫວ່າງ** (ຄ່າໃນ `.env.example` ເປັນຄ່າຫວ່າງ); `SLIP_READER=` ຫວ່າງ ຖືວ່າບໍ່ຕັ້ງ (= `fake`).
 
 ກົດ: ການຢືນຢັນຕ້ອງ `READ` ຫຼື `READ_FAILED` ເທົ່ານັ້ນ, ແລະ ຕ້ອງຜູກບິນແລ້ວ. ການກັນສະລິບຊ້ຳ = ເຕືອນ **ບໍ່ບລັອກ** (ແອດມິນຕັດສິນ). ຢ່າງໃດກໍຕາມ ສະລິບທີ່ `CONFIRMED` ແລ້ວ ຢືນຢັນຊ້ຳບໍ່ໄດ້ (409).
 
@@ -50,7 +54,7 @@ index ເພີ່ມເຕີມ: `confirmedRefNo` ແລະ `conversationId` (
 1. **Ingest**
    - CHAT: webhook ບໍ່ປ່ຽນ ແລະ ບໍ່ເກັບຮູບ/ບໍ່ສ້າງ `PaymentSlip` ອັດຕະໂນມັດ (ເພື່ອບໍ່ອ່ານຮູບສິນຄ້າ ແລະ ບໍ່ເສຍຄ່າອ່ານ). ແອດມິນກົດ "ໃຊ້ເປັນສະລິບ" ໃນ thread ແລະ ເລືອກບິນ → API ດາວໂຫຼດຮູບຈາກ attachment ຂອງຂໍ້ຄວາມ (ຈຳກັດ https host/ຂະໜາດ/timeout) → ບັນທຶກ storage → ສ້າງ `PaymentSlip(source=CHAT, status=PENDING_READ)` → ຕໍ່ຄິວ. ຖ້າລິ້ງ Meta ໝົດອາຍຸແລ້ວ ດາວໂຫຼດບໍ່ໄດ້ → 422 `SLIP_FILE_INVALID` ແລະ ແອດມິນອັບໂຫຼດຮູບເອງ (ຂໍ້ຈຳກັດທີ່ຍອມຮັບ; ຍັງບໍ່ຮູ້ອາຍຸລິ້ງຈິງຂອງ Meta).
    - UPLOAD: ແອດມິນອັບໂຫຼດໃນໜ້າບິນ (`orderId` ຮູ້ຢູ່ແລ້ວ).
-2. **Read (worker)**: job ໃນຄິວ `slips` ເອີ້ນ `SlipReader.read(image)` → ບັນທຶກ `read*` ແລະ ຄຳນວນ `flags` (§4) → `READ`; ຖ້າ reader throw/ໝົດເວລາ → `READ_FAILED` (retry ຈຳກັດ, ແລ້ວແອດມິນກົດ retry ມື).
+2. **Read (worker)**: job ໃນຄິວ `slips` ເອີ້ນ `SlipReader.read(image)` → ບັນທຶກ `read*` ແລະ ຄຳນວນ `flags` (§4) → `READ`; ຖ້າ reader ເອງລົ້ມ (reject)/ໝົດເວລາ → job retry; ຫຼັງ retry ຄົບຈຳກັດ → `READ_FAILED` (ແລ້ວແອດມິນກົດ retry ມື).
 3. **Review (admin)**: ເຫັນຮູບ + ຄ່າທີ່ອ່ານ + flag ຂ້າງກັນ, ແກ້ຄ່າໄດ້ → **ຢືນຢັນ** ຫຼື **ປະຕິເສດ** (ເຫດຜົນບັງຄັບ).
 4. **Confirm**: ໃນ transaction ດຽວ — ຂຽນ `confirmed*` + `status=CONFIRMED` + ເອີ້ນ `OrdersService.pay` (state machine ເດີມ; ສິດ `payments:write`; audit log ເດີມ). ຖ້າ `pay` ລົ້ມ (ບິນບໍ່ຢູ່ `PENDING_PAYMENT` / ໝົດເວລາຈອງ) → rollback ທັງໝົດ, ຕອບ 409 ດ້ວຍ code ທີ່ `pay` ໃຫ້ (`ORDER_INVALID_STATE` / `RESERVATION_EXPIRED`); `ORDER_NOT_PAYABLE` ເປັນ flag ເທົ່ານັ້ນ ບໍ່ແມ່ນ error code. ຖ້າ confirm ໂດຍບໍ່ມີຍອດ (ທັງ `confirmedAmount` ແລະ `readAmount` ຫວ່າງ) → 422 `SLIP_AMOUNT_REQUIRED`.
 
@@ -58,12 +62,14 @@ index ເພີ່ມເຕີມ: `confirmedRefNo` ແລະ `conversationId` (
 
 ຫຼັກ: ຄ່າຄິດຈາກ `confirmed*` ຖ້າມີ ບໍ່ດັ່ງນັ້ນ `read*`. ຟັງຊັນ pure ໃນ `@oca/shared` ເພື່ອ test ງ່າຍ.
 
-- `AMOUNT_MISMATCH`: ຍອດ ≠ ຍອດທີ່ຄາດຫວັງ = `Order.total ÷ Order.exchangeRate` ປັດ 2 ຕຳແໜ່ງ (`Order.total` ເກັບເປັນ baseCurrency; `currency` + `exchangeRate` ຂອງບິນບອກສະກຸນທີ່ລູກຄ້າຈ່າຍ; ສະກຸນຕ່າງຈາກບິນ = ຄືກັນ mismatch). ໃຊ້ Decimal ບໍ່ແມ່ນ float. `normalizeSlipAmount` ປະຕິເສດຍອດສູນ ແລະ ຍອດທີ່ຈຸດທົດສະນິຍົມເປັນ comma ແບບກຳກວມ.
-- `DUPLICATE_REF` / `DUPLICATE_IMAGE`: refNo ທີ່ມີຜົນ (`confirmedRefNo` ຖ້າມີ ບໍ່ດັ່ງນັ້ນ `readRefNo`) + ບັນຊີປາຍທາງ ຫຼື `imageSha256` ຊ້ຳກັບສະລິບອື່ນ (ບໍ່ນັບ `REJECTED`). ປຽບທຽບບັນຊີດ້ວຍ `sameAccount` ທີ່ທົນຕໍ່ຮູບແບບການຂຽນເລກບັນຊີຕ່າງກັນ; ຖ້າສະລິບໃດໜຶ່ງບໍ່ມີບັນຊີປາຍທາງ ນັບເປັນຊ້ຳ (ເປັນຄຳເຕືອນເທົ່ານັ້ນ).
+- `AMOUNT_MISMATCH`: ຍອດ ≠ ຍອດທີ່ຄາດຫວັງ = `Order.total ÷ Order.exchangeRate` ປັດ 2 ຕຳແໜ່ງ (`Order.total` ເກັບເປັນ baseCurrency; `currency` + `exchangeRate` ຂອງບິນບອກສະກຸນທີ່ລູກຄ້າຈ່າຍ). ສະກຸນຂອງສະລິບເປັນ null ຖືວ່າເທົ່າສະກຸນຂອງບິນ; ສະກຸນທີ່ບໍ່ null ແລະ ຕ່າງຈາກບິນ (ບໍ່ແຍກຕົວພິມ) = mismatch. ຖ້າຍອດເປັນ null ຈະໄດ້ `UNREADABLE_FIELDS` ບໍ່ແມ່ນ `AMOUNT_MISMATCH`. ຍອດ normalize ບໍ່ໄດ້, `Order.total` ເສຍ ຫຼື rate = 0 ນັບເປັນ mismatch (ບໍ່ throw). ໃຊ້ Decimal ບໍ່ແມ່ນ float. `normalizeSlipAmount` ປະຕິເສດຍອດສູນ ແລະ ຍອດທີ່ຈຸດທົດສະນິຍົມເປັນ comma ແບບກຳກວມ.
+- `DUPLICATE_REF` / `DUPLICATE_IMAGE`: refNo ທີ່ມີຜົນ (`confirmedRefNo` ຖ້າມີ ບໍ່ດັ່ງນັ້ນ `readRefNo`) + ບັນຊີປາຍທາງ ຫຼື `imageSha256` ຊ້ຳກັບສະລິບອື່ນ (ບໍ່ນັບ `REJECTED`). ປຽບທຽບບັນຊີດ້ວຍ `sameAccount` ທີ່ທົນຕໍ່ຮູບແບບການຂຽນເລກບັນຊີຕ່າງກັນ; ຖ້າສະລິບໃດໜຶ່ງບໍ່ມີບັນຊີປາຍທາງ ນັບເປັນຊ້ຳ (ເປັນຄຳເຕືອນເທົ່ານັ້ນ). ການຫາ refNo ຊ້ຳພິຈາລະນາ candidate ສູງສຸດ 20 ລາຍການ, ເປັນຄຳແນະນຳ ແລະ ບໍ່ເປັນ transaction (ປະເມີນພ້ອມກັນອາດພາດກັນ; ປະເມີນຄືນຕອນແກ້/ຢືນຢັນ).
 - `DEST_MISMATCH`: ບັນຊີປາຍທາງບໍ່ຢູ່ໃນ `receivingAccounts` (ປຽບທຽບຫຼັງ normalize ຕົວເລກ; ອະນຸຍາດ masked ເຊັ່ນ `xxx1234` ກັບ 4 ຕົວທ້າຍ).
-- `PAID_BEFORE_ORDER`: `paidAt` < `Order.createdAt` (ມີ tolerance ນ້ອຍເພື່ອ clock skew).
-- `ORDER_NOT_PAYABLE`: ບິນບໍ່ຢູ່ `PENDING_PAYMENT` (ຫຼືໝົດເວລາຈອງ).
+- `PAID_BEFORE_ORDER`: `paidAt` < `Order.createdAt` (tolerance 5 ນາທີ ເພື່ອ clock skew).
+- `ORDER_NOT_PAYABLE`: ບິນ `status != PENDING_PAYMENT` ຫຼື `reservedUntil <= now`.
 - `UNREADABLE_FIELDS`: ຂາດ amount ຫຼື refNo; ແລະ ຖ້າຮ້ານຕັ້ງ `receivingAccounts` ແລ້ວ ແຕ່ອ່ານບັນຊີປາຍທາງບໍ່ໄດ້ ກໍໃສ່ flag ນີ້ (ແທນ `DEST_MISMATCH`).
+
+ຖ້າສະລິບຍັງບໍ່ໄດ້ຜູກບິນ (ເຊັ່ນ CHAT ທີ່ຍັງບໍ່ເລືອກບິນ) ຈະຂ້າມ `AMOUNT_MISMATCH`, `PAID_BEFORE_ORDER` ແລະ `ORDER_NOT_PAYABLE`; flag ອື່ນຍັງຄິດຕາມປົກກະຕິ.
 
 flag ທັງໝົດເປັນຂໍ້ມູນຊ່ວຍຕັດສິນ ບໍ່ບລັອກ; ສຳລັບ `ORDER_NOT_PAYABLE` ການ confirm ຖືກບລັອກໂດຍ `pay` (§3.4).
 
@@ -78,7 +84,7 @@ flag ທັງໝົດເປັນຂໍ້ມູນຊ່ວຍຕັດສິ
 interface SlipReader {
   readonly name: string;
   readonly version: string;
-  read(image: { bytes: Uint8Array; mime: string }, signal?: AbortSignal): Promise<SlipReadResult>;
+  read(image: { bytes: Uint8Array; mime: string }, options?: { signal?: AbortSignal }): Promise<SlipReadResult>;
 }
 type SlipReadResult = {
   amount?: string; currency?: string; paidAt?: string /* ISO */;
@@ -91,9 +97,10 @@ interface StorageService {
   get(key: string): Promise<{ bytes: Uint8Array; mime: string }>;
 }
 ```
-- ສັນຍາ error ຂອງ `SlipReader.read`: throw ຖ້າ reader ເອງລົ້ມເຫຼວ (→ `READ_FAILED`); ຖ້າສະລິບອ່ານບໍ່ອອກ ໃຫ້ຄືນຜົນທີ່ທຸກ field ເປັນ `undefined` (→ `READ` + `UNREADABLE_FIELDS`). `signal` ໃຊ້ຍົກເລີກເມື່ອໝົດເວລາ.
+- ສັນຍາ error ຂອງ `SlipReader.read`: reject ຖ້າ reader ເອງລົ້ມເຫຼວ ເພື່ອໃຫ້ job retry (ຫຼັງ retry ຄົບ → `READ_FAILED`); ຖ້າສະລິບອ່ານບໍ່ອອກ ໃຫ້ຄືນຜົນທີ່ທຸກ field ເປັນ `undefined` (→ `READ` + `UNREADABLE_FIELDS`). `options.signal` ໃຊ້ຍົກເລີກເມື່ອໝົດເວລາ (`FakeSlipReader` rethrow `signal.reason` ເມື່ອຖືກຍົກເລີກ).
+- `StorageService.put` ປະຕິເສດ key ທີ່ມີຢູ່ແລ້ວ (`ALREADY_EXISTS`); `get` ຕ້ອງມີທັງໄຟລ໌ຂໍ້ມູນ ແລະ sidecar `.mime` (ຂາດອັນໃດ → `NOT_FOUND`); mime ເກັບຕາມທີ່ໃຫ້ມາ ບໍ່ກວດ ແລະ ການຈຳກັດຂະໜາດເປັນໜ້າທີ່ຂອງຜູ້ເອີ້ນ.
 - error ຂອງ `StorageService` ເປັນ class ມີ type (`StorageError` ແລະ subclass) ພ້ອມ `code`: `NOT_FOUND` / `INVALID_KEY` / `ALREADY_EXISTS`.
-- `LocalDiskStorage` (root ຈາກ env `SLIP_STORAGE_DIR`; key = `slips/<yyyy>/<mm>/<cuid>`; ກັນ path traversal ໂດຍ key ມາຈາກລະບົບເທົ່ານັ້ນ).
+- `LocalDiskStorage` (root ຈາກ env `SLIP_STORAGE_DIR`; key = `<prefix>/<yyyy>/<mm>/<uuid>` (UTC) ຈາກ `newStorageKey` ທີ່ export ອອກມາ, ບໍ່ແມ່ນ cuid; ກັນ path traversal ໂດຍ key ມາຈາກລະບົບເທົ່ານັ້ນ).
 - `FakeSlipReader`: ຄືນຜົນຕາມ fixture/ຕົວແປ env ສຳລັບ dev + test. ເລືອກ reader ຈາກ `SLIP_READER` (`fake` ເປັນຄ່າເລີ່ມຕົ້ນ; ຖ້າບໍ່ມີ reader ຈິງ ສະລິບຈະຄ້າງ `READ` ດ້ວຍຜົນວ່າງ → ແອດມິນຕື່ມມື ແລະ ກົດຢືນຢັນໄດ້ ຈຶ່ງໃຊ້ງານໄດ້ໂດຍບໍ່ມີ AI).
 
 ## 7. API (ໂມດູນ `payments` ທີ່ມີ stub ຢູ່)
