@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   CF_REPLY_STATUSES,
+  LIVE_EVENTS_CHANNEL,
   cfCommentListQuerySchema,
   createLiveItemSchema,
   createLiveSessionSchema,
+  isLiveEvent,
   liveSessionListQuerySchema,
+  setFeaturedSchema,
   updateLiveItemSchema,
   updateLiveSessionSchema,
 } from "./live-cf";
@@ -48,5 +51,23 @@ describe("live-cf schemas", () => {
     expect(liveSessionListQuerySchema.parse({})).toEqual({ page: 1, pageSize: 30 });
     expect(cfCommentListQuerySchema.parse({ outcome: "ORDERED", page: "2" })).toEqual({ page: 2, pageSize: 50, outcome: "ORDERED" });
     expect(cfCommentListQuerySchema.safeParse({ outcome: "NOPE" }).success).toBe(false);
+  });
+});
+
+describe("setFeaturedSchema / LiveEvent", () => {
+  it("itemId ເປັນ string ຫຼື null; field ອື່ນ/ວ່າງ ບໍ່ຜ່ານ", () => {
+    expect(setFeaturedSchema.parse({ itemId: "i1" })).toEqual({ itemId: "i1" });
+    expect(setFeaturedSchema.parse({ itemId: null })).toEqual({ itemId: null });
+    expect(setFeaturedSchema.safeParse({}).success).toBe(false);
+    expect(setFeaturedSchema.safeParse({ itemId: "" }).success).toBe(false);
+    expect(setFeaturedSchema.safeParse({ itemId: "i1", x: 1 }).success).toBe(false);
+  });
+
+  it("isLiveEvent ຮັບສະເພາະ live.updated ທີ່ມີ sessionId", () => {
+    expect(LIVE_EVENTS_CHANNEL).toBe("oca:live:events");
+    expect(isLiveEvent({ type: "live.updated", sessionId: "s1" })).toBe(true);
+    expect(isLiveEvent({ type: "live.updated" })).toBe(false);
+    expect(isLiveEvent({ type: "conversation.updated", sessionId: "s1" })).toBe(false);
+    expect(isLiveEvent(null)).toBe(false);
   });
 });

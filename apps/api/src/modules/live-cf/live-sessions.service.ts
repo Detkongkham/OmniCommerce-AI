@@ -4,6 +4,7 @@ import type {
   CreateLiveItemInput,
   CreateLiveSessionInput,
   LiveSessionListQuery,
+  SetFeaturedInput,
   UpdateLiveItemInput,
   UpdateLiveSessionInput,
 } from "@oca/shared";
@@ -193,6 +194,16 @@ export class LiveSessionsService {
     // ເງື່ອນໄຂ claimed=0 ໃນ WHERE: ແຂ່ງກັບ CF ທີ່ເຂົ້າມາພ້ອມກັນໄດ້ຢ່າງປອດໄພ
     const { count } = await this.prisma.liveSessionItem.deleteMany({ where: { id: itemId, claimed: 0 } });
     if (count === 0) throw apiError("LIVE_ITEM_IN_USE", "This code already has CF orders and cannot be removed");
+  }
+
+  /** ຕັ້ງ/ລ້າງສິນຄ້າທີ່ກຳລັງນຳສະເໜີ (Host screen); item ຕ້ອງເປັນຂອງ session ນີ້ */
+  async setFeatured(id: string, input: SetFeaturedInput, actor: AuthUser, ip: string | undefined): Promise<LiveSessionDetailDto> {
+    const session = await this.requireSession(id);
+    if (session.status === "ENDED") throw apiError("LIVE_SESSION_INVALID_STATE", "Session has ended");
+    if (input.itemId !== null) await this.requireItem(id, input.itemId);
+    await this.prisma.liveSession.update({ where: { id }, data: { featuredItemId: input.itemId } });
+    await this.audit.record({ userId: actor.id, action: "live.feature", entity: "LiveSession", entityId: id, after: { itemId: input.itemId }, ip });
+    return this.get(id);
   }
 
   async requireSession(id: string) {

@@ -62,6 +62,8 @@ export interface LiveSessionDto {
   status: LiveSessionStatus;
   externalPostId: string | null;
   publicReplyEnabled: boolean;
+  /** ສິນຄ້າທີ່ກຳລັງນຳສະເໜີເທິງ Host screen */
+  featuredItemId: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
   createdAt: Date;
@@ -109,6 +111,7 @@ export function toSessionDto(row: SessionRow): LiveSessionDto {
     status: row.status,
     externalPostId: row.externalPostId,
     publicReplyEnabled: row.publicReplyEnabled,
+    featuredItemId: row.featuredItemId,
     startedAt: row.startedAt,
     endedAt: row.endedAt,
     createdAt: row.createdAt,

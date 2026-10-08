@@ -1,13 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
   type CreateLiveItemInput,
   type CreateLiveSessionInput,
   type LiveSessionListQuery,
+  type SetFeaturedInput,
   type UpdateLiveItemInput,
   type UpdateLiveSessionInput,
   createLiveItemSchema,
   createLiveSessionSchema,
   liveSessionListQuerySchema,
+  setFeaturedSchema,
   updateLiveItemSchema,
   updateLiveSessionSchema,
 } from "@oca/shared";
@@ -67,6 +69,17 @@ export class LiveSessionsController {
   @RequirePermissions("live-cf:write")
   end(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.sessions.end(id, actor, req.ip);
+  }
+
+  @Put(":id/featured")
+  @RequirePermissions("live-cf:write")
+  setFeatured(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(setFeaturedSchema)) body: SetFeaturedInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.sessions.setFeatured(id, body, actor, req.ip);
   }
 
   @Post(":id/items")
