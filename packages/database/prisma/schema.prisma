@@ -528,6 +528,9 @@ model LiveSession {
   status             LiveSessionStatus @default(DRAFT)
   externalPostId     String?
   publicReplyEnabled Boolean           @default(true)
+  // ສິນຄ້າທີ່ກຳລັງນຳສະເໜີເທິງ Host screen (ລຶບລະຫັດ → null)
+  featuredItemId     String?
+  featuredItem       LiveSessionItem?  @relation("LiveSessionFeaturedItem", fields: [featuredItemId], references: [id], onDelete: SetNull)
   startedAt          DateTime?
   endedAt            DateTime?
   createdById        String?
@@ -535,24 +538,27 @@ model LiveSession {
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
-  items    LiveSessionItem[]
+  items    LiveSessionItem[] @relation("LiveSessionItems")
   comments CfComment[]
   orders   Order[]
 
   @@index([status, externalPostId])
+  @@index([featuredItemId])
 }
 
 // ລະຫັດ CF → variant ຂອງ session. claimed = ຈຳນວນທີ່ CF ແລ້ວ (increment ໃນ transaction ຂອງຄອມເມັ້ນ)
 model LiveSessionItem {
   id        String         @id @default(cuid())
   sessionId String
-  session   LiveSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   LiveSession    @relation("LiveSessionItems", fields: [sessionId], references: [id], onDelete: Cascade)
   code      String // normalize ແລ້ວ (ຕົວໃຫຍ່, ເລກ ASCII)
   variantId String
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
   limit     Int?
   claimed   Int            @default(0)
   createdAt DateTime       @default(now())
+
+  featuredIn LiveSession[] @relation("LiveSessionFeaturedItem")
 
   @@unique([sessionId, code])
   @@index([variantId])

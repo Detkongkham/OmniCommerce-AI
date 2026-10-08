@@ -82,6 +82,29 @@ export const cfCommentListQuerySchema = z.object({
   outcome: z.enum(CF_OUTCOMES).optional(),
 });
 
+/** ສິນຄ້າທີ່ກຳລັງນຳສະເໜີເທິງ Host screen; null = ບໍ່ມີ */
+export const setFeaturedSchema = z.strictObject({ itemId: idSchema.nullable() });
+
+// ---------------------------------------------------------------------------
+// event realtime ຂອງ session (API ແລະ worker publish ຜ່ານ Redis; SSE ສົ່ງຕໍ່ client ທີ່ refetch ເອງ)
+// ---------------------------------------------------------------------------
+export const LIVE_EVENTS_CHANNEL = "oca:live:events";
+
+export interface LiveEvent {
+  type: "live.updated";
+  sessionId: string;
+}
+
+export function isLiveEvent(value: unknown): value is LiveEvent {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as LiveEvent).type === "live.updated" &&
+    typeof (value as LiveEvent).sessionId === "string"
+  );
+}
+
+export type SetFeaturedInput = z.infer<typeof setFeaturedSchema>;
 export type CreateLiveSessionInput = z.infer<typeof createLiveSessionSchema>;
 export type UpdateLiveSessionInput = z.infer<typeof updateLiveSessionSchema>;
 export type CreateLiveItemInput = z.infer<typeof createLiveItemSchema>;

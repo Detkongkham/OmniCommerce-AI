@@ -11,6 +11,7 @@ import {
   hasPermission,
 } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
+import { LiveEventsService } from "../live-cf/live-events.service";
 import type { AuthUser } from "../../common/auth-types";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { isUniqueViolation } from "../../common/prisma-errors";
@@ -44,6 +45,7 @@ export class OrdersService {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(LiveEventsService) private readonly liveEvents: LiveEventsService,
   ) {}
 
   async list(query: OrderListQuery): Promise<Page<OrderListItemDto>> {
@@ -523,7 +525,10 @@ export class OrdersService {
       after: { status: options.to, ...(options.reason ? { reason: options.reason } : {}) },
       ip: options.ip,
     });
-    return toOrderDetail(await this.requireDetail(id));
+    const row = await this.requireDetail(id);
+    // ບິນ CF: ຍອດຈອງ/ຈ່າຍ ແລະ ໂຄຕ້າ (cancel) ຂອງ Host screen ປ່ຽນ
+    if (row.liveSessionId) await this.liveEvents.sessionUpdated(row.liveSessionId);
+    return toOrderDetail(row);
   }
 
   private async failTransition(id: string, action: string): Promise<never> {

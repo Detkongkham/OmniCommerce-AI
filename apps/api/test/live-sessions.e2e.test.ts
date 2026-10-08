@@ -175,4 +175,41 @@ describe("live sessions (e2e)", () => {
     const diff = await request(server()).patch(`/live-sessions/${body.id}`).set(auth).send({ externalPostId: "P2" }).expect(409);
     expect(diff.body.code).toBe("LIVE_SESSION_INVALID_STATE");
   });
+
+  describe("featured item (Host screen)", () => {
+    const feature = (id: string, itemId: string | null, headers = auth) =>
+      request(server()).put(`/live-sessions/${id}/featured`).set(headers).send({ itemId });
+
+    it("ຕັ້ງ → detail ມີ featuredItemId; null ລ້າງ; ລຶບລະຫັດ → null ເອງ", async () => {
+      const session = await seedLiveSession(db, { status: "DRAFT", items: [{ code: "A1", variantId: f.v1.id }, { code: "B2", variantId: f.v2.id }] });
+      const [a1, b2] = session.items;
+      const res = await feature(session.id, a1!.id).expect(200);
+      expect(res.body.featuredItemId).toBe(a1!.id);
+      await feature(session.id, b2!.id).expect(200);
+      expect((await request(server()).get(`/live-sessions/${session.id}`).set(auth).expect(200)).body.featuredItemId).toBe(b2!.id);
+      await request(server()).delete(`/live-sessions/${session.id}/items/${b2!.id}`).set(auth).expect(204);
+      expect((await db.liveSession.findUniqueOrThrow({ where: { id: session.id } })).featuredItemId).toBeNull();
+      await feature(session.id, a1!.id).expect(200);
+      expect((await feature(session.id, null).expect(200)).body.featuredItemId).toBeNull();
+      const audit = await db.auditLog.findMany({ where: { action: "live.feature", entityId: session.id } });
+      expect(audit.length).toBe(4);
+    });
+
+    it("item ຂອງ session ອື່ນ/ບໍ່ພົບ → 404; session ບໍ່ພົບ → 404; ENDED → 409; body ຜິດ → 400", async () => {
+      const mine = await seedLiveSession(db, { items: [{ code: "A1", variantId: f.v1.id }] });
+      const other = await seedLiveSession(db, { externalPostId: "POST_2", items: [{ code: "A1", variantId: f.v1.id }] });
+      expect((await feature(mine.id, other.items[0]!.id).expect(404)).body.code).toBe("LIVE_ITEM_NOT_FOUND");
+      expect((await feature(mine.id, "nope").expect(404)).body.code).toBe("LIVE_ITEM_NOT_FOUND");
+      expect((await feature("nope", null).expect(404)).body.code).toBe("LIVE_SESSION_NOT_FOUND");
+      await request(server()).put(`/live-sessions/${mine.id}/featured`).set(auth).send({}).expect(400);
+      const ended = await seedLiveSession(db, { status: "ENDED", externalPostId: "POST_3", items: [{ code: "A1", variantId: f.v1.id }] });
+      expect((await feature(ended.id, ended.items[0]!.id).expect(409)).body.code).toBe("LIVE_SESSION_INVALID_STATE");
+    });
+
+    it("ບໍ່ມີ live-cf:write → 403", async () => {
+      const session = await seedLiveSession(db, { items: [{ code: "A1", variantId: f.v1.id }] });
+      const accountant = await bearerFor(app, "accountant@role.test");
+      await feature(session.id, session.items[0]!.id, accountant).expect(403);
+    });
+  });
 });

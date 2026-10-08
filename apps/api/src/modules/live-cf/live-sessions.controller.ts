@@ -1,13 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Put, Query, Req } from "@nestjs/common";
 import {
   type CreateLiveItemInput,
   type CreateLiveSessionInput,
   type LiveSessionListQuery,
+  type SetFeaturedInput,
   type UpdateLiveItemInput,
   type UpdateLiveSessionInput,
   createLiveItemSchema,
   createLiveSessionSchema,
   liveSessionListQuerySchema,
+  setFeaturedSchema,
   updateLiveItemSchema,
   updateLiveSessionSchema,
 } from "@oca/shared";
@@ -15,12 +17,16 @@ import type { Request } from "express";
 import type { AuthUser } from "../../common/auth-types";
 import { CurrentUser, RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { LiveHostService } from "./live-host.service";
 import { LiveSessionsService } from "./live-sessions.service";
 
 /** ເບິ່ງ = live-cf:read; ສ້າງ/ແກ້/ເລີ່ມ/ຈົບ/ຈັດການລະຫັດ = live-cf:write */
 @Controller("live-sessions")
 export class LiveSessionsController {
-  constructor(@Inject(LiveSessionsService) private readonly sessions: LiveSessionsService) {}
+  constructor(
+    @Inject(LiveSessionsService) private readonly sessions: LiveSessionsService,
+    @Inject(LiveHostService) private readonly host: LiveHostService,
+  ) {}
 
   @Get()
   @RequirePermissions("live-cf:read")
@@ -42,6 +48,13 @@ export class LiveSessionsController {
   @RequirePermissions("live-cf:read")
   get(@Param("id") id: string) {
     return this.sessions.get(id);
+  }
+
+  /** snapshot ຂອງ Host screen (ສິນຄ້ານຳສະເໜີ, ຈຳນວນຕໍ່ລະຫັດ, ຍອດລວມ, CF ລ່າສຸດ) */
+  @Get(":id/host")
+  @RequirePermissions("live-cf:read")
+  hostSnapshot(@Param("id") id: string) {
+    return this.host.snapshot(id);
   }
 
   @Patch(":id")
@@ -67,6 +80,17 @@ export class LiveSessionsController {
   @RequirePermissions("live-cf:write")
   end(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
     return this.sessions.end(id, actor, req.ip);
+  }
+
+  @Put(":id/featured")
+  @RequirePermissions("live-cf:write")
+  setFeatured(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(setFeaturedSchema)) body: SetFeaturedInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.sessions.setFeatured(id, body, actor, req.ip);
   }
 
   @Post(":id/items")

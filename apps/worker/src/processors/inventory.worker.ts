@@ -7,6 +7,7 @@ import { PRISMA } from "../prisma/prisma.module";
 import { JOB_EXPIRE_RESERVATIONS, QUEUE_INVENTORY } from "../queues/names";
 import { REDIS } from "../redis/redis.module";
 import { expireReservationsJob } from "./expire-reservations.processor";
+import { publishExpiredLiveSessions } from "./live-expiry-events";
 
 const EXPIRE_INTERVAL_MS = 60_000;
 
@@ -54,7 +55,10 @@ export class InventoryWorker implements OnModuleInit, OnModuleDestroy {
   async process(job: Job): Promise<unknown> {
     switch (job.name) {
       case JOB_EXPIRE_RESERVATIONS: {
+        const startedAt = new Date();
         const result = await expireReservationsJob(this.prisma, this.logger);
+        // ບິນ CF ໝົດເວລາ: ແຈ້ງ Host screen ຂອງ session ນັ້ນ (ຊ່ອງ Redis ດຽວກັບ API)
+        if (result.expired > 0) await publishExpiredLiveSessions(this.prisma, this.redis, startedAt, this.logger);
         if (result.expired > 0 || result.failed > 0) {
           this.logger.log(
             `Expired ${result.expired} reservation(s), skipped ${result.skipped}, failed ${result.failed}`,

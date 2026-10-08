@@ -37,6 +37,7 @@ import type {
   AssigneeDto,
   CategoryDto,
   CfCommentDto,
+  HostSnapshotDto,
   LiveItemDto,
   LiveSessionDetailDto,
   LiveSessionDto,
@@ -566,11 +567,32 @@ export function useLiveSessions(params: LiveSessionListParams) {
   });
 }
 
-export function useLiveSession(id: string) {
+/** `poll: false` = realtime (SSE) ເຊື່ອມຢູ່ ບໍ່ຕ້ອງ poll; ຄ່າເລີ່ມຕົ້ນ poll ທຸກ 5 ວິ ຕອນ LIVE */
+export function useLiveSession(id: string, options: { poll?: boolean } = {}) {
+  const poll = options.poll ?? true;
   return useQuery({
     queryKey: [...queryKeys.liveSessions, "detail", id],
     queryFn: () => apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}`),
-    refetchInterval: (query) => (query.state.data?.status === "LIVE" ? LIVE_POLL_MS : false),
+    refetchInterval: (query) => (poll && query.state.data?.status === "LIVE" ? LIVE_POLL_MS : false),
+  });
+}
+
+/** snapshot ຂອງ Host screen; poll ສຳຮອງສະເພາະຕອນ LIVE ແລະ SSE ບໍ່ເຊື່ອມ */
+export function useLiveHost(id: string, options: { poll?: boolean } = {}) {
+  const poll = options.poll ?? true;
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "host", id],
+    queryFn: () => apiFetch<HostSnapshotDto>(`/live-sessions/${encodeURIComponent(id)}/host`),
+    refetchInterval: (query) => (poll && query.state.data?.session.status === "LIVE" ? LIVE_POLL_MS : false),
+  });
+}
+
+export function useSetFeatured() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ sessionId, itemId }: { sessionId: string; itemId: string | null }) =>
+      apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(sessionId)}/featured`, { method: "PUT", body: { itemId } }),
+    onSuccess: invalidate,
   });
 }
 

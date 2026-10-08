@@ -10,8 +10,10 @@ import {
   useLiveSession,
   useLiveSessionAction,
   useLiveSessions,
+  useLiveHost,
   useResendCfReply,
   useSaveLiveItem,
+  useSetFeatured,
 } from "./queries";
 
 vi.mock("./api", async (importOriginal) => ({ ...(await importOriginal<typeof import("./api")>()), apiFetch: vi.fn() }));
@@ -82,6 +84,32 @@ describe("live-cf query hooks", () => {
       ["/live-sessions/s1/items/i1", { method: "DELETE" }],
       ["/live-sessions/s1/comments/c1/resend", { method: "POST" }],
     ]);
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["live-sessions"] });
+  });
+
+  it("poll: false (realtime ເຊື່ອມຢູ່) → ບໍ່ poll ເຖິງ session ເປັນ LIVE", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(apiFetch).mockImplementation((async () => ({ id: "s1", status: "LIVE", items: [] })) as typeof apiFetch);
+    const { Wrapper } = wrapper();
+    renderHook(() => useLiveSession("s1", { poll: false }), { wrapper: Wrapper });
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(1));
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_POLL_MS * 3));
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("useLiveHost ອ່ານ /host ແລະ poll ຕອນ LIVE (ເມື່ອບໍ່ໄດ້ປິດ); useSetFeatured PUT /featured", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(apiFetch).mockImplementation((async () => ({ session: { id: "s1", status: "LIVE" }, items: [], totals: {}, recent: [] })) as typeof apiFetch);
+    const { client, Wrapper } = wrapper();
+    renderHook(() => useLiveHost("s1"), { wrapper: Wrapper });
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/live-sessions/s1/host"));
+    await act(() => vi.advanceTimersByTimeAsync(LIVE_POLL_MS));
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(2));
+
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const feature = renderHook(() => useSetFeatured(), { wrapper: Wrapper });
+    await act(() => feature.result.current.mutateAsync({ sessionId: "s1", itemId: "i1" }));
+    expect(apiFetch).toHaveBeenCalledWith("/live-sessions/s1/featured", { method: "PUT", body: { itemId: "i1" } });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["live-sessions"] });
   });
 });
