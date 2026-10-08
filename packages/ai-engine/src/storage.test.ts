@@ -2,7 +2,14 @@ import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LocalDiskStorage, newStorageKey } from "./storage";
+import {
+  LocalDiskStorage,
+  StorageError,
+  StorageInvalidKeyError,
+  StorageKeyExistsError,
+  StorageNotFoundError,
+  newStorageKey,
+} from "./storage";
 
 describe("LocalDiskStorage", () => {
   let dir: string;
@@ -24,7 +31,10 @@ describe("LocalDiskStorage", () => {
   });
 
   it("get key ທີ່ບໍ່ມີ → throw ພ້ອມ code NOT_FOUND", async () => {
-    await expect(storage.get("slips/none")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const error = await storage.get("slips/none").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StorageNotFoundError);
+    expect(error).toBeInstanceOf(StorageError);
+    expect(error).toMatchObject({ code: "NOT_FOUND" });
   });
 
   it.each([
@@ -57,13 +67,19 @@ describe("LocalDiskStorage", () => {
     "a".repeat(201),
     `${"a/".repeat(300)}a`,
   ])("ປະຕິເສດ key ອັນຕະລາຍ %j", async (key) => {
-    await expect(storage.put(key, new Uint8Array([1]), "image/png")).rejects.toThrow("Invalid storage key");
-    await expect(storage.get(key)).rejects.toThrow("Invalid storage key");
+    for (const op of [() => storage.put(key, new Uint8Array([1]), "image/png"), () => storage.get(key)]) {
+      const error = await op().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(StorageInvalidKeyError);
+      expect(error).toBeInstanceOf(StorageError);
+      expect(error).toMatchObject({ code: "INVALID_KEY" });
+    }
   });
 
   it("ບໍ່ຂຽນທັບ key ເດີມ (ກັນ key ຊ້ຳ)", async () => {
     await storage.put("slips/x", new Uint8Array([1]), "image/png");
-    await expect(storage.put("slips/x", new Uint8Array([2]), "image/png")).rejects.toThrow("already exists");
+    const error = await storage.put("slips/x", new Uint8Array([2]), "image/png").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StorageKeyExistsError);
+    expect(error).toMatchObject({ code: "ALREADY_EXISTS" });
     expect(Array.from((await storage.get("slips/x")).bytes)).toEqual([1]);
   });
 
@@ -75,6 +91,7 @@ describe("LocalDiskStorage", () => {
 
   it("ຂຽນໄຟລ໌ຂໍ້ມູນລົ້ມເຫຼວ → ລຶບ sidecar .mime + ໄຟລ໌ຊົ່ວຄາວ ແລະ put ໃໝ່ໄດ້", async () => {
     // ສ້າງໂຟເດີທີ່ path ປາຍທາງ ເພື່ອໃຫ້ rename ຂອງໄຟລ໌ຂໍ້ມູນລົ້ມ
+    // (ໃຊ້ພຶດຕິກຳ POSIX: rename ໄຟລ໌ທັບໂຟເດີ → ລົ້ມ; ທົດສອບເສັ້ນທາງ cleanup ໃນ macOS/Linux)
     await mkdir(path.join(dir, "slips/z"), { recursive: true });
     await expect(storage.put("slips/z", new Uint8Array([1]), "image/png")).rejects.toThrow();
     expect((await readdir(path.join(dir, "slips"))).sort()).toEqual(["z"]);
@@ -91,12 +108,41 @@ describe("LocalDiskStorage", () => {
     await expect(storage.get("slips/onlydata")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("ບໍ່ຂຽນຜ່ານ symlink ທີ່ຊີ້ອອກນອກ root", async () => {
+  it("ຂຽນ key ດຽວກັນພ້ອມກັນ → ສຳເລັດພຽງອັນດຽວ ແລະ ຂໍ້ມູນບໍ່ເສຍ", async () => {
+    const results = await Promise.allSettled(
+      [1, 2, 3, 4, 5].map((n) => storage.put("slips/race", new Uint8Array([n]), "image/png")),
+    );
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    expect(fulfilled).toHaveLength(1);
+    for (const r of results) {
+      if (r.status === "rejected") expect(r.reason).toBeInstanceOf(StorageKeyExistsError);
+    }
+    const got = await storage.get("slips/race");
+    expect(got.bytes).toHaveLength(1);
+    expect(got.mime).toBe("image/png");
+    expect((await readdir(path.join(dir, "slips"))).sort()).toEqual(["race", "race.mime"]);
+  });
+
+  it("ບໍ່ຂຽນ/ອ່ານຜ່ານ symlink ທີ່ຊີ້ອອກນອກ root", async () => {
     const outside = await mkdtemp(path.join(tmpdir(), "oca-outside-"));
     try {
-      await symlink(outside, path.join(dir, "link"));
-      await expect(storage.put("link/x", new Uint8Array([1]), "image/png")).rejects.toThrow("Invalid storage key");
+      try {
+        await symlink(outside, path.join(dir, "link"));
+      } catch (error) {
+        // ບາງລະບົບ (ເຊັ່ນ Windows ທີ່ບໍ່ມີສິດ) ສ້າງ symlink ບໍ່ໄດ້ → ຂ້າມ test
+        if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+        throw error;
+      }
+      await expect(storage.put("link/x", new Uint8Array([1]), "image/png")).rejects.toBeInstanceOf(StorageInvalidKeyError);
       expect(await readdir(outside)).toEqual([]);
+
+      // ອ່ານ: ໄຟລ໌ຂໍ້ມູນ + sidecar ເປັນ symlink ຊີ້ອອກນອກ root
+      await writeFile(path.join(outside, "secret"), "secret");
+      await writeFile(path.join(outside, "secret.mime"), "text/plain");
+      await symlink(path.join(outside, "secret"), path.join(dir, "leak"));
+      await symlink(path.join(outside, "secret.mime"), path.join(dir, "leak.mime"));
+      await expect(storage.get("leak")).rejects.toBeInstanceOf(StorageInvalidKeyError);
+      await expect(storage.get("link/secret")).rejects.toBeInstanceOf(StorageInvalidKeyError);
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
