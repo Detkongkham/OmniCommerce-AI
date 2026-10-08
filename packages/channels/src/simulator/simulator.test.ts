@@ -47,6 +47,38 @@ describe("fake Graph server", () => {
     ]);
   });
 
+  it("ໂພສລົງເພຈ: ຮູບ URL + ໄຟລ໌ (multipart) ແລ້ວ feed ແນບຮູບ; reset ລ້າງ", async () => {
+    graph = await startFakeGraph({ token: "tok" });
+    const result = await adapterFor(graph).publishPost({
+      message: "ສິນຄ້າໃໝ່",
+      photos: [{ url: "https://cdn.test/a.jpg" }, { data: new Uint8Array([1, 2, 3]), mimeType: "image/png", filename: "b.png" }],
+    });
+    expect(result).toEqual({ ok: true, externalId: "sim_page_3" });
+    expect(graph.photos).toEqual([
+      { id: "ph_sim_1", url: "https://cdn.test/a.jpg", filename: null, mimeType: null, size: null, published: false },
+      { id: "ph_sim_2", url: null, filename: "b.png", mimeType: "image/png", size: 3, published: false },
+    ]);
+    expect(graph.posts).toEqual([{ id: "sim_page_3", message: "ສິນຄ້າໃໝ່", attachedMedia: ["ph_sim_1", "ph_sim_2"], authorization: "Bearer tok" }]);
+
+    expect(await adapterFor(graph).publishPost({ message: "text only", photos: [] })).toMatchObject({ ok: true });
+    graph.failNext({ status: 400, code: 200, message: "(#200) Requires pages_manage_posts permission" });
+    expect(await adapterFor(graph).publishPost({ message: "x", photos: [] })).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+
+    graph.reset();
+    expect(graph.photos).toEqual([]);
+    expect(graph.posts).toEqual([]);
+  });
+
+  it("feed ທີ່ແນບ id ຮູບທີ່ບໍ່ມີ → 400", async () => {
+    graph = await startFakeGraph();
+    const res = await fetch(`${graph.url}/me/feed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "x", attached_media: [{ media_fbid: "nope" }] }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("token ຜິດ → CHANNEL_AUTH", async () => {
     graph = await startFakeGraph({ token: "tok" });
     expect(await adapterFor(graph, "wrong").sendText("U1", "x")).toMatchObject({ ok: false, code: "CHANNEL_AUTH" });

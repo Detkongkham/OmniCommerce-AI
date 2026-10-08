@@ -99,3 +99,13 @@
 - ສະແກນດ້ວຍກ້ອງຕ້ອງເປີດໜ້າ admin ຜ່ານ **HTTPS** (browser ອະນຸຍາດກ້ອງສະເພາະ secure context; localhost ຍົກເວັ້ນ). Chrome ໃຊ້ BarcodeDetector; Safari/iOS ໂຫຼດ `@zxing/browser` ຕອນກົດປຸ່ມກ້ອງ.
 - ໃບປະໜ້າໃຊ້ `@page { size: 100mm 150mm }`: ໃນໜ້າຕ່າງພິມໃຫ້ເລືອກເຄື່ອງພິມ thermal ແລະ ຂະໜາດເຈ້ຍ 100×150 mm, margin = none, scale 100%.
 
+
+## 14. Social Posting (2a) ແລະ ບ່ອນເກັບໄຟລ໌
+
+- ຕ້ອງ `pnpm --filter @oca/database db:deploy` ເພື່ອໃຫ້ migration `20261008020000_social_posting` (MediaFile, SocialPost, SocialPostMedia) ຖືກໃຊ້.
+- **ໄຟລ໌ທີ່ອັບໂຫຼດຢູ່ເທິງ disk** ທີ່ `MEDIA_DIR` (default `./.data/media` ນັບຈາກ cwd ຂອງ API): ຕັ້ງເປັນ path ຖາວອນ (ເຊັ່ນ volume ຂອງ container), **backup ເອງ**, ແລະ ໃຊ້ໄດ້ກັບ API instance ດຽວ (ຫຼາຍ instance ຕ້ອງໃຊ້ disk ຮ່ວມກັນ ຫຼື ຍ້າຍໄປ S3 ພາຍຫຼັງ). ໄຟລ໌ຫາຍ = ໂພສທີ່ໃຊ້ຮູບນັ້ນ FAILED/MEDIA_MISSING.
+- `GET /media/files/:key` ເປີດສາທາລະນະ (key ສຸ່ມ 128 bit) ສຳລັບຮູບການຕະຫຼາດເທົ່ານັ້ນ. ຂໍ້ມູນລັບ (ເຊັ່ນ ສະລິບ) ໃຫ້ໃຊ້ `StorageService` ດຽວກັນແຕ່ເປີດຜ່ານ route ທີ່ກວດສິດ.
+- Reverse proxy ຕ້ອງຍອມ body ≥ 8 MB ສຳລັບ `POST /media` (ເຊັ່ນ nginx `client_max_body_size 9m;`).
+- Page Access Token ຕ້ອງມີສິດ `pages_manage_posts` + `pages_read_engagement` (ໂພສ) ນອກຈາກສິດ Messenger ເດີມ; ບໍ່ມີ = ໂພສ FAILED/SEND_REJECTED ຫຼື CHANNEL_AUTH.
+- ຕົວໂພສແລ່ນໃນ process ຂອງ API ທຸກ `POSTING_TICK_MS` (default 30 ວິນາທີ); ຫຼາຍ instance ປອດໄພ (claim ໃນ DB). ໂພສທີ່ຄ້າງ PUBLISHING ເກີນ 10 ນາທີ (API ລົ້ມກາງທາງ) ຈະເປັນ FAILED/PUBLISH_UNCERTAIN: **ກວດເພຈກ່ອນກົດລອງໃໝ່** ເພື່ອບໍ່ໂພສຊ້ຳ.
+- `pnpm db:seed` ບໍ່ຂຽນທັບ role ທີ່ມີຢູ່ແລ້ວ (ຂໍ້ 10): deployment ເກົ່າຕ້ອງຕິກສິດ `posting:read`/`posting:write` ໃຫ້ CHAT_ADMIN ເອງທີ່ `/roles`.

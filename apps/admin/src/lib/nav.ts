@@ -1,5 +1,5 @@
 import { type Permission, hasPermission } from "@oca/shared";
-import { Boxes, ClipboardList, PackageCheck, Truck, FolderTree, type LucideIcon, MessageSquare, Package, Radio, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import { Boxes, ClipboardList, PackageCheck, Truck, FolderTree, type LucideIcon, Megaphone, MessageSquare, Package, Radio, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 
 export interface NavItem {
@@ -38,6 +38,11 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "live",
     labelKey: "nav.group.live",
     items: [{ href: "/live", labelKey: "nav.live", icon: Radio, permission: "live-cf:read" }],
+  },
+  {
+    id: "marketing",
+    labelKey: "nav.group.marketing",
+    items: [{ href: "/posts", labelKey: "nav.posts", icon: Megaphone, permission: "posting:read" }],
   },
   {
     id: "settings",

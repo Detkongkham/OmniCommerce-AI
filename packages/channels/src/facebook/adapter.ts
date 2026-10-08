@@ -18,18 +18,32 @@ export interface FacebookAdapterConfig {
   /** ສຳລັບ test */
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /** ອັບໂຫຼດຮູບ (ໄຟລ໌ໃຫຍ່ສຸດ 8 MB) ໃຊ້ເວລາດົນກວ່າ */
+  uploadTimeoutMs?: number;
 }
+
+/** ຮູບຂອງໂພສ: URL ທີ່ Facebook ດຶງເອງ ຫຼື ໄຟລ໌ (ສົ່ງເປັນ multipart, Facebook ບໍ່ຕ້ອງເຂົ້າເຖິງ server ເຮົາ) */
+export type PostPhoto = { url: string } | { data: Uint8Array; mimeType: string; filename: string };
+
+export interface PublishPostInput {
+  message: string;
+  photos: PostPhoto[];
+}
+
+type GraphBody = { json: unknown } | { form: FormData };
 
 export class FacebookAdapter implements ChannelAdapter {
   readonly channel = "FACEBOOK" as const;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly uploadTimeoutMs: number;
 
   constructor(private readonly config: FacebookAdapterConfig) {
     this.baseUrl = (config.graphBaseUrl ?? DEFAULT_GRAPH_BASE_URL).replace(/\/+$/, "");
     this.fetchImpl = config.fetch ?? fetch;
     this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.uploadTimeoutMs = config.uploadTimeoutMs ?? 60_000;
   }
 
   /** ຮັບ webhook ໄດ້ເມື່ອມີທັງ app secret (ກວດລາຍເຊັນ) ແລະ verify token (handshake) */
@@ -94,6 +108,26 @@ export class FacebookAdapter implements ChannelAdapter {
     );
   }
 
+  /**
+   * ໂພສລົງເພຈ (token ຂອງເພຈ: /me = ເພຈ). ຮູບແຕ່ລະຮູບອັບໂຫຼດແບບ `published=false` ກ່ອນ ແລ້ວແນບເຂົ້າໂພສດຽວ.
+   * ຄືນ id ຂອງໂພສ (`<pageId>_<postId>`, ຮູບດຽວກັບ `post_id` ໃນ webhook). ຮູບທີ່ອັບແລ້ວແຕ່ໂພສລົ້ມ ບໍ່ສະແດງເທິງເພຈ.
+   */
+  async publishPost(input: PublishPostInput): Promise<SendResult> {
+    if (!this.config.pageAccessToken) {
+      return { ok: false, code: "CHANNEL_NOT_CONFIGURED", detail: "FACEBOOK_PAGE_ACCESS_TOKEN is not set" };
+    }
+    const mediaIds: string[] = [];
+    for (const [index, photo] of input.photos.entries()) {
+      const body: GraphBody = "url" in photo ? { json: { url: photo.url, published: false } } : { form: photoForm(photo) };
+      const result = await this.requestGraph("/me/photos", body, pickId, "Graph returned 2xx without a photo id", this.uploadTimeoutMs);
+      if (!result.ok) return { ...result, detail: `photo ${index + 1}: ${result.detail}`.slice(0, 300) };
+      mediaIds.push(result.externalId);
+    }
+    const payload =
+      mediaIds.length > 0 ? { message: input.message, attached_media: mediaIds.map((id) => ({ media_fbid: id })) } : { message: input.message };
+    return this.requestGraph("/me/feed", { json: payload }, pickId, "Graph returned 2xx without a post id", this.timeoutMs);
+  }
+
   private async postGraph(
     path: string,
     payload: unknown,
@@ -109,31 +143,46 @@ export class FacebookAdapter implements ChannelAdapter {
     if (!SAFE_THREAD_ID.test(guard.idToValidate)) {
       return { ok: false, code: "SEND_REJECTED", detail: `Invalid ${guard.idLabel} id` };
     }
+    return this.requestGraph(path, { json: payload }, pickExternalId, missingIdDetail, this.timeoutMs);
+  }
+
+  private async requestGraph(
+    path: string,
+    body: GraphBody,
+    pickExternalId: (body: Record<string, unknown>) => string | undefined,
+    missingIdDetail: string,
+    timeoutMs: number,
+  ): Promise<SendResult> {
+    const token = this.config.pageAccessToken;
+    if (!token) {
+      return { ok: false, code: "CHANNEL_NOT_CONFIGURED", detail: "FACEBOOK_PAGE_ACCESS_TOKEN is not set" };
+    }
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        // FormData: fetch ຕັ້ງ content-type + boundary ເອງ
+        headers: "json" in body ? { "content-type": "application/json", authorization: `Bearer ${token}` } : { authorization: `Bearer ${token}` },
+        body: "json" in body ? JSON.stringify(body.json) : body.form,
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: errorText(error) };
     }
-    let body: unknown;
+    let parsed: unknown;
     try {
-      body = await response.json();
+      parsed = await response.json();
     } catch (error) {
       // abort/timeout/truncated/non-JSON body: ບໍ່ຮູ້ຜົນ ຈຶ່ງບໍ່ລາຍງານວ່າຖືກປະຕິເສດ
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: errorText(error) };
     }
     if (response.ok) {
-      const id = isRecord(body) ? pickExternalId(body) : undefined;
+      const id = isRecord(parsed) ? pickExternalId(parsed) : undefined;
       if (id !== undefined) return { ok: true, externalId: id };
       // 2xx: Meta ອາດສົ່ງແລ້ວ
       return { ok: false, code: "CHANNEL_UNAVAILABLE", detail: missingIdDetail };
     }
-    return { ok: false, ...mapGraphFailure(response.status, body) };
+    return { ok: false, ...mapGraphFailure(response.status, parsed) };
   }
 
   async fetchProfile(threadId: string): Promise<ChannelProfile | null> {
@@ -160,6 +209,13 @@ export class FacebookAdapter implements ChannelAdapter {
 const pickMessageId = (body: Record<string, unknown>) => (typeof body.message_id === "string" ? body.message_id : undefined);
 const pickId = (body: Record<string, unknown>) => (typeof body.id === "string" ? body.id : undefined);
 const pickMessageIdOrId = (body: Record<string, unknown>) => pickMessageId(body) ?? pickId(body);
+
+function photoForm(photo: { data: Uint8Array; mimeType: string; filename: string }): FormData {
+  const form = new FormData();
+  form.set("published", "false");
+  form.set("source", new Blob([new Uint8Array(photo.data)], { type: photo.mimeType }), photo.filename);
+  return form;
+}
 
 function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 300);

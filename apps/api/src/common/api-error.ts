@@ -51,6 +51,10 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   PACK_MISMATCH: HttpStatus.CONFLICT,
   PACK_NOT_VERIFIED: HttpStatus.CONFLICT,
   SHIPPING_INFO_REQUIRED: HttpStatus.CONFLICT,
+  POST_NOT_FOUND: HttpStatus.NOT_FOUND,
+  POST_INVALID_STATE: HttpStatus.CONFLICT,
+  MEDIA_NOT_FOUND: HttpStatus.NOT_FOUND,
+  MEDIA_INVALID: HttpStatus.BAD_REQUEST,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

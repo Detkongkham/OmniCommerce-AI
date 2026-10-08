@@ -1,4 +1,7 @@
+import { postsEn, postsLo } from "./posts-dictionary";
+
 const lo = {
+  ...postsLo,
   "app.name": "OmniCommerce AI",
 
   "nav.home": "ໜ້າຫຼັກ",
@@ -166,6 +169,10 @@ const lo = {
   "error.PACK_MISMATCH": "ສິນຄ້າທີ່ຍິງບໍ່ກົງກັບບິນ",
   "error.PACK_NOT_VERIFIED": "ຕ້ອງຍິງກວດສິນຄ້າໃຫ້ຄົບກ່ອນສົ່ງອອກ",
   "error.SHIPPING_INFO_REQUIRED": "ຕ້ອງມີຊື່ ແລະ ເບີໂທຜູ້ຮັບກ່ອນສົ່ງອອກ",
+  "error.POST_NOT_FOUND": "ບໍ່ພົບໂພສ",
+  "error.POST_INVALID_STATE": "ສະຖານະຂອງໂພສບໍ່ຮອງຮັບການກະທຳນີ້",
+  "error.MEDIA_NOT_FOUND": "ບໍ່ພົບໄຟລ໌ຮູບ",
+  "error.MEDIA_INVALID": "ໄຟລ໌ຕ້ອງເປັນ JPEG, PNG ຫຼື WebP ແລະ ບໍ່ເກີນ 8 MB",
   "error.ROLE_NOT_FOUND": "ບໍ່ພົບບົດບາດນີ້",
   "error.DUPLICATE_VALUE": "ມີຄ່ານີ້ຢູ່ແລ້ວ (ຊ້ຳກັບຂໍ້ມູນເດີມ)",
   "error.CATEGORY_IN_USE": "ລຶບບໍ່ໄດ້ ເພາະຍັງມີສິນຄ້າໃນໝວດນີ້",
@@ -933,6 +940,7 @@ export type TranslateParams = Record<string, string | number>;
 export type Translate = (key: TranslationKey, params?: TranslateParams) => string;
 
 const en: Record<TranslationKey, string> = {
+  ...postsEn,
   "app.name": "OmniCommerce AI",
 
   "nav.home": "Home",
@@ -1100,6 +1108,10 @@ const en: Record<TranslationKey, string> = {
   "error.PACK_MISMATCH": "The scanned items do not match the order",
   "error.PACK_NOT_VERIFIED": "Scan and verify every item before shipping",
   "error.SHIPPING_INFO_REQUIRED": "Recipient name and phone are required before shipping",
+  "error.POST_NOT_FOUND": "Post not found",
+  "error.POST_INVALID_STATE": "This action is not allowed for the post's current status",
+  "error.MEDIA_NOT_FOUND": "Image file not found",
+  "error.MEDIA_INVALID": "File must be a JPEG, PNG or WebP image up to 8 MB",
   "error.ROLE_NOT_FOUND": "This role was not found",
   "error.DUPLICATE_VALUE": "This value already exists",
   "error.CATEGORY_IN_USE": "Cannot delete: the category still has products",

@@ -92,6 +92,18 @@ describe("apiFetch", () => {
     expect(headersOf(init)["Idempotency-Key"]).toBe("k");
   });
 
+  it("FormData: ສົ່ງ body ຕາມເດີມ ແລະ ບໍ່ຕັ້ງ Content-Type (browser ໃສ່ boundary ເອງ)", async () => {
+    setAccessToken("tok");
+    const fetchFn = mockFetch(() => json(201, { id: "m1" }));
+    const form = new FormData();
+    form.set("file", new Blob(["x"], { type: "image/png" }), "a.png");
+    await apiFetch("/media", { method: "POST", body: form });
+    const init = fetchFn.mock.calls[0]?.[1] ?? {};
+    expect(init.body).toBe(form);
+    expect(headersOf(init)["Content-Type"]).toBeUndefined();
+    expect(headersOf(init).Authorization).toBe("Bearer tok");
+  });
+
   it("ໄດ້ 401 → refresh → ລອງໃໝ່ດ້ວຍ token ໃໝ່", async () => {
     setAccessToken("old");
     const fetchMock = mockFetch((url, init) => {
