@@ -37,6 +37,7 @@ async function main(): Promise<void> {
       autoProfiles: true,
       onSend: (message) => console.log(`send → ${message.recipientId}: ${message.text}`),
       onCommentReply: (kind, reply) => console.log(`${kind} reply → ${reply.commentId}: ${reply.text}`),
+      onPost: (post) => console.log(`page post → ${post.id}: ${post.message} (${post.attachedMedia.length} photos)`),
     });
     console.log(`fake Graph API on ${graph.url} (set FACEBOOK_GRAPH_BASE_URL=${graph.url})`);
     return;

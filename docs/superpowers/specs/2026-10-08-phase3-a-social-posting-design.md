@@ -1,6 +1,6 @@
 # Phase 3 ໂມດູນ 2: Social Posting, sub-project 2a (ໂພສ Facebook Page + ຕັ້ງເວລາ + ອັບໂຫຼດຮູບ)
 
-ວັນທີ: 2026-10-08 · ສະຖານະ: 2a-1 (backend) ສຳເລັດ; 2a-2 (admin) ກຳລັງເຮັດ · Branch: ຕໍ່ຈາກ `main` (ຫຼັງ 8a)
+ວັນທີ: 2026-10-08 · ສະຖານະ: ສຳເລັດ (2a-1 backend + 2a-2 admin) · Branch: ຕໍ່ຈາກ `main` (ຫຼັງ 8a)
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
@@ -67,3 +67,9 @@
 - API e2e: media (ຖືກ, ປະເພດປອມ, ໃຫຍ່ເກີນ, ບໍ່ມີໄຟລ໌, ສິດ, ດຶງໄຟລ໌ + header, key ຜິດ); posts CRUD/ສະຖານະ/ກອງ/ສິດ; ເຊື່ອມ session (ປະເພດຜິດ, ບໍ່ແມ່ນ DRAFT, ຊ້ຳ, ບໍ່ມີລະຫັດ); publisher ກັບ fake Graph (ມີຮູບ upload + URL, ບໍ່ມີຮູບ, Graph error → FAILED, ໄຟລ໌ຫາຍ, PUBLISHING ຄ້າງ → PUBLISH_UNCERTAIN, claim ຊ້ອນ = ໂພສຄັ້ງດຽວ, CF start ສຳເລັດ/ລົ້ມ); permission sweep.
 - adapter unit: ລຳດັບ photos → feed, multipart, error mapping.
 - Admin: ລາຍການ, ປະຕິທິນ, ຟອມ (validation, ອັບໂຫຼດ, ສ້າງ/ຕັ້ງເວລາ), smoke ໃນ Chromium.
+
+## 10. ຜົນ
+
+- ທົດສອບ: workspace ທັງໝົດ build/lint/test ຜ່ານ; ໃໝ່ໃນ 2a: api (media, posts, publisher), shared, channels (adapter + fake Graph), admin (ລາຍການ, ປະຕິທິນ, ຟອມ, picker, helper ເວລາລາວ).
+- Smoke ໃນ Chromium (API + Graph ປອມ): ສ້າງໂພສ → ອັບໂຫຼດ PNG + URL → ຜູກ session Post CF → ໂພສດຽວນີ້ → Graph ປອມໄດ້ໂພສພ້ອມ 2 ຮູບ, ໜ້າໂພສສະແດງ "ໂພສແລ້ວ" + ລິ້ງ, session ເປັນ LIVE ພ້ອມ post id; ຕັ້ງເວລາອີກອັນ → ປະຕິທິນວາງຕາມວັນລາວ; ຈໍມືຖື 390 px ບໍ່ມີ scroll ຂວາງ.
+- ຕ່າງຈາກ design ທີ່ສະເໜີ: ຕົວໂພສໃຊ້ `setInterval` + claim ໃນ DB ແທນ BullMQ (BullMQ ບໍ່ເພີ່ມຄວາມຖືກຕ້ອງ); ລາຍການລຽງ `createdAt`.
