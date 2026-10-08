@@ -27,3 +27,4 @@ packages/database/src/generated/
 
 # local dev infra data
 .local/
+.data/
