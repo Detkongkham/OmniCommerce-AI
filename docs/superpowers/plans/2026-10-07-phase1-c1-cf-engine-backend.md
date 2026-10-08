@@ -12,7 +12,7 @@
 
 1. **ສິດ:** ໃຊ້ `live-cf:read` / `live-cf:write` (module `live-cf` ມີໃນ `MODULES` ແລະ role seed ແລ້ວ: OWNER, MANAGER, CHAT_ADMIN) ບໍ່ແມ່ນ `live:*`. ບໍ່ຕ້ອງແກ້ role seed.
 2. **Lock:** Postgres advisory lock ຕໍ່ session (`pg_advisory_xact_lock`) ແທນ Redis lock ຕໍ່ຜູ້ຄອມເມັ້ນ, ເພາະ `limit` ຕໍ່ລະຫັດຕ້ອງ atomic ຂ້າມລູກຄ້າຫຼາຍຄົນ. ຄອມເມັ້ນໃນ session ດຽວກັນຖືກ serialize.
-3. **limit:** ນັບດ້ວຍຖັນ `LiveSessionItem.claimed` (increment ໃນ transaction ດຽວກັນ) ບໍ່ແມ່ນການ sum ຈາກ ledger JSON.
+3. **limit:** ນັບດ້ວຍຖັນ `LiveSessionItem.claimed` (increment ໃນ transaction ດຽວກັນ) ບໍ່ແມ່ນການ sum ຈາກ ledger JSON. ອັບເດດ: `claimed` ຖືກຫຼຸດຄືນ (`releaseCfClaims`, ໃນ transaction ດຽວກັບການ EXPIRE/CANCEL ຂອງບິນ) ເພື່ອໃຫ້ limit ສະທ້ອນສະເພາະ CF ທີ່ຍັງຄ້າງ.
 4. **ຊ່ອງທາງສົ່ງ:** ໃຊ້ Private Reply ຢ່າງດຽວ (ທຸກຄອມເມັ້ນມີສິດ 1 ຄັ້ງ). ເສັ້ນທາງ `sendText` ເມື່ອເຄສໃນໜ້າຕ່າງ 24 ຊມ ຖືກເລື່ອນ (ບໍ່ເສຍໜ້າທີ່; ເພີ່ມພາຍຫຼັງໄດ້).
 5. **`ChannelsModule`:** ໃໝ່ (ຫໍ່ `ChannelRegistry` ທີ່ຍັງຢູ່ໄຟລ໌ເດີມ) ເພື່ອໃຫ້ `InboxModule` ແລະ `LiveCfModule` ໃຊ້ຮ່ວມກັນໂດຍບໍ່ມີ circular import.
 6. **ຄ່າ env ໃໝ່:** `QUEUE_PREFIX` ໃນ API (ເທົ່າກັບ worker; default `oca`). test ຕັ້ງ prefix ສະເພາະຮອບເພື່ອບໍ່ໃຫ້ API dev ຂອງຜູ້ໃຊ້ມາຍາດ job ຂອງ test.

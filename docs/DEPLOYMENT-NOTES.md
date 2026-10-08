@@ -86,7 +86,7 @@
 
 ### CF Engine: ຂໍ້ສັງເກດເພີ່ມເຕີມ
 
-- **ຄວາມໝາຍຂອງ limit**: `limit` ນັບທຸກບິນ CF ທີ່ເຄີຍເກີດໃນ session (`LiveSessionItem.claimed` ບໍ່ຖືກຫຼຸດເມື່ອບິນໝົດເວລາ/ຍົກເລີກ). ສະຕ໋ອກຖືກຄືນ ແຕ່ limit ບໍ່ຄືນ; ຜູ້ຂາຍເພີ່ມ limit (PATCH item) ເພື່ອເປີດຂາຍຕໍ່ໄດ້. ຖ້າເຈົ້າຂອງຕ້ອງການແບບ live-availability ຈະເຮັດເປັນ follow-up.
+- **ຄວາມໝາຍຂອງ limit**: `limit` ນັບຈຳນວນ CF ທີ່ "ຍັງຄ້າງຢູ່" (`LiveSessionItem.claimed`). ເມື່ອບິນ CF ໝົດເວລາ (EXPIRED) ຫຼື ຖືກຍົກເລີກ (CANCELLED) ລະບົບຄືນທັງສະຕ໋ອກ ແລະ ຈຳນວນທີ່ນັບໄວ້ (ລວມທຸກຄອມເມັ້ນທີ່ merge ເຂົ້າບິນດຽວກັນ, ບໍ່ຕ່ຳກວ່າ 0) ໃນ transaction ດຽວກັນ ຈຶ່ງເປີດຂາຍຕໍ່ໄດ້ເອງ. ບິນທີ່ຊຳລະ/ແພັກ/ຈັດສົ່ງ/ສຳເລັດແລ້ວ ຍັງນັບຢູ່ (ບໍ່ຄືນ). ການຄືນເກີດຄັ້ງດຽວຕໍ່ບິນ (ຜູ້ຊະນະ guard ຂອງການປ່ຽນສະຖານະ).
 - **ກໍລະນີ comment ຫາຍແບບງຽບ (ຮູ້ແລ້ວ 2 ກໍລະນີ)**: (ກ) comment ທີ່ເຂົ້າຄິວກ່ອນ session ຈົບ ແຕ່ຖືກປະມວນຜົນຫຼັງຈົບ ຖືກຂ້າມໂດຍບໍ່ມີແຖວ ledger; (ຂ) ຖ້າ attempt ສຸດທ້າຍລົ້ມ ແລະ ການຂຽນ ledger ກໍລົ້ມນຳ (ເຊັ່ນ DB ລົ່ມ) job BullMQ ທີ່ລົ້ມ (jobId = commentId, ຢູ່ໃນ failed set) ຈະເຮັດໃຫ້ Meta retry ຖືກ dedupe ແລະ comment ຫາຍ. ໂອກາດເກີດຕ່ຳ.
 - **Retry**: processor retry ຄວາມຜິດພາດຊົ່ວຄາວ 3 ຄັ້ງແບບ backoff ແລະຂຽນ ERROR ໃນ ledger ສະເພາະ attempt ສຸດທ້າຍ (ຕ່າງຈາກ spec ທີ່ວ່າ "ບໍ່ retry").
 - **Connection pool**: ແຕ່ລະ transaction ຂອງ processor ຖື DB connection ໃນລະຫວ່າງລໍ advisory lock ຕໍ່ session; concurrency 4 ອາດຄ້າງ connection ໄດ້ເຖິງ 4 ໃນ session ທີ່ຮ້ອນ.

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { type OrderSource, type Prisma, type PrismaClient, releaseMany, reserveMany, shipMany } from "@oca/database";
+import { type OrderSource, type Prisma, type PrismaClient, releaseCfClaims, releaseMany, reserveMany, shipMany } from "@oca/database";
 import {
   type CancelOrderInput,
   type CreateOrderInput,
@@ -497,7 +497,11 @@ export class OrdersService {
         });
         const ctx = { orderId: id, actorId: options.actor.id };
         if (options.stock === "ship") await shipMany(tx, items, ctx);
-        else await releaseMany(tx, items, ctx);
+        else {
+          await releaseMany(tx, items, ctx);
+          // cancel: ຄືນໂຄຕ້າ CF (ຖ້າເປັນບິນ CF) ໃນ transaction ດຽວກັນ
+          await releaseCfClaims(tx, id);
+        }
       }
       if (options.reason) {
         const current = await tx.order.findUniqueOrThrow({ where: { id }, select: { note: true } });

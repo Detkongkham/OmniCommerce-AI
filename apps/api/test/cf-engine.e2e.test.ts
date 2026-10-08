@@ -11,7 +11,15 @@ import { type CfCommentJob, CfProcessorService } from "../src/modules/live-cf/cf
 import { CfReplyService } from "../src/modules/live-cf/cf-reply.service";
 import { CfQueueService } from "../src/modules/live-cf/cf-queue.service";
 import { OrdersService } from "../src/modules/orders/orders.service";
-import { createTestApp, expectLedgerMatches, resetDb, seedCatalog, seedLiveSession } from "./helpers";
+import {
+  bearerFor,
+  createTestApp,
+  expectLedgerMatches,
+  resetDb,
+  seedCatalog,
+  seedInventoryUsers,
+  seedLiveSession,
+} from "./helpers";
 
 const SECRET = "app-secret-test";
 const PAGE = "PAGE1";
@@ -531,6 +539,24 @@ describe("CF engine (e2e)", () => {
     expect(await db.order.count()).toBe(2);
     expect(await reserved(f.v1.id)).toBe(2);
     expect(graph.privateReplies).toHaveLength(2);
+    await expectLedgerMatches(db);
+  });
+  it("25. cancelling a CF order returns its claimed units: the limit reopens", async () => {
+    await liveSession([
+      { code: "A1", variantId: "", limit: 2 },
+      { code: "B02", variantId: "", limit: null },
+    ]);
+    await seedInventoryUsers(db);
+    const writer = await bearerFor(app, "inv-write@test.local");
+    const run = async (user: string, text: string) => settled((await comment(user, text)).commentId);
+    const first = await run("U1", "CF A1 2");
+    expect(first.outcome).toBe("ORDERED");
+    expect((await run("U2", "CF A1")).outcome).toBe("LIMIT_REACHED");
+    expect(await claimed("A1")).toBe(2);
+    await request(server()).post(`/orders/${first.orderId}/cancel`).set(writer).send({}).expect(200);
+    expect(await claimed("A1")).toBe(0);
+    expect((await run("U2", "CF A1")).outcome).toBe("ORDERED");
+    expect(await claimed("A1")).toBe(1);
     await expectLedgerMatches(db);
   });
 });
