@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { PrismaClient } from "@oca/database";
+import { type Prisma, type PrismaClient, evaluateSlip } from "@oca/database";
 import { type StorageService, StorageNotFoundError, newStorageKey } from "@oca/ai-engine";
-import { type LinkChatSlipInput, SLIP_MAX_BYTES } from "@oca/shared";
+import { type LinkChatSlipInput, type PatchSlipInput, type RejectSlipInput, SLIP_MAX_BYTES } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { apiError } from "../../common/api-error";
@@ -11,6 +11,9 @@ import { PRISMA } from "../../prisma/prisma.module";
 import { SLIP_FETCH, SLIP_QUEUE, SLIP_STORAGE, type SlipQueue } from "./slip.providers";
 import { SlipImageError, detectImageMime, fetchImageBytes, sha256Hex } from "./slip-image";
 import { type SlipDto, type SlipRow, slipInclude, toSlipDto } from "./slips.mapper";
+
+/** ສະຖານະທີ່ຍັງແກ້/retry/ປະຕິເສດໄດ້ (CONFIRMED/REJECTED ຖືວ່າປິດແລ້ວ) */
+const OPEN_STATUSES = ["PENDING_READ", "READ", "READ_FAILED"] as const;
 
 export interface UploadedImage {
   buffer: Buffer;
@@ -144,6 +147,76 @@ export class SlipsService {
       if (error instanceof StorageNotFoundError) throw apiError("SLIP_NOT_FOUND", "Slip image not found");
       throw error;
     }
+  }
+
+  /**
+   * ແກ້ຄ່າທີ່ແອດມິນຢືນຢັນ ແລະ/ຫຼື ຜູກ/ຍ້າຍບິນ; ຄິດ flag ໃໝ່ສະເໝີ.
+   * ຍ້າຍໄປບິນຂອງເຄສອື່ນໄດ້ (ແອດມິນຕັດສິນ) ຂໍພຽງບິນມີຢູ່ຈິງ.
+   */
+  async patch(id: string, input: PatchSlipInput, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
+    await this.requireRow(id);
+    if (input.orderId) await this.requireOrder(input.orderId);
+    // conditional update: ຖ້າຖືກ confirm/reject ລະຫວ່າງ requireRow ກັບບ່ອນນີ້ → count = 0 → 409
+    const { count } = await this.prisma.paymentSlip.updateMany({
+      where: { id, status: { in: [...OPEN_STATUSES] } },
+      data: {
+        orderId: input.orderId,
+        confirmedAmount: input.confirmedAmount,
+        confirmedCurrency: input.confirmedCurrency,
+        confirmedPaidAt: input.confirmedPaidAt,
+        confirmedRefNo: input.confirmedRefNo,
+        confirmedDestAccount: input.confirmedDestAccount,
+      },
+    });
+    if (count === 0) throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+    await evaluateSlip(this.prisma, id);
+    await this.audit.record({
+      userId: actor.id,
+      action: "slip.update",
+      entity: "PaymentSlip",
+      entityId: id,
+      // round-trip ເພື່ອໃຫ້ Date ກາຍເປັນ string ແລະ JSON-safe
+      after: JSON.parse(JSON.stringify(input)) as Prisma.InputJsonValue,
+      ip,
+    });
+    return toSlipDto(await this.requireRow(id));
+  }
+
+  /** ອ່ານໃໝ່: ຕັ້ງ PENDING_READ ແລ້ວ enqueue. ຖ້າ enqueue ລົ້ມ ສະຖານະ PENDING_READ ຍັງຄົງ ແລະ ຕອບ 500 (ກົດໃໝ່ໄດ້) */
+  async retry(id: string, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
+    const { count } = await this.prisma.paymentSlip.updateMany({
+      where: { id, status: { in: [...OPEN_STATUSES] } },
+      data: { status: "PENDING_READ" },
+    });
+    if (count === 0) {
+      await this.requireRow(id);
+      throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+    }
+    // ບໍ່ກືນ error ຄືຕອນສ້າງ: retry ມີໄວ້ເພື່ອ enqueue ຈຶ່ງຕ້ອງໃຫ້ແອດມິນເຫັນເມື່ອລົ້ມ
+    await this.queue.enqueueRead(id);
+    await this.audit.record({ userId: actor.id, action: "slip.retry", entity: "PaymentSlip", entityId: id, ip });
+    return toSlipDto(await this.requireRow(id));
+  }
+
+  /** ປະຕິເສດສະລິບ: ບໍ່ແຕະບິນ */
+  async reject(id: string, input: RejectSlipInput, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
+    const { count } = await this.prisma.paymentSlip.updateMany({
+      where: { id, status: { in: [...OPEN_STATUSES] } },
+      data: { status: "REJECTED", rejectReason: input.reason, reviewedByUserId: actor.id, reviewedAt: new Date() },
+    });
+    if (count === 0) {
+      await this.requireRow(id);
+      throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+    }
+    await this.audit.record({
+      userId: actor.id,
+      action: "slip.reject",
+      entity: "PaymentSlip",
+      entityId: id,
+      after: { reason: input.reason },
+      ip,
+    });
+    return toSlipDto(await this.requireRow(id));
   }
 
   // ---------------------------------------------------------------------------

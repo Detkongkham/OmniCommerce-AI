@@ -1,6 +1,14 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { type LinkChatSlipInput, SLIP_MAX_BYTES, linkChatSlipSchema } from "@oca/shared";
+import {
+  type LinkChatSlipInput,
+  type PatchSlipInput,
+  type RejectSlipInput,
+  SLIP_MAX_BYTES,
+  linkChatSlipSchema,
+  patchSlipSchema,
+  rejectSlipSchema,
+} from "@oca/shared";
 import type { Request, Response } from "express";
 import type { AuthUser } from "../../common/auth-types";
 import { CurrentUser, RequirePermissions } from "../../common/decorators";
@@ -77,5 +85,35 @@ export class SlipsController {
     });
     // view ຂອງ buffer ເດີມ ບໍ່ copy
     res.end(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length));
+  }
+
+  @Patch("slips/:id")
+  @RequirePermissions("payments:write")
+  patch(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(patchSlipSchema)) body: PatchSlipInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.slips.patch(id, body, actor, req.ip);
+  }
+
+  @Post("slips/:id/retry")
+  @HttpCode(200)
+  @RequirePermissions("payments:write")
+  retry(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.slips.retry(id, actor, req.ip);
+  }
+
+  @Post("slips/:id/reject")
+  @HttpCode(200)
+  @RequirePermissions("payments:write")
+  reject(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(rejectSlipSchema)) body: RejectSlipInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.slips.reject(id, body, actor, req.ip);
   }
 }
