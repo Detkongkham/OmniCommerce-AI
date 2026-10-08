@@ -1,9 +1,10 @@
-import { Controller, Get, Inject, Param, Post, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Param, Post, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { SLIP_MAX_BYTES } from "@oca/shared";
+import { type LinkChatSlipInput, SLIP_MAX_BYTES, linkChatSlipSchema } from "@oca/shared";
 import type { Request, Response } from "express";
 import type { AuthUser } from "../../common/auth-types";
 import { CurrentUser, RequirePermissions } from "../../common/decorators";
+import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { type UploadedImage, SlipsService } from "./slips.service";
 
 /**
@@ -30,6 +31,24 @@ export class SlipsController {
   @RequirePermissions("orders:read")
   listForOrder(@Param("id") id: string) {
     return this.slips.listForOrder(id);
+  }
+
+  @Post("conversations/:id/messages/:mid/slips")
+  @RequirePermissions("orders:write", "inbox:write")
+  linkFromChat(
+    @Param("id") conversationId: string,
+    @Param("mid") messageId: string,
+    @Body(new ZodValidationPipe(linkChatSlipSchema)) body: LinkChatSlipInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.slips.linkFromChat(conversationId, messageId, body, actor, req.ip);
+  }
+
+  @Get("conversations/:id/slips")
+  @RequirePermissions("orders:read")
+  listForConversation(@Param("id") conversationId: string) {
+    return this.slips.listForConversation(conversationId);
   }
 
   @Get("slips/:id")

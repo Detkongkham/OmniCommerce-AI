@@ -5,7 +5,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { SLIP_QUEUE } from "../src/modules/payments/slip.providers";
+import { SLIP_FETCH, SLIP_QUEUE } from "../src/modules/payments/slip.providers";
 import { bearerFor, createTestApp, resetDb, seedRoleUsers } from "./helpers";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
@@ -18,13 +18,15 @@ describe("slips (e2e)", () => {
   let db: PrismaClient;
   let dir: string;
   const enqueueRead = vi.fn(async (_slipId: string) => {});
+  // fake fetch: ຫ້າມອອກເຄືອຂ່າຍຈິງ
+  const fetchImpl = vi.fn<typeof fetch>();
   const server = () => app.getHttpServer();
   const as = (name: string) => bearerFor(app, `${name.toLowerCase()}@role.test`);
 
   beforeAll(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "oca-slips-"));
     ({ app, db } = await createTestApp({ SLIP_STORAGE_DIR: dir }, (builder) =>
-      builder.overrideProvider(SLIP_QUEUE).useValue({ enqueueRead }),
+      builder.overrideProvider(SLIP_QUEUE).useValue({ enqueueRead }).overrideProvider(SLIP_FETCH).useValue(fetchImpl),
     ));
   });
   afterAll(async () => {
@@ -38,6 +40,7 @@ describe("slips (e2e)", () => {
     await resetDb(db);
     await seedRoleUsers(db);
     enqueueRead.mockClear();
+    fetchImpl.mockReset();
     enqueueRead.mockResolvedValue(undefined);
   });
 
@@ -222,6 +225,134 @@ describe("slips (e2e)", () => {
       expect(res.headers["content-security-policy"]).toBe("default-src 'none'; sandbox");
       expect(res.headers["cache-control"]).toBe("private, no-store");
       await request(server()).get(`/slips/${created.body.id}/image`).expect(401);
+    });
+  });
+
+  describe("ຜູກຈາກແຊັດ", () => {
+    async function seedChat(attachments: unknown = [{ type: "image", url: "https://cdn.example/a.png" }]) {
+      const conversation = await db.conversation.create({
+        data: { channel: "FACEBOOK", externalThreadId: `T${Math.random()}`, displayName: "C", lastMessageAt: new Date() },
+      });
+      const message = await db.message.create({
+        data: { conversationId: conversation.id, direction: "IN", text: null, attachments: attachments as object },
+      });
+      const order = await makeOrder({ conversationId: conversation.id });
+      return { conversation, message, order };
+    }
+    const link = (cid: string, mid: string, body: object, headers: { Authorization: string }) =>
+      request(server()).post(`/conversations/${cid}/messages/${mid}/slips`).set(headers).send(body);
+
+    it("201: ດາວໂຫຼດຮູບຈາກ attachment, ເກັບ, ຜູກບິນ+ເຄສ+ຂໍ້ຄວາມ, enqueue", async () => {
+      const { conversation, message, order } = await seedChat();
+      fetchImpl.mockResolvedValueOnce(new Response(PNG, { status: 200 }));
+      const res = await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, await as("CHAT_ADMIN")).expect(201);
+      expect(res.body).toMatchObject({
+        source: "CHAT",
+        status: "PENDING_READ",
+        orderId: order.id,
+        conversationId: conversation.id,
+        messageId: message.id,
+        attachmentIndex: 0,
+      });
+      expect(fetchImpl).toHaveBeenCalledWith("https://cdn.example/a.png", expect.objectContaining({ redirect: "error" }));
+      expect(enqueueRead).toHaveBeenCalledWith(res.body.id);
+      expect((await storedFiles()).length).toBeGreaterThan(0);
+    });
+
+    it("ຜູກຊ້ຳ (ຂໍ້ຄວາມ+ລຳດັບດຽວກັນ) → 409 DUPLICATE_VALUE ໂດຍບໍ່ດາວໂຫຼດຊ້ຳ", async () => {
+      const { conversation, message, order } = await seedChat();
+      fetchImpl.mockResolvedValue(new Response(PNG, { status: 200 }));
+      const owner = await as("OWNER");
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(201);
+      fetchImpl.mockClear();
+      const res = await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(409);
+      expect(res.body.code).toBe("DUPLICATE_VALUE");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("ແຂ່ງກັນຜູກ (unique violation ຕອນ create) → 409 DUPLICATE_VALUE ແລະ ລຶບໄຟລ໌ທີ່ເກັບແລ້ວ", async () => {
+      const { conversation, message, order } = await seedChat();
+      fetchImpl.mockResolvedValueOnce(new Response(PNG, { status: 200 }));
+      const spy = vi
+        .spyOn(db.paymentSlip, "create")
+        .mockRejectedValueOnce(Object.assign(new Error("Unique constraint failed"), { code: "P2002" }));
+      let res;
+      try {
+        res = await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, await as("OWNER")).expect(409);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(res.body.code).toBe("DUPLICATE_VALUE");
+      expect(await storedFiles()).toHaveLength(0);
+      expect(enqueueRead).not.toHaveBeenCalled();
+    });
+
+    it("404: ເຄສ/ຂໍ້ຄວາມບໍ່ກົງ → CONVERSATION_NOT_FOUND; ບິນບໍ່ແມ່ນຂອງເຄສນີ້ → ORDER_NOT_FOUND", async () => {
+      const { conversation, message, order } = await seedChat();
+      const other = await seedChat();
+      const owner = await as("OWNER");
+      const wrongConv = await link(other.conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(404);
+      expect(wrongConv.body.code).toBe("CONVERSATION_NOT_FOUND");
+      const wrongOrder = await link(conversation.id, message.id, { orderId: other.order.id, attachmentIndex: 0 }, owner).expect(404);
+      expect(wrongOrder.body.code).toBe("ORDER_NOT_FOUND");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("attachment ບໍ່ມີ (ລຳດັບເກີນ)/ບໍ່ແມ່ນຮູບ/ບໍ່ມີ url/attachments=null/ບໍ່ແມ່ນ array → 422 SLIP_FILE_INVALID", async () => {
+      const owner = await as("OWNER");
+      const cases: unknown[] = [
+        [],
+        [{ type: "image", url: "https://x/a.png" }], // index 0 ມີ ແຕ່ຈະຂໍ index 1 ຂ້າງລຸ່ມ
+        [{ type: "file", url: "https://x/a" }],
+        [{ type: "image", url: null }],
+        [{ type: "image", url: "" }],
+        { type: "image", url: "https://x/a.png" },
+        "oops",
+      ];
+      for (const [i, attachments] of cases.entries()) {
+        const { conversation, message, order } = await seedChat(attachments);
+        const attachmentIndex = i === 1 ? 5 : 0;
+        const res = await link(conversation.id, message.id, { orderId: order.id, attachmentIndex }, owner).expect(422);
+        expect(res.body.code).toBe("SLIP_FILE_INVALID");
+      }
+      // Message.attachments = null (Prisma JSON null ຕ້ອງໃຊ້ undefined/ຄ່າເລີ່ມຕົ້ນ)
+      const conversation = await db.conversation.create({
+        data: { channel: "FACEBOOK", externalThreadId: `T${Math.random()}`, displayName: "C", lastMessageAt: new Date() },
+      });
+      const message = await db.message.create({ data: { conversationId: conversation.id, direction: "IN", text: "hi" } });
+      const order = await makeOrder({ conversationId: conversation.id });
+      const res = await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(422);
+      expect(res.body.code).toBe("SLIP_FILE_INVALID");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("ດາວໂຫຼດລົ້ມ (ລິ້ງໝົດອາຍຸ 403) ຫຼື ບໍ່ແມ່ນຮູບ → 422 ແລະ ບໍ່ສ້າງແຖວ", async () => {
+      const { conversation, message, order } = await seedChat();
+      const owner = await as("OWNER");
+      fetchImpl.mockResolvedValueOnce(new Response("expired", { status: 403 }));
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(422);
+      fetchImpl.mockResolvedValueOnce(new Response(GIF, { status: 200 }));
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(422);
+      expect(await db.paymentSlip.count()).toBe(0);
+      expect(await storedFiles()).toHaveLength(0);
+    });
+
+    it("ຕ້ອງ orders:write ແລະ inbox:write: ACCOUNTANT/WAREHOUSE → 403; body ຜິດ → 400", async () => {
+      const { conversation, message, order } = await seedChat();
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, await as("WAREHOUSE")).expect(403);
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, await as("ACCOUNTANT")).expect(403);
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: -1 }, await as("OWNER")).expect(400);
+    });
+
+    it("GET /conversations/:id/slips ຄືນສະລິບຂອງເຄສ (ເພື່ອ UI ຮູ້ວ່າຮູບໃດຜູກແລ້ວ); ເຄສບໍ່ມີ → 404", async () => {
+      const { conversation, message, order } = await seedChat();
+      fetchImpl.mockResolvedValueOnce(new Response(PNG, { status: 200 }));
+      const owner = await as("OWNER");
+      await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(201);
+      const res = await request(server()).get(`/conversations/${conversation.id}/slips`).set(owner).expect(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0]).toMatchObject({ messageId: message.id, attachmentIndex: 0 });
+      expect((await request(server()).get("/conversations/nope/slips").set(owner).expect(404)).body.code).toBe("CONVERSATION_NOT_FOUND");
     });
   });
 });

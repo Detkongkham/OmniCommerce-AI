@@ -1,14 +1,15 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import { type StorageService, StorageNotFoundError, newStorageKey } from "@oca/ai-engine";
-import { SLIP_MAX_BYTES } from "@oca/shared";
+import { type LinkChatSlipInput, SLIP_MAX_BYTES } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { apiError } from "../../common/api-error";
+import { isUniqueViolation } from "../../common/prisma-errors";
 import { ENV, type Env } from "../../config/env";
 import { PRISMA } from "../../prisma/prisma.module";
-import { SLIP_QUEUE, SLIP_STORAGE, type SlipQueue } from "./slip.providers";
-import { detectImageMime, sha256Hex } from "./slip-image";
+import { SLIP_FETCH, SLIP_QUEUE, SLIP_STORAGE, type SlipQueue } from "./slip.providers";
+import { SlipImageError, detectImageMime, fetchImageBytes, sha256Hex } from "./slip-image";
 import { type SlipDto, type SlipRow, slipInclude, toSlipDto } from "./slips.mapper";
 
 export interface UploadedImage {
@@ -37,6 +38,7 @@ export class SlipsService {
     @Inject(ENV) private readonly env: Env,
     @Inject(SLIP_STORAGE) private readonly storage: StorageService,
     @Inject(SLIP_QUEUE) private readonly queue: SlipQueue,
+    @Inject(SLIP_FETCH) private readonly fetchImpl: typeof fetch,
   ) {}
 
   async upload(orderId: string, file: UploadedImage | undefined, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
@@ -49,6 +51,79 @@ export class SlipsService {
     await this.requireOrder(orderId);
     const rows = await this.prisma.paymentSlip.findMany({
       where: { orderId },
+      include: slipInclude,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    return rows.map(toSlipDto);
+  }
+
+  /** ຜູກຮູບ attachment ໃນແຊັດກັບບິນຂອງເຄສນັ້ນ: ດາວໂຫຼດຮູບຕອນນີ້ (ລິ້ງ Meta ໝົດອາຍຸ) */
+  async linkFromChat(
+    conversationId: string,
+    messageId: string,
+    input: LinkChatSlipInput,
+    actor: AuthUser,
+    ip: string | undefined,
+  ): Promise<SlipDto> {
+    const message = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+      select: { id: true, attachments: true },
+    });
+    if (!message) throw apiError("CONVERSATION_NOT_FOUND", "Message not found in this conversation");
+    // ບິນຕ້ອງເປັນຂອງເຄສນີ້ (id ອ້າງອີງບໍ່ກົງ = 404 ຕາມກົດຂອງໂປຣເຈັກ)
+    const order = await this.prisma.order.findFirst({ where: { id: input.orderId, conversationId }, select: { id: true } });
+    if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found for this conversation");
+
+    const attachments = Array.isArray(message.attachments) ? (message.attachments as { type?: unknown; url?: unknown }[]) : [];
+    const attachment = attachments[input.attachmentIndex];
+    if (!attachment || attachment.type !== "image" || typeof attachment.url !== "string" || attachment.url === "") {
+      throw apiError("SLIP_FILE_INVALID", "The attachment is not a downloadable image");
+    }
+
+    const existing = await this.prisma.paymentSlip.findUnique({
+      where: { messageId_attachmentIndex: { messageId, attachmentIndex: input.attachmentIndex } },
+      select: { id: true },
+    });
+    if (existing) throw apiError("DUPLICATE_VALUE", "This image is already linked as a slip");
+
+    let bytes: Uint8Array;
+    try {
+      // URL ມາຈາກ JSON ທີ່ເກັບໄວ້: production ຕ້ອງ https ແລະ ຫ້າມ host ພາຍໃນ (SSRF guard ຢູ່ໃນ fetchImageBytes)
+      bytes = await fetchImageBytes(attachment.url, {
+        fetchImpl: this.fetchImpl,
+        allowHttp: this.env.NODE_ENV !== "production",
+        maxBytes: SLIP_MAX_BYTES,
+        timeoutMs: 10_000,
+      });
+    } catch (error) {
+      if (error instanceof SlipImageError) throw apiError("SLIP_FILE_INVALID", error.message);
+      throw error;
+    }
+    const { mime } = this.validateImage(bytes);
+    try {
+      return await this.createSlip({
+        bytes,
+        mime,
+        source: "CHAT",
+        orderId: input.orderId,
+        conversationId,
+        messageId,
+        attachmentIndex: input.attachmentIndex,
+        actor,
+        ip,
+      });
+    } catch (error) {
+      // ແຂ່ງກັນຜູກພ້ອມກັນ: unique (messageId, attachmentIndex) ເປັນດ່ານສຸດທ້າຍ (createSlip ລຶບໄຟລ໌ໃຫ້ແລ້ວ)
+      if (isUniqueViolation(error)) throw apiError("DUPLICATE_VALUE", "This image is already linked as a slip");
+      throw error;
+    }
+  }
+
+  async listForConversation(conversationId: string): Promise<SlipDto[]> {
+    const conversation = await this.prisma.conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
+    if (!conversation) throw apiError("CONVERSATION_NOT_FOUND", "Conversation not found");
+    const rows = await this.prisma.paymentSlip.findMany({
+      where: { conversationId },
       include: slipInclude,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
