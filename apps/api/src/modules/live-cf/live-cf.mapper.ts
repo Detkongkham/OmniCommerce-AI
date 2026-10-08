@@ -17,6 +17,24 @@ export const ITEM_INCLUDE = {
   variant: { select: { sku: true, name: true, product: { select: { name: true } } } },
 } as const satisfies Prisma.LiveSessionItemInclude;
 
+export interface CfLedgerLine {
+  itemId: string;
+  code: string;
+  quantity: number;
+}
+
+/** ອ່ານ lines (Json) ແບບປ້ອງກັນ: ຕັດລາຍການທີ່ຮູບແບບບໍ່ຖືກອອກ */
+export function ledgerLines(value: unknown): CfLedgerLine[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { itemId, code, quantity } = entry as Record<string, unknown>;
+    return typeof itemId === "string" && typeof code === "string" && typeof quantity === "number"
+      ? [{ itemId, code, quantity }]
+      : [];
+  });
+}
+
 export const COMMENT_INCLUDE = {
   order: { select: { orderNumber: true } },
 } as const satisfies Prisma.CfCommentInclude;
@@ -62,7 +80,7 @@ export interface CfCommentDto {
   authorName: string;
   message: string;
   outcome: CfOutcome;
-  lines: unknown;
+  lines: CfLedgerLine[] | null;
   orderId: string | null;
   orderNumber: string | null;
   replyStatus: CfReplyStatus;
@@ -111,7 +129,7 @@ export function toCommentDto(row: CommentRow): CfCommentDto {
     authorName: row.authorName,
     message: row.message,
     outcome: row.outcome,
-    lines: row.lines,
+    lines: row.lines === null ? null : ledgerLines(row.lines),
     orderId: row.orderId,
     orderNumber: row.order?.orderNumber ?? null,
     replyStatus: row.replyStatus,

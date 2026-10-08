@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import { PRISMA } from "../../prisma/prisma.module";
 import { ChannelRegistry } from "../inbox/channel-registry";
+import { ledgerLines } from "./live-cf.mapper";
 import {
   PUBLIC_REPLY_ORDERED,
   PUBLIC_REPLY_REJECTED,
@@ -9,22 +10,7 @@ import {
   buildRejectedText,
 } from "./cf-summary";
 
-const SENDING_STALE_MS = 2 * 60 * 1000;
-
-interface LedgerLine {
-  itemId: string;
-  code: string;
-  quantity: number;
-}
-
-function ledgerLines(value: unknown): LedgerLine[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) =>
-    typeof entry === "object" && entry !== null && typeof (entry as LedgerLine).code === "string"
-      ? [entry as LedgerLine]
-      : [],
-  );
-}
+export const SENDING_STALE_MS = 2 * 60 * 1000;
 
 /** ສົ່ງສະຫຼຸບຫາຜູ້ຄອມເມັ້ນ (Private Reply) ຫຼັງ ledger ຖືກບັນທຶກ. ບໍ່ throw: ລົ້ມ = replyStatus FAILED ໃຫ້ແອດມິນສົ່ງໃໝ່ */
 @Injectable()

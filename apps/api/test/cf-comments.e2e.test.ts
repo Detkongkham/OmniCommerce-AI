@@ -45,6 +45,7 @@ describe("CF comments ledger API (e2e)", () => {
       },
       { timeout: 8000, interval: 50 },
     );
+  // ໃຊ້ໄດ້ສະເພາະແຖວທີ່ມີການສົ່ງ reply (ORDERED/OUT_OF_STOCK/LIMIT_REACHED). NO_MATCH/ERROR ບໍ່ເຄີຍສົ່ງ replyStatus ຄ້າງ NONE ຕະຫຼອດ → ຈະ timeout
   const settled = (commentId: string) =>
     vi.waitFor(
       async () => {
@@ -121,6 +122,7 @@ describe("CF comments ledger API (e2e)", () => {
     expect(ordered.body.total).toBe(1);
     expect(ordered.body.items[0]).toMatchObject({ outcome: "ORDERED", replyStatus: "SENT", authorName: "User U1" });
     expect(ordered.body.items[0].orderNumber).toMatch(/^SO-/);
+    expect(ordered.body.items[0].lines).toEqual([{ itemId: expect.any(String), code: "A1", quantity: 1 }]);
     const paged = await request(server()).get(`/live-sessions/${s.id}/comments?pageSize=1&page=2`).set(auth).expect(200);
     expect(paged.body.items).toHaveLength(1);
     expect(paged.body.items[0].externalCommentId).toBe(a.commentId);
@@ -166,10 +168,42 @@ describe("CF comments ledger API (e2e)", () => {
     const failed = await settled(commentId);
     const url = `/live-sessions/${s.id}/comments/${failed.id}/resend`;
     const results = await Promise.all([request(server()).post(url).set(auth), request(server()).post(url).set(auth)]);
-    for (const res of results) expect([200, 409]).toContain(res.status);
+    for (const res of results) expect(res.status).toBe(200);
+    const statuses = results.map((res) => res.body.replyStatus as string).sort();
+    expect(statuses).toContain("SENT");
+    for (const status of statuses) expect(["SENDING", "SENT"]).toContain(status);
     await settled(commentId);
     expect(graph.privateReplies).toHaveLength(1);
     expect((await db.cfComment.findUniqueOrThrow({ where: { id: failed.id } })).replyStatus).toBe("SENT");
+  });
+
+  it("resend ແລ້ວລົ້ມອີກ: 200 ພ້ອມ replyStatus FAILED ແລະ replyErrorCode", async () => {
+    const s = await liveSession();
+    graph.failNext({ status: 500, code: 2, message: "boom" });
+    const { commentId } = await comment("U1", "A1");
+    const failed = await settled(commentId);
+    graph.failNext({ status: 500, code: 2, message: "boom again" });
+    const res = await request(server()).post(`/live-sessions/${s.id}/comments/${failed.id}/resend`).set(auth).expect(200);
+    expect(res.body.replyStatus).toBe("FAILED");
+    expect(res.body.replyErrorCode).toEqual(expect.any(String));
+    expect(graph.privateReplies).toHaveLength(0);
+  });
+
+  it("resend: SENDING ຄ້າງເກີນເວລາ → 200 ແລະ SENT; SENDING ສົດ → 409", async () => {
+    const s = await liveSession();
+    const { commentId } = await comment("U1", "A1");
+    const row = await settled(commentId);
+    const url = `/live-sessions/${s.id}/comments/${row.id}/resend`;
+    await db.cfComment.update({ where: { id: row.id }, data: { replyStatus: "SENDING", replyAttemptedAt: new Date() } });
+    await request(server()).post(url).set(auth).expect(409);
+    await db.cfComment.update({
+      where: { id: row.id },
+      data: { replyStatus: "SENDING", replyAttemptedAt: new Date(Date.now() - 5 * 60 * 1000) },
+    });
+    const before = graph.privateReplies.length;
+    const res = await request(server()).post(url).set(auth).expect(200);
+    expect(res.body.replyStatus).toBe("SENT");
+    expect(graph.privateReplies).toHaveLength(before + 1);
   });
 
   it("resend: ບໍ່ແມ່ນ FAILED (SENT/SENDING/NONE) → 409; ຄອມເມັ້ນຕ່າງ session / ບໍ່ພົບ → 404", async () => {
@@ -179,7 +213,7 @@ describe("CF comments ledger API (e2e)", () => {
     expect(row.replyStatus).toBe("SENT");
     await request(server()).post(`/live-sessions/${s.id}/comments/${row.id}/resend`).set(auth).expect(409);
     for (const status of ["SENDING", "NONE"] as const) {
-      await db.cfComment.update({ where: { id: row.id }, data: { replyStatus: status } });
+      await db.cfComment.update({ where: { id: row.id }, data: { replyStatus: status, replyAttemptedAt: new Date() } });
       await request(server()).post(`/live-sessions/${s.id}/comments/${row.id}/resend`).set(auth).expect(409);
     }
     const other = await seedLiveSession(db, { externalPostId: "OTHER", items: [] });
