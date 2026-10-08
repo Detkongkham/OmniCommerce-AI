@@ -83,3 +83,10 @@
 - **Reply claim**: ສະຖານະ SENDING ຖືວ່າ stale ຫຼັງ 2 ນາທີ; ຖ້າ process ຕາຍກາງທາງ ການສົ່ງເປັນ at-least-once (ອາດສົ່ງຊ້ຳໄດ້).
 - **ຂໍ້ຈຳກັດ**: cache ຢູ່ໃນ API instance ດຽວ (ຍັງບໍ່ຮອງຮັບຫຼາຍ instance), ບໍ່ມີ waitlist, ບໍ່ໃສ່ QR ໃນຂໍ້ຄວາມ, ຍັງບໍ່ພິສູດກັບ Meta ຈິງ (ພັດທະນາດ້ວຍ simulator: `simulate comment ...`).
 - ຕັ້ງຂໍ້ມູນໂອນເງິນທີ່ໃສ່ໃນຂໍ້ຄວາມບິນ ຜ່ານ `PATCH /settings/store` field `paymentInstructions` (ສູງສຸດ 500 ຕົວ; ຊ່ອງໃນໜ້າ admin ມາກັບ 4a-2).
+
+### CF Engine: ຂໍ້ສັງເກດເພີ່ມເຕີມ
+
+- **ຄວາມໝາຍຂອງ limit**: `limit` ນັບທຸກບິນ CF ທີ່ເຄີຍເກີດໃນ session (`LiveSessionItem.claimed` ບໍ່ຖືກຫຼຸດເມື່ອບິນໝົດເວລາ/ຍົກເລີກ). ສະຕ໋ອກຖືກຄືນ ແຕ່ limit ບໍ່ຄືນ; ຜູ້ຂາຍເພີ່ມ limit (PATCH item) ເພື່ອເປີດຂາຍຕໍ່ໄດ້. ຖ້າເຈົ້າຂອງຕ້ອງການແບບ live-availability ຈະເຮັດເປັນ follow-up.
+- **ກໍລະນີ comment ຫາຍແບບງຽບ (ຮູ້ແລ້ວ 2 ກໍລະນີ)**: (ກ) comment ທີ່ເຂົ້າຄິວກ່ອນ session ຈົບ ແຕ່ຖືກປະມວນຜົນຫຼັງຈົບ ຖືກຂ້າມໂດຍບໍ່ມີແຖວ ledger; (ຂ) ຖ້າ attempt ສຸດທ້າຍລົ້ມ ແລະ ການຂຽນ ledger ກໍລົ້ມນຳ (ເຊັ່ນ DB ລົ່ມ) job BullMQ ທີ່ລົ້ມ (jobId = commentId, ຢູ່ໃນ failed set) ຈະເຮັດໃຫ້ Meta retry ຖືກ dedupe ແລະ comment ຫາຍ. ໂອກາດເກີດຕ່ຳ.
+- **Retry**: processor retry ຄວາມຜິດພາດຊົ່ວຄາວ 3 ຄັ້ງແບບ backoff ແລະຂຽນ ERROR ໃນ ledger ສະເພາະ attempt ສຸດທ້າຍ (ຕ່າງຈາກ spec ທີ່ວ່າ "ບໍ່ retry").
+- **Connection pool**: ແຕ່ລະ transaction ຂອງ processor ຖື DB connection ໃນລະຫວ່າງລໍ advisory lock ຕໍ່ session; concurrency 4 ອາດຄ້າງ connection ໄດ້ເຖິງ 4 ໃນ session ທີ່ຮ້ອນ.
