@@ -1,5 +1,9 @@
 import type {
+  CfOutcome,
+  CfReplyStatus,
   ConversationStatus,
+  LiveSessionKind,
+  LiveSessionStatus,
   MessageDirection,
   MessageStatus,
   OrderStatus,
@@ -62,6 +66,8 @@ export interface StoreSettingsDto {
   vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
+  /** ຂໍ້ມູນໂອນທີ່ແນບທ້າຍສະຫຼຸບບິນ CF (null = ບໍ່ມີ) */
+  paymentInstructions: string | null;
 }
 
 export interface ProductListItemDto {
@@ -285,4 +291,60 @@ export interface MessagePage {
 export interface AssigneeDto {
   id: string;
   name: string;
+}
+
+// ---------------------------------------------------------------------------
+// Live & CF (ກົງກັບ apps/api/src/modules/live-cf/live-cf.mapper.ts)
+// ---------------------------------------------------------------------------
+export interface LiveSessionDto {
+  id: string;
+  title: string;
+  kind: LiveSessionKind;
+  status: LiveSessionStatus;
+  externalPostId: string | null;
+  publicReplyEnabled: boolean;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  itemCount: number;
+  commentCount: number;
+}
+
+export interface LiveItemDto {
+  id: string;
+  /** normalize ແລ້ວ (ຕົວໃຫຍ່, ເລກ ASCII) */
+  code: string;
+  variantId: string;
+  sku: string;
+  productName: string;
+  variantName: string | null;
+  /** null = ບໍ່ຈຳກັດ */
+  limit: number | null;
+  /** ຈຳນວນທີ່ CF ຈອງຢູ່ (ຫັກຄືນເມື່ອບິນໝົດເວລາ/ຍົກເລີກ) */
+  claimed: number;
+}
+
+export interface LiveSessionDetailDto extends LiveSessionDto {
+  items: LiveItemDto[];
+}
+
+export interface CfLedgerLine {
+  itemId: string;
+  code: string;
+  quantity: number;
+}
+
+export interface CfCommentDto {
+  id: string;
+  externalCommentId: string;
+  authorExternalId: string;
+  authorName: string;
+  message: string;
+  outcome: CfOutcome;
+  lines: CfLedgerLine[] | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  replyStatus: CfReplyStatus;
+  replyErrorCode: string | null;
+  createdAt: string;
 }

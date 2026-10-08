@@ -475,13 +475,14 @@ export const updateStoreSettingsSchema = z
     vatRate: vatRateSchema.optional(),
     pricesIncludeVat: z.boolean().optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
+    // transform ຢູ່ກ່ອນ nullable/optional: ໃຫ້ key ຍັງເປັນ optional ໃນ type ຂາອອກ (ວ່າງ = null)
     paymentInstructions: z
       .string()
       .trim()
       .max(500)
+      .transform((value) => (value === "" ? null : value))
       .nullable()
-      .optional()
-      .transform((value) => (value === "" ? null : value)),
+      .optional(),
   })
   .refine(requireNonEmpty, NON_EMPTY_MESSAGE);
 
