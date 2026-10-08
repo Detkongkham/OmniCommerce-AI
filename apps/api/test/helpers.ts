@@ -1,5 +1,5 @@
 import type { INestApplication } from "@nestjs/common";
-import { Test } from "@nestjs/testing";
+import { Test, type TestingModuleBuilder } from "@nestjs/testing";
 import { hash } from "@node-rs/argon2";
 import { type ConversationStatus, type PrismaClient, ROLE_DEFINITIONS, type SalesChannel } from "@oca/database";
 import { PERMISSIONS } from "@oca/shared";
@@ -15,6 +15,7 @@ export const TEST_PASSWORD = "Password123!";
 
 export async function createTestApp(
   overrides: Record<string, string> = {},
+  configure: (builder: TestingModuleBuilder) => TestingModuleBuilder = (builder) => builder,
 ): Promise<{ app: INestApplication; db: PrismaClient }> {
   const previous: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(overrides)) {
@@ -22,7 +23,7 @@ export async function createTestApp(
     process.env[key] = value;
   }
   try {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await configure(Test.createTestingModule({ imports: [AppModule] })).compile();
     const app = moduleRef.createNestApplication({ rawBody: true });
     configureApp(app, parseEnv(process.env));
     await app.init();

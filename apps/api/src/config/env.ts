@@ -43,6 +43,10 @@ const envSchema = z
     FACEBOOK_PAGE_ACCESS_TOKEN: optionalString,
     // ຊີ້ໄປ simulator ໃນ dev; ບໍ່ຕັ້ງ = https://graph.facebook.com/v21.0
     FACEBOOK_GRAPH_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+    // ຕ້ອງຊີ້ບ່ອນດຽວກັບ worker. relative ຖືກຕີຈາກ cwd (apps/api ແລະ apps/worker) ຈຶ່ງໃຊ້ ../../ ໃຫ້ຊີ້ root ຂອງ repo ຄືກັນ
+    SLIP_STORAGE_DIR: z.string().min(1).default("../../.data/slips"),
+    // prefix ຄິວ BullMQ ຕ້ອງຄືກັບ worker
+    QUEUE_PREFIX: z.string().min(1).default("oca"),
   })
   .superRefine((env, ctx) => {
     if (
