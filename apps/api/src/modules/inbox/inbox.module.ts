@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ChannelsModule } from "../channels/channels.module";
+import { LiveCfModule } from "../live-cf/live-cf.module";
 import { ConversationsController } from "./conversations.controller";
 import { ConversationsService } from "./conversations.service";
 import { FacebookWebhookController } from "./facebook-webhook.controller";
@@ -10,7 +11,7 @@ import { InboxIngestService } from "./inbox-ingest.service";
 
 /** Omnichannel Inbox: ຮັບ webhook, ເກັບເຄສ/ຂໍ້ຄວາມ, ຕອບ, realtime. */
 @Module({
-  imports: [ChannelsModule],
+  imports: [ChannelsModule, LiveCfModule],
   controllers: [FacebookWebhookController, ConversationsController, InboxAssigneesController, InboxEventsController],
   providers: [InboxEventsService, InboxIngestService, ConversationsService],
   exports: [InboxEventsService],
