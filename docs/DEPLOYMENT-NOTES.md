@@ -69,3 +69,17 @@
 - ເປີດບິນຈາກແຊັດ (`POST /orders` ພ້ອມ `conversationId`): API ບັງຄັບ `inbox:write` ເພີ່ມຈາກ `orders:write` (ກວດກ່ອນຫາເຄສ); `channel` ຕາມເຄສ + `source=CHAT` ກຳນົດຝັ່ງ server (client ສົ່ງ `channel`/`source` ບໍ່ໄດ້); `GET /orders?conversationId=` ກອງບິນຂອງເຄສ (ຕ້ອງ `orders:read`). ໜ້າ `/orders/new?conversationId=` ຕ້ອງ `orders:write` + `inventory:read` + `inbox:write`. ຫຼັງສ້າງບິນ admin ສົ່ງສະຫຼຸບບິນເຂົ້າແຊັດ; ສົ່ງບໍ່ໄດ້ = ບິນຍັງຢູ່ ແລະ ກົດສົ່ງຄືນໄດ້ (ຂໍ້ຄວາມຕອບບໍ່ມີ idempotency key ຈຶ່ງອາດຊ້ຳຖ້າການສົ່ງຄັ້ງກ່ອນ timeout ແຕ່ຝັ່ງ Meta ໄດ້ຮັບແລ້ວ).
 - SSE ຜ່ານ proxy `/api` ຂອງ admin (Next): ໃນ smoke test ດ້ວຍ `next build && next start` ຂໍ້ຄວາມເຂົ້າ admin ພາຍໃນ ~1 ວິ (ບໍ່ຖືກ buffer). ແຕ່ຖ້າມີ gzip/CDN ຢູ່ກາງ ໃຫ້ຢືນຢັນດ້ວຍ `curl -N .../api/inbox/events`; ແນະນຳໃຫ້ route `/webhooks/facebook` ແລະ `/inbox/events` ຕົງໄປ API ທີ່ reverse proxy. SSE ອາດຢູ່ຕໍ່ຫຼັງ token ໝົດສິດໄດ້ຫຼາຍສຸດ ~`ACCESS_TOKEN_TTL_SECONDS` (event ມີແຕ່ id; endpoint ຂໍ້ມູນກວດສິດທຸກຄັ້ງ).
 - `FACEBOOK_GRAPH_BASE_URL` ໃຊ້ກັບ simulator/dev ເທົ່ານັ້ນ (ຢ່າຕັ້ງໃນ production); `FACEBOOK_APP_ID` ສຳຮອງໄວ້ ຍັງບໍ່ຖືກອ່ານ.
+
+## 12. CF Engine
+
+- **Meta App**: ນອກຈາກ webhook field `messages` ຕ້ອງ subscribe field `feed` ແລະ ມີສິດ `pages_read_engagement`, `pages_manage_engagement`, `pages_messaging`.
+- **`externalPostId`** ຂອງ LiveSession ຕ້ອງເປັນ `post_id` ຕາມທີ່ webhook ສົ່ງມາ (ຮູບ `<pageId>_<postOrVideoId>`). ກວດຈາກ log/ledger ຂອງ webhook ຕອນທົດລອງຈິງຄັ້ງທຳອິດ ກ່ອນເປີດໃຊ້.
+- **Private Reply**: ຕອບສ່ວນຕົວໄດ້ 1 ຄັ້ງຕໍ່ຄອມເມັ້ນ ແລະ ພາຍໃນ 7 ວັນ. ຂໍ້ຄວາມ Messenger ຈຳກັດ 2000 ຕົວອັກສອນ.
+- **`from.id` ອາດບໍ່ຕົງ PSID** ຂອງ Messenger: ເຄສຈາກຄອມເມັ້ນຈຶ່ງອາດບໍ່ລິ້ງກັບແຊັດ (conversation) ອັດຕະໂນມັດ.
+- **ຄອມເມັ້ນທີ່ເປັນ reply ຂອງຄອມເມັ້ນ** ຖືກນັບເປັນ CF ເໝືອນຄອມເມັ້ນປົກກະຕິ.
+- **`QUEUE_PREFIX`** (env ຂອງ API): ຢ່າໃຊ້ prefix ດຽວກັນລະຫວ່າງ instance ທີ່ບໍ່ຕ້ອງການແບ່ງ job ກັນ (ໃນ Redis ດຽວກັນ). Test ໃຊ້ prefix ຕໍ່ pid ແລະ `OCA_TEST_DB_NAME` ແຍກຖານ test.
+- **Consumer ຢູ່ໃນ process ຂອງ API**: concurrency 4, serialize ຕໍ່ session ດ້ວຍ Postgres advisory lock, retry 3 ຄັ້ງແບບ backoff, ຖ້າຄັ້ງສຸດທ້າຍຍັງລົ້ມບັນທຶກ ledger ເປັນ ERROR.
+- **Migration**: `20261007000000_cf_engine` ມີ partial unique index ແລະ CHECK ທີ່ບໍ່ຢູ່ໃນ `schema.prisma` (ຕ້ອງແກ້ migration ທີ່ generate ດ້ວຍມື, ຢ່າ drop ເມື່ອ `migrate dev`), ແລະ `20261007010000_cf_reply_claim`. ຕ້ອງ `pnpm --filter @oca/database db:deploy`.
+- **Reply claim**: ສະຖານະ SENDING ຖືວ່າ stale ຫຼັງ 2 ນາທີ; ຖ້າ process ຕາຍກາງທາງ ການສົ່ງເປັນ at-least-once (ອາດສົ່ງຊ້ຳໄດ້).
+- **ຂໍ້ຈຳກັດ**: cache ຢູ່ໃນ API instance ດຽວ (ຍັງບໍ່ຮອງຮັບຫຼາຍ instance), ບໍ່ມີ waitlist, ບໍ່ໃສ່ QR ໃນຂໍ້ຄວາມ, ຍັງບໍ່ພິສູດກັບ Meta ຈິງ (ພັດທະນາດ້ວຍ simulator: `simulate comment ...`).
+- ຕັ້ງຂໍ້ມູນໂອນເງິນທີ່ໃສ່ໃນຂໍ້ຄວາມບິນ ຜ່ານ `PATCH /settings/store` field `paymentInstructions` (ສູງສຸດ 500 ຕົວ; ຊ່ອງໃນໜ້າ admin ມາກັບ 4a-2).

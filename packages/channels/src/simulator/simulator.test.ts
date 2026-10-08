@@ -226,4 +226,19 @@ describe("comments", () => {
       await graph.close();
     }
   });
+  it("onCommentReply ຖືກເອີ້ນພ້ອມ kind", async () => {
+    const seen: Array<[string, string, string]> = [];
+    const graph = await startFakeGraph({ token: "t", onCommentReply: (kind, reply) => seen.push([kind, reply.commentId, reply.text]) });
+    try {
+      const adapter = new FacebookAdapter({ pageAccessToken: "t", graphBaseUrl: graph.url });
+      await adapter.sendPrivateReply("P_1_9", "hi");
+      await adapter.replyToComment("P_1_9", "ok");
+      expect(seen).toEqual([
+        ["private", "P_1_9", "hi"],
+        ["public", "P_1_9", "ok"],
+      ]);
+    } finally {
+      await graph.close();
+    }
+  });
 });

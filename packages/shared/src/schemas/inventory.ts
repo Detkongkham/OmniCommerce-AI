@@ -475,6 +475,13 @@ export const updateStoreSettingsSchema = z
     vatRate: vatRateSchema.optional(),
     pricesIncludeVat: z.boolean().optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
+    paymentInstructions: z
+      .string()
+      .trim()
+      .max(500)
+      .nullable()
+      .optional()
+      .transform((value) => (value === "" ? null : value)),
   })
   .refine(requireNonEmpty, NON_EMPTY_MESSAGE);
 

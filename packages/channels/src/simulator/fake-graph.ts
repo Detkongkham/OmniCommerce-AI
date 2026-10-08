@@ -27,6 +27,7 @@ export interface FakeGraphOptions {
   /** id ທີ່ບໍ່ຮູ້ຈັກ ຕອບຊື່ `Sim <id>` ແທນ error */
   autoProfiles?: boolean;
   onSend?: (message: SentMessage) => void;
+  onCommentReply?: (kind: "private" | "public", reply: CommentReply) => void;
 }
 
 export interface FakeGraph {
@@ -92,9 +93,11 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
       counter += 1;
       if (commentRoute[2] === "private_replies") {
         privateReplies.push(entry);
+        options.onCommentReply?.("private", entry);
         reply(200, { id: `m_sim_pr_${counter}`, recipient_id: "sim" });
       } else {
         commentReplies.push(entry);
+        options.onCommentReply?.("public", entry);
         reply(200, { id: `c_sim_${counter}` });
       }
       return;

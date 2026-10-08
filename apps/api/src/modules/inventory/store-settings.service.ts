@@ -13,6 +13,7 @@ export interface StoreSettingsDto {
   vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
+  paymentInstructions: string | null;
 }
 
 export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
@@ -22,6 +23,7 @@ export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
     vatRate: row.vatRate.toFixed(2),
     pricesIncludeVat: row.pricesIncludeVat,
     reservationMinutes: row.reservationMinutes,
+    paymentInstructions: row.paymentInstructions,
   };
 }
 
@@ -46,6 +48,7 @@ export class StoreSettingsService {
         vatRate: input.vatRate === undefined ? undefined : new Prisma.Decimal(input.vatRate).toFixed(2),
         pricesIncludeVat: input.pricesIncludeVat,
         reservationMinutes: input.reservationMinutes,
+        paymentInstructions: input.paymentInstructions,
       },
     });
     await this.audit.record({

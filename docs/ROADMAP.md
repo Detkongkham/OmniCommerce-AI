@@ -11,7 +11,7 @@
 |---|---|---|
 | 1 | 7. Inventory | ສິນຄ້າ, variants, ຕັດສະຕ໋ອກແບບ atomic, ຄຳສັ່ງຊື້ — **1a ສຳເລັດ**: API + worker (1a-api) ແລະ ໜ້າ admin (1a-ui: ສິນຄ້າ, ສາງ, ໝວດໝູ່, ຕັ້ງຄ່າຮ້ານ, ສະຕ໋ອກ, ຄຳສັ່ງຊື້). ເຫຼືອ: Inbox, CF Engine, Slip ເປັນ sub-project ແຍກ |
 | 2 | 1. Omnichannel Inbox | ເລີ່ມຈາກ Facebook Messenger, ເປີດບິນໃນແຊັດ — **2a ສຳເລັດ**: ຮັບ/ຕອບ Messenger, ມອບໝາຍ/ລິ້ງລູກຄ້າ, ເປີດບິນຈາກແຊັດ + ສະຫຼຸບບິນເຂົ້າແຊັດ. ເຫຼືອ: payment link, AI, ຊ່ອງທາງອື່ນ |
-| 3 | 4. Live & Post CF Engine | ດັກຄອມເມັ້ນ CF, ອອກບິນ QR ນັບຖອຍຫຼັງ |
+| 3 | 4. Live & Post CF Engine | ດັກຄອມເມັ້ນ CF, ອອກບິນ QR ນັບຖອຍຫຼັງ — **4a-1 (backend) ສຳເລັດ**; ເຫຼືອ 4a-2 (ໜ້າ `/live`), 4b Host screen |
 | 4 | 9. Slip Verification | AI ອ່ານສະລິບ ແລະ ປັບສະຖານະບິນ |
 
 ## Phase 2: ປະຕິບັດການ
