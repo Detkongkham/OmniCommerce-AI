@@ -46,6 +46,11 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   CF_COMMENT_NOT_FOUND: HttpStatus.NOT_FOUND,
   LIVE_SESSION_INVALID_STATE: HttpStatus.CONFLICT,
   LIVE_ITEM_IN_USE: HttpStatus.CONFLICT,
+  COURIER_NOT_FOUND: HttpStatus.NOT_FOUND,
+  COURIER_INACTIVE: HttpStatus.CONFLICT,
+  PACK_MISMATCH: HttpStatus.CONFLICT,
+  PACK_NOT_VERIFIED: HttpStatus.CONFLICT,
+  SHIPPING_INFO_REQUIRED: HttpStatus.CONFLICT,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

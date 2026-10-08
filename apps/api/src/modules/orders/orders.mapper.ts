@@ -1,3 +1,4 @@
+import { buildTrackingUrl } from "@oca/shared";
 import type { Prisma } from "@oca/database";
 import { money } from "../../common/money";
 
@@ -8,6 +9,7 @@ export const orderDetailInclude = {
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     include: { warehouse: { select: { code: true } }, variant: { select: { sku: true } } },
   },
+  shipment: { include: { courier: true } },
 } as const satisfies Prisma.OrderInclude;
 
 export type OrderDetailRow = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
@@ -77,6 +79,14 @@ export interface OrderDetailDto {
   completedAt: Date | null;
   cancelledAt: Date | null;
   createdAt: Date;
+  /** ການສົ່ງ (ໜ້າແພັກ/ສົ່ງ); null = ຍັງບໍ່ເລີ່ມແພັກຜ່ານໜ້າ fulfillment */
+  shipment: {
+    courierName: string | null;
+    trackingNumber: string | null;
+    trackingUrl: string | null;
+    notifyStatus: string;
+    shippedAt: Date | null;
+  } | null;
   items: {
     id: string;
     variantId: string;
@@ -136,6 +146,17 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
     completedAt: row.completedAt,
     cancelledAt: row.cancelledAt,
     createdAt: row.createdAt,
+    shipment: row.shipment
+      ? {
+          courierName: row.shipment.courier?.name ?? null,
+          trackingNumber: row.shipment.trackingNumber,
+          trackingUrl: row.shipment.trackingNumber
+            ? buildTrackingUrl(row.shipment.courier?.trackingUrlTemplate, row.shipment.trackingNumber)
+            : null,
+          notifyStatus: row.shipment.notifyStatus,
+          shippedAt: row.shipment.shippedAt,
+        }
+      : null,
     items: row.items.map((item) => ({
       id: item.id,
       variantId: item.variantId,

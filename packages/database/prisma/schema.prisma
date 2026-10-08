@@ -353,6 +353,7 @@ model Order {
   items          OrderItem[]
   stockMovements StockMovement[]
   cfComments     CfComment[]
+  shipment       Shipment?
 
   @@index([status, reservedUntil])
   @@index([customerId])
@@ -425,6 +426,9 @@ model User {
   assignedConversations Conversation[]
   sentMessages          Message[]
   liveSessions          LiveSession[]
+  packedShipments       Shipment[]     @relation("ShipmentPackedBy")
+  verifiedShipments     Shipment[]     @relation("ShipmentVerifiedBy")
+  shippedShipments      Shipment[]     @relation("ShipmentShippedBy")
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -585,4 +589,54 @@ model CfComment {
   @@index([sessionId, createdAt])
   @@index([sessionId, authorExternalId])
   @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// Logistics (Phase 2 ໂມດູນ 8a): ບໍລິສັດຂົນສົ່ງ ແລະ ການແພັກ/ສົ່ງຕໍ່ບິນ
+// ---------------------------------------------------------------------------
+enum ShipmentNotifyStatus {
+  NONE // ຍັງບໍ່ໄດ້ແຈ້ງ (ຍັງບໍ່ສົ່ງອອກ)
+  SENT
+  FAILED // ສົ່ງທາງແຊັດບໍ່ໄດ້ (ເຊັ່ນ ເກີນ 24 ຊມ): ສົ່ງໃໝ່ ຫຼື copy ໄປສົ່ງເອງ
+  MANUAL // ບໍ່ມີແຊັດຂອງລູກຄ້າ: ພະນັກງານແຈ້ງເອງ
+}
+
+// ບໍລິສັດຂົນສົ່ງທີ່ຮ້ານຕັ້ງເອງ; code ເປັນຈຸດຜູກ adapter API ໃນອະນາຄົດ
+model Courier {
+  id                  String     @id @default(cuid())
+  code                String     @unique
+  name                String
+  // https://…/{tracking}
+  trackingUrlTemplate String?
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  shipments           Shipment[]
+}
+
+// ການແພັກ/ສົ່ງຂອງບິນ (1 ຕໍ່ 1); ສ້າງຕອນເລີ່ມແພັກ
+model Shipment {
+  id                   String               @id @default(cuid())
+  orderId              String               @unique
+  order                Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courierId            String?
+  courier              Courier?             @relation(fields: [courierId], references: [id], onDelete: Restrict)
+  trackingNumber       String?
+  packedById           String?
+  packedBy             User?                @relation("ShipmentPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  packedAt             DateTime?
+  verifiedAt           DateTime?
+  verifiedById         String?
+  verifiedBy           User?                @relation("ShipmentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifyOverrideReason String?
+  shippedById          String?
+  shippedBy            User?                @relation("ShipmentShippedBy", fields: [shippedById], references: [id], onDelete: SetNull)
+  shippedAt            DateTime?
+  notifyStatus         ShipmentNotifyStatus @default(NONE)
+  notifyErrorCode      String?
+  notifiedAt           DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([courierId])
 }

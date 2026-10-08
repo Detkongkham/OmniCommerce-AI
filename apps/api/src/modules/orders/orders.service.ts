@@ -433,12 +433,14 @@ export class OrdersService {
     return this.transition(id, "pack", { from: ["PAID"], to: "PACKING", data: {}, stock: null, actor, ip });
   }
 
-  ship(id: string, actor: AuthUser, ip: string | undefined) {
+  /** `inTx`: ງານເພີ່ມໃນ transaction ດຽວກັບການປ່ຽນສະຖານະ/ຕັດສະຕ໋ອກ (ເຊັ່ນ ບັນທຶກ Shipment); throw = rollback ທັງໝົດ */
+  ship(id: string, actor: AuthUser, ip: string | undefined, inTx?: (tx: Prisma.TransactionClient) => Promise<void>) {
     return this.transition(id, "ship", {
       from: ["PACKING"],
       to: "SHIPPED",
       data: { shippedAt: new Date() },
       stock: "ship",
+      inTx,
       actor,
       ip,
     });
@@ -480,6 +482,7 @@ export class OrdersService {
       data: Prisma.OrderUpdateManyMutationInput;
       extraWhere?: Prisma.OrderWhereInput;
       stock: "ship" | "release" | null;
+      inTx?: (tx: Prisma.TransactionClient) => Promise<void>;
       reason?: string;
       actor: AuthUser;
       ip: string | undefined;
@@ -505,6 +508,7 @@ export class OrdersService {
           await releaseCfClaims(tx, id);
         }
       }
+      if (options.inTx) await options.inTx(tx);
       if (options.reason) {
         const current = await tx.order.findUniqueOrThrow({ where: { id }, select: { note: true } });
         await tx.order.update({

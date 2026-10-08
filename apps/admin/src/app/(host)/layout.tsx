@@ -6,7 +6,7 @@ import { type ReactNode, useEffect } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useT } from "@/lib/i18n/language-provider";
 
-/** ໜ້າເຕັມຈໍ (Host screen): ຕ້ອງ login ຄື (app) ແຕ່ບໍ່ມີ sidebar/topbar */
+/** ໜ້າເຕັມຈໍ (Host screen, ໃບປະໜ້າ): ຕ້ອງ login ຄື (app) ແຕ່ບໍ່ມີ sidebar/topbar */
 export default function HostLayout({ children }: { children: ReactNode }) {
   const { status } = useAuth();
   const { t } = useT();
