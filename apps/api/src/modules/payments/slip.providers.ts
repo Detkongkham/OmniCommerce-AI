@@ -23,35 +23,72 @@ interface QueueHandle {
 const logger = new Logger("SlipQueue");
 
 function createBullQueue(env: QueueEnv): QueueHandle {
-  // ຈຳກັດ retry ເພື່ອບໍ່ໃຫ້ request ຄ້າງເມື່ອ Redis ຫາຍ
-  const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 1, connectTimeout: 2000 });
+  // ຈຳກັດ retry ແລະ ການ reconnect ເພື່ອບໍ່ໃຫ້ request ຄ້າງເມື່ອ Redis ຫາຍ (ເກີນ 3 ຄັ້ງຍອມແພ້)
+  const connection = new Redis(env.REDIS_URL, {
+    maxRetriesPerRequest: 1,
+    connectTimeout: 2000,
+    retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000)),
+  });
   connection.on("error", (error: Error) => logger.warn(`Redis: ${error.message}`));
-  const queue = new Queue(SLIP_QUEUE_NAME, { connection, prefix: env.QUEUE_PREFIX });
+  let queue: Queue;
+  try {
+    queue = new Queue(SLIP_QUEUE_NAME, { connection, prefix: env.QUEUE_PREFIX });
+  } catch (error) {
+    connection.disconnect();
+    throw error;
+  }
   return {
     add: (name, data, options) => queue.add(name, data, options),
     close: async () => {
-      await queue.close();
-      connection.disconnect();
+      try {
+        await queue.close();
+      } finally {
+        connection.disconnect();
+      }
     },
   };
 }
 
+const DEFAULT_ADD_TIMEOUT_MS = 3000;
+
 /** ສ້າງ queue ແບບ lazy (ຕອນ enqueue ຄັ້ງທຳອິດ) ເພື່ອບໍ່ເຊື່ອມ Redis ເມື່ອບໍ່ມີການອັບໂຫຼດສະລິບ */
 export class BullSlipQueue implements SlipQueue, OnModuleDestroy {
   private handle: QueueHandle | undefined;
+  private closed = false;
+  private readonly addTimeoutMs: number;
 
   constructor(
     private readonly env: QueueEnv,
     private readonly createQueue: (env: QueueEnv) => QueueHandle = createBullQueue,
-  ) {}
+    options: { addTimeoutMs?: number } = {},
+  ) {
+    this.addTimeoutMs = options.addTimeoutMs ?? DEFAULT_ADD_TIMEOUT_MS;
+  }
 
   async enqueueRead(slipId: string): Promise<void> {
-    this.handle ??= this.createQueue(this.env);
-    await this.handle.add(SLIP_JOB_READ, { slipId }, SLIP_READ_JOB_OPTIONS);
+    if (this.closed) throw new Error("Slip queue closed");
+    const handle = (this.handle ??= this.createQueue(this.env));
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      // bullmq add ອາດລໍຖ້າ Redis ຕະຫຼອດໄປ: ຕັດດ້ວຍ timeout ບໍ່ໃຫ້ request ຄ້າງ
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Slip queue unavailable: add timed out")), this.addTimeoutMs);
+      });
+      await Promise.race([handle.add(SLIP_JOB_READ, { slipId }, SLIP_READ_JOB_OPTIONS), timeout]);
+    } catch (error) {
+      // ຖິ້ມ handle ທີ່ອາດຕາຍແລ້ວ ເພື່ອຄັ້ງຕໍ່ໄປສ້າງການເຊື່ອມຕໍ່ໃໝ່
+      if (this.handle === handle) this.handle = undefined;
+      handle.close().catch(() => undefined);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.handle?.close();
+    this.closed = true;
+    const handle = this.handle;
     this.handle = undefined;
+    await handle?.close();
   }
 }
