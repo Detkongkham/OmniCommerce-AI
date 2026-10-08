@@ -17,6 +17,21 @@ export interface InboundEvent {
   timestamp: Date;
 }
 
+/** ຄອມເມັ້ນໃໝ່ໃນໂພສ/Live (webhook field `feed`) */
+export interface CommentEvent {
+  channel: ChannelId;
+  /** post_id ທີ່ Meta ສົ່ງ (ໃຊ້ຈັບຄູ່ກັບ LiveSession.externalPostId) */
+  postId: string;
+  commentId: string;
+  /** ລະຫັດຜູ້ຄອມເມັ້ນ (ອາດບໍ່ຕົງກັບ PSID ຂອງ Messenger) */
+  authorId: string;
+  authorName: string;
+  message: string;
+  /** ແມ່ຂອງຄອມເມັ້ນ: = postId ຖ້າເປັນຄອມເມັ້ນລະດັບເທິງ; ເປັນ id ຂອງຄອມເມັ້ນອື່ນຖ້າເປັນການຕອບ; null ຖ້າ Meta ບໍ່ສົ່ງ */
+  parentId: string | null;
+  timestamp: Date;
+}
+
 export type SendResult =
   | { ok: true; externalId: string }
   | { ok: false; code: MessageSendError; detail: string };

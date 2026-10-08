@@ -36,6 +36,7 @@ describe("store settings (e2e)", () => {
       vatRate: "10.00",
       pricesIncludeVat: true,
       reservationMinutes: 30,
+      paymentInstructions: null,
     });
     expect(await db.storeSetting.count()).toBe(1);
   });
@@ -85,5 +86,25 @@ describe("store settings (e2e)", () => {
     await request(server()).patch("/settings/store").set(writer).send({ vatRate: "101" }).expect(400);
     await request(server()).patch("/settings/store").set(writer).send({ reservationMinutes: 0 }).expect(400);
     await request(server()).patch("/settings/store").set(writer).send({ baseCurrency: "USD" }).expect(400);
+  });
+
+  it("PATCH paymentInstructions: ຕັ້ງ, GET ຄືນ, ລ້າງດ້ວຍ null/ສະຕຣິງວ່າງ, >500 → 400, read ແກ້ບໍ່ໄດ້", async () => {
+    const writer = await bearerFor(app, "inv-write@test.local");
+    const reader = await bearerFor(app, "inv-read@test.local");
+    const set = await request(server()).patch("/settings/store").set(writer).send({ paymentInstructions: "  BCEL 123  " }).expect(200);
+    expect(set.body.paymentInstructions).toBe("BCEL 123");
+    const got = await request(server()).get("/settings/store").set(reader).expect(200);
+    expect(got.body.paymentInstructions).toBe("BCEL 123");
+    // field ອື່ນບໍ່ລ້າງຄ່ານີ້
+    await request(server()).patch("/settings/store").set(writer).send({ name: "x" }).expect(200);
+    expect((await request(server()).get("/settings/store").set(reader)).body.paymentInstructions).toBe("BCEL 123");
+    const cleared = await request(server()).patch("/settings/store").set(writer).send({ paymentInstructions: null }).expect(200);
+    expect(cleared.body.paymentInstructions).toBeNull();
+    await request(server()).patch("/settings/store").set(writer).send({ paymentInstructions: "BCEL" }).expect(200);
+    const blank = await request(server()).patch("/settings/store").set(writer).send({ paymentInstructions: "   " }).expect(200);
+    expect(blank.body.paymentInstructions).toBeNull();
+    await request(server()).patch("/settings/store").set(writer).send({ paymentInstructions: "x".repeat(501) }).expect(400);
+    await request(server()).patch("/settings/store").set(writer).send({ paymentInstructions: "x".repeat(500) }).expect(200);
+    await request(server()).patch("/settings/store").set(reader).send({ paymentInstructions: "no" }).expect(403);
   });
 });

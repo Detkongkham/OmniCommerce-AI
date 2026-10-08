@@ -2,7 +2,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { bearerFor, createTestApp, resetDb, seedInventoryUsers } from "./helpers";
+import { bearerFor, createTestApp, resetDb, seedInventoryUsers, seedLiveSession } from "./helpers";
 
 const cup = { name: "ແກ້ວນ້ຳ", variants: [{ sku: "CUP-1", price: "25000", costPrice: "10000.5" }] };
 
@@ -246,6 +246,14 @@ describe("products (e2e)", () => {
         data: { variantId: p.body.variants[0].id, warehouseId: wh.id, type: "RECEIVE", quantity: 1 },
       });
       await request(server()).delete(`/products/${p.body.id}`).set(writer).expect(409);
+    });
+
+    it("ຖືກໃຊ້ໃນ Live/ໂພສ CF ຢູ່ (ບໍ່ເຄີຍຂາຍ) → 409 PRODUCT_IN_LIVE_SESSION ແລະ ສິນຄ້າຍັງຢູ່", async () => {
+      const p = await create(cup).expect(201);
+      await seedLiveSession(db, { items: [{ code: "A1", variantId: p.body.variants[0].id }] });
+      const res = await request(server()).delete(`/products/${p.body.id}`).set(writer).expect(409);
+      expect(res.body.code).toBe("PRODUCT_IN_LIVE_SESSION");
+      expect(await db.product.count()).toBe(1);
     });
   });
 

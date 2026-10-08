@@ -9,6 +9,7 @@ import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/app.setup";
 import { parseEnv } from "../src/config/env";
 import { PRISMA } from "../src/prisma/prisma.module";
+import { testDatabaseName } from "./env";
 
 export const TEST_PASSWORD = "Password123!";
 
@@ -36,12 +37,12 @@ export async function createTestApp(
 
 export async function resetDb(db: PrismaClient): Promise<void> {
   const [row] = await db.$queryRaw<{ name: string }[]>`SELECT current_database() AS name`;
-  if (row?.name !== "oca_test") {
+  if (row?.name !== testDatabaseName()) {
     throw new Error(`Refusing to truncate non-test database "${row?.name}"`);
   }
   await db.$executeRawUnsafe(
     'TRUNCATE TABLE "AuditLog", "RefreshToken", "User", "RolePermission", "Role", ' +
-      '"Message", "Conversation", ' +
+      '"CfComment", "LiveSessionItem", "LiveSession", "Message", "Conversation", ' +
       '"OrderItem", "Order", "Customer", "StockMovement", "StockLevel", "ProductImage", ' +
       '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
       '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
@@ -241,5 +242,42 @@ export async function seedInboxReader(db: PrismaClient) {
   });
   return db.user.create({
     data: { email: "inbox-read@test.local", name: "Inbox Reader", passwordHash: await hash(TEST_PASSWORD), roleId: role.id },
+  });
+}
+
+/**
+ * Live/ໂພສສຳລັບ test. items = ລະຫັດ→variant (ລະຫັດຕ້ອງ normalize ແລ້ວ: ຕົວໃຫຍ່).
+ * ຄ່າເລີ່ມຕົ້ນ status LIVE + externalPostId "POST_1" ຈະຊົນ partial unique index ຖ້າເອີ້ນ 2 ຄັ້ງໂດຍບໍ່ override
+ * (ໃຫ້ໃສ່ externalPostId ຕ່າງກັນ ຫຼື status ອື່ນ). status ENDED ຈະຕັ້ງ endedAt ໃຫ້.
+ */
+export async function seedLiveSession(
+  db: PrismaClient,
+  overrides: Partial<{
+    title: string;
+    kind: "LIVE" | "POST";
+    status: "DRAFT" | "LIVE" | "ENDED";
+    externalPostId: string | null;
+    publicReplyEnabled: boolean;
+    items: { code: string; variantId: string; limit?: number | null }[];
+  }> = {},
+) {
+  return db.liveSession.create({
+    data: {
+      title: overrides.title ?? "Test Live",
+      kind: overrides.kind ?? "LIVE",
+      status: overrides.status ?? "LIVE",
+      externalPostId: overrides.externalPostId === undefined ? "POST_1" : overrides.externalPostId,
+      publicReplyEnabled: overrides.publicReplyEnabled ?? true,
+      startedAt: (overrides.status ?? "LIVE") === "DRAFT" ? null : new Date(),
+      endedAt: overrides.status === "ENDED" ? new Date() : null,
+      items: {
+        create: (overrides.items ?? []).map((item) => ({
+          code: item.code,
+          variantId: item.variantId,
+          limit: item.limit ?? null,
+        })),
+      },
+    },
+    include: { items: true },
   });
 }

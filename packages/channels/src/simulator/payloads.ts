@@ -49,3 +49,43 @@ export function deliveryPayload(input: { pageId: string; psid: string; mids: str
     delivery: { mids: input.mids, watermark: timestamp },
   });
 }
+
+/** webhook ຄອມເມັ້ນ (field `feed`). timestamp ເປັນ ms; ໃນ payload ແປງເປັນວິນາທີຄືກັບ Meta */
+export function commentPayload(input: {
+  pageId: string;
+  postId: string;
+  commentId: string;
+  fromId: string;
+  fromName: string;
+  message: string;
+  /** default = postId (ຄອມເມັ້ນລະດັບເທິງ); ໃສ່ id ຄອມເມັ້ນແມ່ເພື່ອຈຳລອງການຕອບ */
+  parentId?: string;
+  verb?: "add" | "edited" | "remove";
+  timestamp?: number;
+}): object {
+  const seconds = Math.floor((input.timestamp ?? Date.now()) / 1000);
+  return {
+    object: "page",
+    entry: [
+      {
+        id: input.pageId,
+        time: seconds,
+        changes: [
+          {
+            field: "feed",
+            value: {
+              from: { id: input.fromId, name: input.fromName },
+              item: "comment",
+              comment_id: input.commentId,
+              post_id: input.postId,
+              parent_id: input.parentId ?? input.postId,
+              verb: input.verb ?? "add",
+              message: input.message,
+              created_time: seconds,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}

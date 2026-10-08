@@ -147,3 +147,55 @@ describe("FacebookAdapter webhook helpers", () => {
     expect(DEFAULT_GRAPH_BASE_URL).toBe("https://graph.facebook.com/v21.0");
   });
 });
+
+describe("FacebookAdapter comments", () => {
+  it("parseComments ໃຊ້ parser ຄອມເມັ້ນ", () => {
+    const adapter = make(vi.fn() as unknown as typeof fetch);
+    const events = adapter.parseComments({
+      object: "page",
+      entry: [{ id: "P", changes: [{ field: "feed", value: { item: "comment", verb: "add", comment_id: "c1", post_id: "p1", from: { id: "U1", name: "A" }, message: "A1" } }] }],
+    });
+    expect(events.map((event) => event.commentId)).toEqual(["c1"]);
+  });
+
+  it("sendPrivateReply: POST /<commentId>/private_replies ດ້ວຍ Bearer ແລະ ຄືນ id", async () => {
+    const fetchMock = vi.fn(async () => json(200, { id: "m_1", recipient_id: "U1" }));
+    const result = await make(fetchMock as unknown as typeof fetch).sendPrivateReply("100_200", "ສະບາຍດີ");
+    expect(result).toEqual({ ok: true, externalId: "m_1" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/v1/100_200/private_replies");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    expect(JSON.parse(String(init.body))).toEqual({ message: "ສະບາຍດີ" });
+  });
+
+  it("sendPrivateReply ຍອມຮັບ message_id ໃນ response", async () => {
+    const fetchMock = vi.fn(async () => json(200, { message_id: "m_2" }));
+    expect(await make(fetchMock as unknown as typeof fetch).sendPrivateReply("100_200", "x")).toEqual({ ok: true, externalId: "m_2" });
+  });
+
+  it("replyToComment: POST /<commentId>/comments", async () => {
+    const fetchMock = vi.fn(async () => json(200, { id: "c_9" }));
+    const result = await make(fetchMock as unknown as typeof fetch).replyToComment("100_200", "ຮັບແລ້ວ");
+    expect(result).toEqual({ ok: true, externalId: "c_9" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/v1/100_200/comments");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    expect(JSON.parse(String(init.body))).toEqual({ message: "ຮັບແລ້ວ" });
+  });
+
+  it("ບໍ່ມີ token → CHANNEL_NOT_CONFIGURED; commentId ຜິດຮູບແບບ → SEND_REJECTED (ບໍ່ເອີ້ນ fetch)", async () => {
+    const fetchMock = vi.fn();
+    expect(await make(fetchMock as unknown as typeof fetch, { pageAccessToken: undefined }).sendPrivateReply("1_2", "x")).toMatchObject({ ok: false, code: "CHANNEL_NOT_CONFIGURED" });
+    expect(await make(fetchMock as unknown as typeof fetch).sendPrivateReply("../x", "x")).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Graph error: 400 ປະຕິເສດ → SEND_REJECTED; 500 → CHANNEL_UNAVAILABLE; 2xx ບໍ່ມີ id → CHANNEL_UNAVAILABLE", async () => {
+    const reply = async (response: Response) =>
+      make((async () => response) as unknown as typeof fetch).sendPrivateReply("1_2", "x");
+    expect(await reply(json(400, { error: { code: 100, message: "(#100) bad" } }))).toMatchObject({ code: "SEND_REJECTED" });
+    expect(await reply(json(500, { error: { code: 2, message: "boom" } }))).toMatchObject({ code: "CHANNEL_UNAVAILABLE" });
+    expect(await reply(json(200, {}))).toMatchObject({ ok: false, code: "CHANNEL_UNAVAILABLE" });
+  });
+});

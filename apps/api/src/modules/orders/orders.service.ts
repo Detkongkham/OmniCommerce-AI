@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { type Prisma, type PrismaClient, releaseMany, reserveMany, shipMany } from "@oca/database";
+import { type OrderSource, type Prisma, type PrismaClient, releaseCfClaims, releaseMany, reserveMany, shipMany } from "@oca/database";
 import {
   type CancelOrderInput,
   type CreateOrderInput,
@@ -26,6 +26,13 @@ import {
   toOrderListItem,
 } from "./orders.mapper";
 import { apiError } from "../../common/api-error";
+
+/** ແຫຼ່ງທີ່ມາຂອງບິນທີ່ຖືກສ້າງໂດຍລະບົບ (CF Engine); ບິນຈາກແຊັດໃຊ້ conversationId ແທນ */
+export interface OrderOrigin {
+  channel: SalesChannel;
+  source: OrderSource;
+  liveSessionId: string;
+}
 
 /** sha256 ຂອງ payload ທີ່ zod parse ແລ້ວ (ລຳດັບ key ຄົງທີ່ຕາມ schema) */
 function hashInput(input: CreateOrderInput): string {
@@ -91,7 +98,7 @@ export class OrdersService {
     }
     let orderId: string;
     try {
-      orderId = await this.createInTransaction(input, actor, idempotencyKey, idempotencyHash);
+      orderId = await this.createInTransaction(input, actor.id, idempotencyKey, idempotencyHash);
     } catch (error) {
       // ສອງ request ດ້ວຍ key ດຽວກັນແລ່ນພ້ອມກັນ: ຕົວທີ່ແພ້ unique ຖືກ rollback ທັງໝົດ (ລວມການຈອງສະຕ໋ອກ) ແລ້ວຄືນບິນຂອງຕົວທີ່ຊະນະ
       if (idempotencyKey && idempotencyHash && isUniqueViolation(error)) {
@@ -132,13 +139,16 @@ export class OrdersService {
     return toOrderDetail(await this.requireDetail(existing.id));
   }
 
+  /** outerTx = ໃຊ້ transaction ຂອງຜູ້ເອີ້ນ (CF Engine ທີ່ຕ້ອງ atomic ກັບ ledger); ບໍ່ໃສ່ = ເປີດ transaction ເອງ */
   private async createInTransaction(
     input: CreateOrderInput,
-    actor: AuthUser,
+    actorId: string | null,
     idempotencyKey: string | undefined,
     idempotencyHash: string | undefined,
+    origin?: OrderOrigin,
+    outerTx?: Prisma.TransactionClient,
   ): Promise<string> {
-    return this.prisma.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient): Promise<string> => {
       const settings = await ensureStoreSetting(tx);
 
       // 0) ເຄສ (ຖ້າເປີດຈາກແຊັດ): channel ຕາມເຄສ, source = CHAT. ບໍ່ພົບ → 404 ກ່ອນຈອງສະຕ໋ອກ
@@ -233,9 +243,10 @@ export class OrdersService {
         data: {
           orderNumber: `SO-${String(n).padStart(6, "0")}`,
           customerId,
-          channel: conversation?.channel ?? "OFFLINE",
-          source: conversation ? "CHAT" : "MANUAL",
+          channel: conversation?.channel ?? origin?.channel ?? "OFFLINE",
+          source: conversation ? "CHAT" : (origin?.source ?? "MANUAL"),
           conversationId: conversation?.id,
+          liveSessionId: origin?.liveSessionId,
           currency: settings.baseCurrency,
           exchangeRate: 1,
           subtotal: totals.subtotal,
@@ -273,10 +284,133 @@ export class OrdersService {
       await reserveMany(
         tx,
         resolved.map((item) => ({ variantId: item.variantId, warehouseId: item.warehouseId, quantity: item.quantity })),
-        { orderId: order.id, actorId: actor.id },
+        { orderId: order.id, actorId },
       );
       return order.id;
+    };
+    return outerTx ? run(outerTx) : this.prisma.$transaction(run);
+  }
+
+  /**
+   * ສ້າງບິນຈາກ CF ໃນ transaction ຂອງຜູ້ເອີ້ນ (ຈອງສະຕ໋ອກໃນນັ້ນ; ບໍ່ພໍ → InsufficientStockError ໃຫ້ຜູ້ເອີ້ນ rollback).
+   * ບໍ່ບັນທຶກ audit (ຜູ້ກະທຳແມ່ນລະບົບ; ledger ຂອງ CF ເປັນຫຼັກຖານ).
+   */
+  createCfOrderInTx(tx: Prisma.TransactionClient, input: CreateOrderInput, origin: OrderOrigin): Promise<string> {
+    return this.createInTransaction(input, null, undefined, undefined, origin, tx);
+  }
+
+  /**
+   * ເພີ່ມລາຍການເຂົ້າບິນ PENDING_PAYMENT ທີ່ຍັງບໍ່ໝົດເວລາ (CF ຊ້ຳຂອງລູກຄ້າດຽວກັນ) ໃນ transaction ຂອງຜູ້ເອີ້ນ:
+   * ລວມເຂົ້າແຖວເດີມ (variant + ສາງ default) ຫຼື ສ້າງແຖວໃໝ່, ຈອງສະຕ໋ອກສະເພາະສ່ວນທີ່ເພີ່ມ, ຄິດຍອດໃໝ່ທັງບິນ
+   * ແລະ ຣີເຊັດ reservedUntil ເປັນເວລາຈອງເລີ່ມຕົ້ນໃໝ່. `additions` ຕ້ອງບໍ່ມີ variant ຊ້ຳ.
+   */
+  async appendItemsInTx(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    additions: readonly { variantId: string; quantity: number }[],
+    actorId: string | null,
+  ): Promise<void> {
+    const variantIds = additions.map((addition) => addition.variantId);
+    if (new Set(variantIds).size !== variantIds.length) throw new BadRequestException("Duplicate variants in additions");
+
+    // lock ແຖວບິນ: ແຂ່ງກັບ pay/cancel/expire ໄດ້ຢ່າງປອດໄພ
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`;
+    const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
+    if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
+    if (
+      order.status !== "PENDING_PAYMENT" ||
+      (order.reservedUntil !== null && order.reservedUntil.getTime() <= Date.now())
+    ) {
+      throw apiError("ORDER_INVALID_STATE", `Order is ${order.status}; cannot append items`, { status: order.status });
+    }
+
+    const settings = await ensureStoreSetting(tx);
+    const warehouse = await tx.warehouse.findFirst({ where: { isDefault: true, isActive: true }, select: { id: true } });
+    if (!warehouse) throw apiError("NO_DEFAULT_WAREHOUSE", "No active default warehouse is configured");
+    const variants = await tx.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      include: { product: { select: { name: true, status: true } } },
     });
+    const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+
+    const merged = new Map<string, number>(order.items.map((item) => [item.id, item.quantity]));
+    const added: { variant: (typeof variants)[number]; quantity: number }[] = [];
+    for (const addition of additions) {
+      const variant = variantById.get(addition.variantId);
+      if (!variant) throw apiError("VARIANT_NOT_FOUND", `Variant ${addition.variantId} not found`);
+      if (!variant.isActive || variant.product.status !== "ACTIVE") {
+        throw apiError("VARIANT_NOT_AVAILABLE", `Variant ${variant.sku} is not available for sale`, { sku: variant.sku });
+      }
+      // ສົມມຸດຖານ: ບິນ CF ໃຊ້ສາງ default ສະເໝີ; ແຖວເດີມທີ່ຢູ່ສາງອື່ນຈະບໍ່ຖືກລວມ ແຕ່ໄດ້ແຖວແຍກຕ່າງຫາກ
+      const existing = order.items.find((item) => item.variantId === variant.id && item.warehouseId === warehouse.id);
+      if (existing) merged.set(existing.id, (merged.get(existing.id) ?? existing.quantity) + addition.quantity);
+      else added.push({ variant, quantity: addition.quantity });
+    }
+
+    let totals: ReturnType<typeof calculateOrderTotals>;
+    try {
+      totals = calculateOrderTotals({
+        lines: [
+          ...order.items.map((item) => ({
+            unitPrice: item.unitPrice.toFixed(2),
+            quantity: merged.get(item.id) ?? item.quantity,
+            discount: item.discount.toFixed(2),
+          })),
+          ...added.map(({ variant, quantity }) => ({ unitPrice: variant.price.toFixed(2), quantity, discount: "0" })),
+        ],
+        shippingFee: order.shippingFee.toFixed(2),
+        vatRate: order.vatRate.toString(),
+        // ອ່ານຈາກ settings ປັດຈຸບັນ (ບໍ່ແມ່ນຄ່າ ຕອນສ້າງບິນ)
+        pricesIncludeVat: settings.pricesIncludeVat,
+      });
+    } catch (error) {
+      if (error instanceof RangeError) throw new BadRequestException(error.message);
+      throw error;
+    }
+
+    for (const [index, item] of order.items.entries()) {
+      await tx.orderItem.update({
+        where: { id: item.id },
+        data: { quantity: merged.get(item.id) ?? item.quantity, lineTotal: totals.lines[index]?.lineTotal ?? "0.00" },
+      });
+    }
+    if (added.length > 0) {
+      await tx.orderItem.createMany({
+        data: added.map(({ variant, quantity }, index) => ({
+          orderId,
+          variantId: variant.id,
+          warehouseId: warehouse.id,
+          productName: variant.product.name,
+          variantName: variant.name,
+          sku: variant.sku,
+          unitPrice: variant.price,
+          unitCost: variant.costPrice,
+          quantity,
+          discount: 0,
+          lineTotal: totals.lines[order.items.length + index]?.lineTotal ?? "0.00",
+        })),
+      });
+    }
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        subtotal: totals.subtotal,
+        discountTotal: totals.discountTotal,
+        vatAmount: totals.vatAmount,
+        total: totals.total,
+        reservedUntil: new Date(Date.now() + settings.reservationMinutes * 60_000),
+      },
+    });
+    // ຈອງສະເພາະສ່ວນທີ່ເພີ່ມ (ບໍ່ພໍ → InsufficientStockError → ຜູ້ເອີ້ນ rollback)
+    await reserveMany(
+      tx,
+      additions.map((addition) => ({
+        variantId: addition.variantId,
+        warehouseId: warehouse.id,
+        quantity: addition.quantity,
+      })),
+      { orderId, actorId },
+    );
   }
 
   pay(id: string, actor: AuthUser, ip: string | undefined) {
@@ -363,7 +497,11 @@ export class OrdersService {
         });
         const ctx = { orderId: id, actorId: options.actor.id };
         if (options.stock === "ship") await shipMany(tx, items, ctx);
-        else await releaseMany(tx, items, ctx);
+        else {
+          await releaseMany(tx, items, ctx);
+          // cancel: ຄືນໂຄຕ້າ CF (ຖ້າເປັນບິນ CF) ໃນ transaction ດຽວກັນ
+          await releaseCfClaims(tx, id);
+        }
       }
       if (options.reason) {
         const current = await tx.order.findUniqueOrThrow({ where: { id }, select: { note: true } });
