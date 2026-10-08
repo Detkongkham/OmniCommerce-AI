@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isInternalHostname } from "./ssrf-guard";
 
 export class SlipImageError extends Error {
   constructor(message: string) {
@@ -29,68 +30,6 @@ export function detectImageMime(bytes: Uint8Array): "image/jpeg" | "image/png" |
 
 export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-/** ແປງ IPv6 (ຮູບ normalized ຈາກ URL, ບໍ່ມີ []) ເປັນ 8 ກຸ່ມ; null ຖ້າອ່ານບໍ່ໄດ້ */
-function parseIpv6(host: string): number[] | null {
-  let text = host;
-  const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text);
-  if (dotted?.[1]) {
-    const parts = dotted[1].split(".").map(Number);
-    if (parts.some((part) => part > 255)) return null;
-    const [a = 0, b = 0, c = 0, d = 0] = parts;
-    text = `${text.slice(0, -dotted[1].length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
-  }
-  const halves = text.split("::");
-  if (halves.length > 2) return null;
-  const head = halves[0] ? halves[0].split(":") : [];
-  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
-  const missing = 8 - head.length - tail.length;
-  if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
-  const groups = [...head, ...Array<string>(halves.length === 2 ? missing : 0).fill("0"), ...tail].map((group) =>
-    /^[0-9a-f]{1,4}$/i.test(group) ? Number.parseInt(group, 16) : Number.NaN,
-  );
-  return groups.length === 8 && groups.every((group) => !Number.isNaN(group)) ? groups : null;
-}
-
-function isInternalIpv4(a: number, b: number): boolean {
-  return (
-    a === 0 || // 0.0.0.0/8
-    a === 10 || // private
-    a === 127 || // loopback
-    (a === 100 && b >= 64 && b <= 127) || // CGNAT
-    (a === 169 && b === 254) || // link-local + cloud metadata
-    (a === 172 && b >= 16 && b <= 31) || // private
-    (a === 192 && b === 168) || // private
-    a >= 224 // multicast + reserved + broadcast
-  );
-}
-
-/**
- * Guard ແບບ literal-hostname ຕໍ່ SSRF (ໃຊ້ເມື່ອ allowHttp=false ຄື production):
- * ປະຕິເສດ localhost/*.localhost/*.local/*.internal ແລະ IP literal ທີ່ເປັນ loopback/private/link-local/metadata.
- * URL ຂອງ WHATWG ປ່ຽນເລກຖານ 10/16/8 ແລະ IPv4-mapped ເປັນຮູບມາດຕະຖານໃຫ້ແລ້ວ ຈຶ່ງກວດຮູບດຽວໄດ້.
- * ຂໍ້ຈຳກັດ: ບໍ່ກວດ DNS; hostname ທີ່ຊື່ສາທາລະນະແຕ່ resolve ເປັນ IP ພາຍໃນ (ແລະ DNS rebinding) ບໍ່ຖືກກັນ
- * ຕ້ອງກັນເພີ່ມໃນຊັ້ນເຄືອຂ່າຍ (egress firewall) ຖ້າຕ້ອງການ.
- */
-export function isInternalHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/\.$/, "");
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
-    return true;
-  }
-  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
-  if (v4) return isInternalIpv4(Number(v4[1]), Number(v4[2]));
-  if (host.startsWith("[") && host.endsWith("]")) {
-    const groups = parseIpv6(host.slice(1, -1));
-    if (!groups) return true; // ອ່ານບໍ່ໄດ້ = ບໍ່ໄວ້ໃຈ
-    const [g0 = 0, g1 = 0, g2 = 0, g3 = 0, g4 = 0, g5 = 0, g6 = 0, g7 = 0] = groups;
-    if ((g0 & 0xfe00) === 0xfc00 || (g0 & 0xffc0) === 0xfe80) return true; // fc00::/7, fe80::/10
-    if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && (g5 === 0xffff || g5 === 0)) {
-      if (g5 === 0 && g6 === 0 && g7 <= 1) return true; // :: ແລະ ::1
-      return isInternalIpv4(g6 >> 8, g6 & 0xff); // ::ffff:a.b.c.d ແລະ ::a.b.c.d
-    }
-  }
-  return false;
 }
 
 export interface FetchImageOptions {
@@ -125,9 +64,17 @@ export async function fetchImageBytes(url: string, options: FetchImageOptions): 
   } catch (error) {
     throw new SlipImageError(`Image download failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!response.ok) throw new SlipImageError(`Image download failed with status ${response.status}`);
+  // ຍົກເລີກ body ທີ່ບໍ່ໄດ້ອ່ານເມື່ອປະຕິເສດກ່ອນ ເພື່ອປ່ອຍ connection
+  const discardBody = () => void response.body?.cancel().catch(() => {});
+  if (!response.ok) {
+    discardBody();
+    throw new SlipImageError(`Image download failed with status ${response.status}`);
+  }
   const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > options.maxBytes) throw new SlipImageError("Image is too large");
+  if (Number.isFinite(declared) && declared > options.maxBytes) {
+    discardBody();
+    throw new SlipImageError("Image is too large");
+  }
 
   const reader = response.body?.getReader();
   if (!reader) throw new SlipImageError("Image response has no body");
@@ -139,7 +86,8 @@ export async function fetchImageBytes(url: string, options: FetchImageOptions): 
       if (done) break;
       total += value.byteLength;
       if (total > options.maxBytes) {
-        await reader.cancel();
+        // cancel ທີ່ reject ຕ້ອງບໍ່ປ່ຽນ error ຫຼັກ
+        await reader.cancel().catch(() => {});
         throw new SlipImageError("Image is too large");
       }
       chunks.push(value);

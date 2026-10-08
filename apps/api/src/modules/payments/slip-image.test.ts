@@ -87,7 +87,7 @@ describe("fetchImageBytes: ຄວາມປອດໄພ (SSRF/redirect/credential
     return { state, fetchImpl };
   };
 
-  it("ຕອບ 302 ຈາກ stub ບໍ່ຖືກຕາມ ແລະ ຖືກປະຕິເສດ; fetch ຈິງທີ່ throw ເພາະ redirect:'error' ກໍເປັນ SlipImageError", async () => {
+  it("ຕອບ 302 ຈາກ stub ບໍ່ຖືກຕາມ ແລະ ຖືກປະຕິເສດ", async () => {
     let calls = 0;
     const redirecting = (async () => {
       calls += 1;
@@ -95,12 +95,6 @@ describe("fetchImageBytes: ຄວາມປອດໄພ (SSRF/redirect/credential
     }) as unknown as typeof fetch;
     await expect(fetchImageBytes("https://cdn.example/x.png", { ...opts, fetchImpl: redirecting })).rejects.toBeInstanceOf(SlipImageError);
     expect(calls).toBe(1);
-    // stub ທີ່ເຮັດຕາມ redirect:"error" ຂອງ node: ໂຍນ error ເມື່ອເຈິ redirect
-    const strict = (async (_url: string, init?: RequestInit) => {
-      if (init?.redirect === "error") throw new TypeError("fetch failed: unexpected redirect");
-      return new Response(PNG);
-    }) as unknown as typeof fetch;
-    await expect(fetchImageBytes("https://cdn.example/x.png", { ...opts, fetchImpl: strict })).rejects.toBeInstanceOf(SlipImageError);
   });
 
   it("fetch ຈິງຂອງ node ບໍ່ຕາມ redirect (ເຊີບເວີ loopback ຊົ່ວຄາວ, allowHttp=true)", async () => {
@@ -191,14 +185,14 @@ describe("fetchImageBytes: ຄວາມປອດໄພ (SSRF/redirect/credential
     }
   });
 
-  it("content-length ທີ່ຕົວເລກບໍ່ຖືກ ຫຼື body ໃຫຍ່ກວ່າທີ່ປະກາດ ຍັງຖືກຈຳກັດຕອນ stream", async () => {
+  it("content-length ນ້ອຍກວ່າ body ຈິງ (ຕົວເລກຕົວະ) ຍັງຖືກຈຳກັດຕອນ stream", async () => {
     const lying = new Response(new Uint8Array(500), { status: 200, headers: { "content-length": "10" } });
     await expect(
       fetchImageBytes("https://cdn.example/x.png", { ...opts, fetchImpl: (async () => lying) as unknown as typeof fetch }),
     ).rejects.toBeInstanceOf(SlipImageError);
   });
 
-  it("ຍົກເລີກ stream ທີ່ເກີນຂະໜາດ (cancel) ແລະ ຖ້າ body ຄ້າງຈົນ timeout ຈະ reject", async () => {
+  it("ຍົກເລີກ stream ທີ່ເກີນຂະໜາດ (cancel) ແລະ abort signal ຖືກສົ່ງຕໍ່ເຖິງ body (ຄ້າງ → reject)", async () => {
     let cancelled = false;
     const big = new ReadableStream<Uint8Array>({
       pull(controller) {
@@ -222,5 +216,46 @@ describe("fetchImageBytes: ຄວາມປອດໄພ (SSRF/redirect/credential
       return new Response(body);
     }) as unknown as typeof fetch;
     await expect(fetchImageBytes("https://cdn.example/x.png", { ...opts, timeoutMs: 50, fetchImpl: hanging })).rejects.toBeInstanceOf(SlipImageError);
+  });
+});
+
+describe("fetchImageBytes: ຍົກເລີກ body ທີ່ບໍ່ໄດ້ອ່ານ ແລະ header ບໍ່ຖືກຕ້ອງ", () => {
+  const opts = { allowHttp: false, maxBytes: 100, timeoutMs: 1000 };
+  const spiedBody = (rejectCancel = false) => {
+    const state = { cancelled: 0 };
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(60));
+      },
+      cancel() {
+        state.cancelled += 1;
+        if (rejectCancel) throw new Error("cancel failed");
+      },
+    });
+    return { state, body };
+  };
+  const run = (response: Response) =>
+    fetchImageBytes("https://cdn.example/x.png", { ...opts, fetchImpl: (async () => response) as unknown as typeof fetch });
+
+  it("status ບໍ່ແມ່ນ 2xx → cancel body", async () => {
+    const { state, body } = spiedBody();
+    await expect(run(new Response(body, { status: 403 }))).rejects.toBeInstanceOf(SlipImageError);
+    expect(state.cancelled).toBe(1);
+  });
+
+  it("content-length ໃຫຍ່ເກີນ → cancel body", async () => {
+    const { state, body } = spiedBody();
+    await expect(run(new Response(body, { status: 200, headers: { "content-length": "101" } }))).rejects.toBeInstanceOf(SlipImageError);
+    expect(state.cancelled).toBe(1);
+  });
+
+  it("cancel ທີ່ reject ບໍ່ປ່ຽນ error ຂອງ 'too large'", async () => {
+    const { body } = spiedBody(true);
+    await expect(run(new Response(body, { status: 200 }))).rejects.toThrow("Image is too large");
+  });
+
+  it("content-length: 'abc' ບໍ່ເຮັດໃຫ້ພັງ: ຖອຍໄປໃຊ້ cap ຕອນ stream", async () => {
+    await expect(run(new Response(PNG, { status: 200, headers: { "content-length": "abc" } }))).resolves.toBeDefined();
+    await expect(run(new Response(new Uint8Array(500), { status: 200, headers: { "content-length": "abc" } }))).rejects.toThrow("Image is too large");
   });
 });
