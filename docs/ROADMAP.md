@@ -21,7 +21,7 @@
 
 ## Phase 3: ການຕະຫຼາດ ແລະ ຂະຫຍາຍຊ່ອງທາງ
 * 7. E-Commerce Storefront (ໜ້າຮ້ານສາທາລະນະ)
-* 2. Social Multi-Posting & Scheduler
+* 2. Social Multi-Posting & Scheduler — **2a-1 ສຳເລັດ** (backend): ອັບໂຫຼດຮູບ (disk), ໂພສ/ຕັ້ງເວລາລົງ Facebook Page, ເຊື່ອມ Post CF. ກຳລັງເຮັດ: 2a-2 ໜ້າ admin `/posts` (ລາຍການ + ປະຕິທິນ). ເຫຼືອ: ແພລັດຟອມອື່ນ, ວິດີໂອ, ປັບຂະໜາດຮູບ, AI ຂຽນແຄັບຊັນ, ປະຕິທິນ drag & drop
 * 3. AI Image Studio
 * 5. Promotion & Marketing Engine
 * 11. CRM & Customer Loyalty

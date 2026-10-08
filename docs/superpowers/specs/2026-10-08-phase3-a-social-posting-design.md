@@ -1,6 +1,6 @@
 # Phase 3 ໂມດູນ 2: Social Posting, sub-project 2a (ໂພສ Facebook Page + ຕັ້ງເວລາ + ອັບໂຫຼດຮູບ)
 
-ວັນທີ: 2026-10-08 · ສະຖານະ: ກຳລັງເຮັດ (2a-1 backend → 2a-2 admin) · Branch: ຕໍ່ຈາກ `main` (ຫຼັງ 8a)
+ວັນທີ: 2026-10-08 · ສະຖານະ: 2a-1 (backend) ສຳເລັດ; 2a-2 (admin) ກຳລັງເຮັດ · Branch: ຕໍ່ຈາກ `main` (ຫຼັງ 8a)
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
