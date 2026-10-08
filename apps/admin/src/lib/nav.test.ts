@@ -43,6 +43,19 @@ describe("visibleNavGroups", () => {
   });
 });
 
+describe("visibleNavGroups: live-cf", () => {
+  it("ຜູ້ມີ live-cf:read ເຫັນກຸ່ມ live (/live)", () => {
+    const groups = visibleNavGroups(["live-cf:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["live"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/live"]);
+  });
+
+  it("inbox:read + live-cf:read: ກຸ່ມ chat ມາກ່ອນ live ຈຶ່ງ landing ຍັງເປັນ /inbox", () => {
+    expect(visibleNavGroups(["inbox:read", "live-cf:read"]).map((group) => group.id)).toEqual(["chat", "live"]);
+    expect(firstAllowedHref(["inbox:read", "live-cf:read"])).toBe("/inbox");
+  });
+});
+
 describe("isActivePath", () => {
   it("ກົງ ຫຼື ເປັນໜ້າຍ່ອຍ, ແຕ່ບໍ່ແມ່ນ prefix ທີ່ຊື່ຄ້າຍກັນ", () => {
     expect(isActivePath("/staff", "/staff")).toBe(true);

@@ -1,5 +1,11 @@
 import type {
   AdjustStockInput,
+  CfOutcome,
+  CreateLiveItemInput,
+  CreateLiveSessionInput,
+  LiveSessionStatus,
+  UpdateLiveItemInput,
+  UpdateLiveSessionInput,
   ConversationStatus,
   CreateCategoryInput,
   CreateCustomerFromChatInput,
@@ -30,6 +36,10 @@ import { toQueryString } from "./query-string";
 import type {
   AssigneeDto,
   CategoryDto,
+  CfCommentDto,
+  LiveItemDto,
+  LiveSessionDetailDto,
+  LiveSessionDto,
   ConversationDto,
   CustomerDto,
   MessageDto,
@@ -62,6 +72,7 @@ export const queryKeys = {
   customers: ["customers"] as const,
   conversations: ["conversations"] as const,
   assignees: ["inbox-assignees"] as const,
+  liveSessions: ["live-sessions"] as const,
 };
 
 export function useStaffList() {
@@ -533,5 +544,120 @@ export function useAssignees(options: { enabled?: boolean } = {}) {
     queryKey: queryKeys.assignees,
     queryFn: () => apiFetch<AssigneeDto[]>("/inbox/assignees"),
     staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Live & CF (4a: poll ທຸກ 5 ວິ ຕອນ session LIVE; ບໍ່ມີ SSE ຈົນ 4b)
+// ---------------------------------------------------------------------------
+export const LIVE_POLL_MS = 5_000;
+
+export interface LiveSessionListParams {
+  status?: LiveSessionStatus | "";
+  page: number;
+  pageSize: number;
+}
+
+export function useLiveSessions(params: LiveSessionListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "list", params],
+    queryFn: () => apiFetch<Page<LiveSessionDto>>(`/live-sessions${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useLiveSession(id: string) {
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "detail", id],
+    queryFn: () => apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}`),
+    refetchInterval: (query) => (query.state.data?.status === "LIVE" ? LIVE_POLL_MS : false),
+  });
+}
+
+export interface CfCommentListParams {
+  outcome?: CfOutcome | "";
+  page: number;
+  pageSize: number;
+}
+
+/** ledger ຂອງ session; `live` = session ກຳລັງດັກ CF → poll */
+export function useCfComments(sessionId: string, params: CfCommentListParams, options: { live: boolean }) {
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "comments", sessionId, params],
+    queryFn: () =>
+      apiFetch<Page<CfCommentDto>>(`/live-sessions/${encodeURIComponent(sessionId)}/comments${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+    refetchInterval: options.live ? LIVE_POLL_MS : false,
+  });
+}
+
+export function useCreateLiveSession() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: (input: CreateLiveSessionInput) =>
+      apiFetch<LiveSessionDetailDto>("/live-sessions", { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateLiveSession() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateLiveSessionInput }) =>
+      apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export type LiveSessionAction = "start" | "end";
+
+export function useLiveSessionAction() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: LiveSessionAction }) =>
+      apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
+    onSuccess: invalidate,
+    // ລົ້ມ (ເຊັ່ນ LIVE_SESSION_INVALID_STATE) = ສະຖານະອາດປ່ຽນໄປແລ້ວ → refetch
+    onError: invalidate,
+  });
+}
+
+/** itemId ມີ = PATCH (ແກ້), ບໍ່ມີ = POST (ເພີ່ມ) */
+export function useSaveLiveItem() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: (
+      args: { sessionId: string; itemId?: undefined; input: CreateLiveItemInput } | { sessionId: string; itemId: string; input: UpdateLiveItemInput },
+    ) => {
+      const base = `/live-sessions/${encodeURIComponent(args.sessionId)}/items`;
+      return args.itemId
+        ? apiFetch<LiveItemDto>(`${base}/${encodeURIComponent(args.itemId)}`, { method: "PATCH", body: args.input })
+        : apiFetch<LiveItemDto>(base, { method: "POST", body: args.input });
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteLiveItem() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ sessionId, itemId }: { sessionId: string; itemId: string }) =>
+      apiFetch<void>(`/live-sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+    // LIVE_ITEM_IN_USE = ມີ CF ເຂົ້າມາລະຫວ່າງນັ້ນ → refetch ໃຫ້ເຫັນຈຳນວນຈອງ
+    onError: invalidate,
+  });
+}
+
+/** ສົ່ງສະຫຼຸບຄືນ: API ຄືນແຖວປັດຈຸບັນ (replyStatus = SENT | FAILED | SENDING) ທີ່ຜູ້ເອີ້ນຕ້ອງອ່ານ */
+export function useResendCfReply() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ sessionId, commentId }: { sessionId: string; commentId: string }) =>
+      apiFetch<CfCommentDto>(
+        `/live-sessions/${encodeURIComponent(sessionId)}/comments/${encodeURIComponent(commentId)}/resend`,
+        { method: "POST" },
+      ),
+    onSettled: invalidate,
   });
 }

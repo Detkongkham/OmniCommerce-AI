@@ -1,5 +1,5 @@
 import { type Permission, hasPermission } from "@oca/shared";
-import { Boxes, ClipboardList, FolderTree, type LucideIcon, MessageSquare, Package, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import { Boxes, ClipboardList, FolderTree, type LucideIcon, MessageSquare, Package, Radio, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 
 export interface NavItem {
@@ -31,6 +31,12 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "chat",
     labelKey: "nav.group.chat",
     items: [{ href: "/inbox", labelKey: "nav.inbox", icon: MessageSquare, permission: "inbox:read" }],
+  },
+  // ຫຼັງ chat: ບົດບາດທີ່ມີທັງ inbox ແລະ live-cf ຍັງ landing ທີ່ /inbox ຄືເກົ່າ
+  {
+    id: "live",
+    labelKey: "nav.group.live",
+    items: [{ href: "/live", labelKey: "nav.live", icon: Radio, permission: "live-cf:read" }],
   },
   {
     id: "settings",
