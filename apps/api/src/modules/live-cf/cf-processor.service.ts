@@ -152,7 +152,8 @@ export class CfProcessorService {
       );
     }
 
-    for (const line of lines) {
+    // ອັບເດດຕາມລຳດັບ itemId (ກັນ deadlock); ledger lines ຍັງຮັກສາລຳດັບເດີມ
+    for (const line of [...lines].sort((a, b) => (a.itemId < b.itemId ? -1 : a.itemId > b.itemId ? 1 : 0))) {
       await tx.liveSessionItem.update({ where: { id: line.itemId }, data: { claimed: { increment: line.quantity } } });
     }
     const ledger = await tx.cfComment.create({

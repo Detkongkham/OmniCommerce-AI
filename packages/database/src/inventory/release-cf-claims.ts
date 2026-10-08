@@ -26,7 +26,8 @@ export async function releaseCfClaims(tx: Tx, orderId: string): Promise<void> {
     }
   }
 
-  for (const [itemId, quantity] of perItem) {
+  // ລຽງ itemId ຕາມລຳດັບ ເພື່ອກັນ deadlock ເມື່ອຫຼາຍ transaction ອັບເດດ row ຊຸດດຽວກັນ
+  for (const [itemId, quantity] of [...perItem].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     await tx.$executeRaw`
       UPDATE "LiveSessionItem" SET "claimed" = GREATEST("claimed" - ${quantity}, 0) WHERE "id" = ${itemId}
     `;

@@ -124,7 +124,7 @@ describe("CF claimed units are returned on expire/cancel", () => {
   });
 
   it("non-CF order cancel/expire is untouched", async () => {
-    const other = await cfOrder([2]);
+    await cfOrder([2]);
     const plain = await db.order.create({
       data: {
         orderNumber: "SO-PLAIN",
@@ -159,7 +159,6 @@ describe("CF claimed units are returned on expire/cancel", () => {
     expect(await expireOrder(db, plain.id)).toBe(true);
     expect(await claimed()).toBe(2);
     expect((await db.order.findUniqueOrThrow({ where: { id: plain.id } })).status).toBe("EXPIRED");
-    void other;
   });
 
   it("a second cancel / expire attempt does not decrement twice", async () => {
