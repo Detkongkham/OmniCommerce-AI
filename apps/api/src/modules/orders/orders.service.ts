@@ -279,18 +279,32 @@ export class OrdersService {
     });
   }
 
-  pay(id: string, actor: AuthUser, ip: string | undefined) {
-    return this.transition(id, "pay", {
-      from: ["PENDING_PAYMENT"],
-      to: "PAID",
-      data: { paidAt: new Date() },
+  /** ກົດຂອງ "pay": ໃຊ້ຮ່ວມກັນລະຫວ່າງ pay() ແລະ payWithin() */
+  private payRules() {
+    return {
+      from: ["PENDING_PAYMENT"] as OrderStatus[],
+      to: "PAID" as OrderStatus,
+      data: { paidAt: new Date() } satisfies Prisma.OrderUpdateManyMutationInput,
       // ຕ້ອງຍັງບໍ່ໝົດເວລາຈອງ: guard ຢູ່ໃນ WHERE ເພື່ອແຂ່ງກັບ worker expire ໄດ້ຢ່າງປອດໄພ
       // reservedUntil = null (ບໍ່ມີກຳນົດ) ຈ່າຍໄດ້ສະເໝີ
-      extraWhere: { OR: [{ reservedUntil: null }, { reservedUntil: { gt: new Date() } }] },
+      extraWhere: {
+        OR: [{ reservedUntil: null }, { reservedUntil: { gt: new Date() } }],
+      } satisfies Prisma.OrderWhereInput,
       stock: null,
-      actor,
-      ip,
-    });
+    };
+  }
+
+  pay(id: string, actor: AuthUser, ip: string | undefined) {
+    return this.transition(id, "pay", { ...this.payRules(), actor, ip });
+  }
+
+  /**
+   * ຢືນຢັນຊຳລະພາຍໃນ transaction ຂອງຜູ້ເອີ້ນ (Slip confirm ໃຊ້). throw apiError ເມື່ອເປັນບໍ່ໄດ້ ເພື່ອໃຫ້ຜູ້ເອີ້ນ rollback.
+   * ຜູ້ເອີ້ນບັນທຶກ audit ເອງຫຼັງ commit; ບໍ່ຄືນ detail ເພາະ transaction ຍັງບໍ່ commit.
+   */
+  async payWithin(tx: Prisma.TransactionClient, id: string, actor: AuthUser): Promise<void> {
+    const changed = await this.applyTransition(tx, id, { ...this.payRules(), actor });
+    if (!changed) await this.failTransition(id, "pay", tx);
   }
 
   pack(id: string, actor: AuthUser, ip: string | undefined) {
@@ -332,9 +346,47 @@ export class OrdersService {
   }
 
   /**
-   * UPDATE ... WHERE id AND status IN (from) [AND extraWhere]: ກະທົບ 0 ແຖວ = ບໍ່ມີບິນ ຫຼື ສະຖານະບໍ່ຖືກ ຫຼື ແພ້ການແຂ່ງ.
-   * ເມື່ອຜ່ານ ເຮັດການຕັດ/ປ່ອຍສະຕ໋ອກໃນ transaction ດຽວກັນ (ຜິດ → rollback ທັງສະຖານະ).
+   * UPDATE ... WHERE id AND status IN (from) [AND extraWhere]: ກະທົບ 0 ແຖວ = ບໍ່ມີບິນ ຫຼື ສະຖານະບໍ່ຖືກ ຫຼື ແພ້ການແຂ່ງ (ຄືນ false).
+   * ເມື່ອຜ່ານ ເຮັດການຕັດ/ປ່ອຍສະຕ໋ອກໃນ transaction ດຽວກັນ (ຜິດ → throw ໃຫ້ຜູ້ເອີ້ນ rollback ທັງສະຖານະ).
    */
+  private async applyTransition(
+    tx: Prisma.TransactionClient,
+    id: string,
+    options: {
+      from: OrderStatus[];
+      to: OrderStatus;
+      data: Prisma.OrderUpdateManyMutationInput;
+      extraWhere?: Prisma.OrderWhereInput;
+      stock: "ship" | "release" | null;
+      reason?: string;
+      actor: AuthUser;
+    },
+  ): Promise<boolean> {
+    const { count } = await tx.order.updateMany({
+      where: { id, status: { in: options.from }, ...options.extraWhere },
+      data: { status: options.to, ...options.data },
+    });
+    if (count === 0) return false;
+
+    if (options.stock) {
+      const items = await tx.orderItem.findMany({
+        where: { orderId: id },
+        select: { variantId: true, warehouseId: true, quantity: true },
+      });
+      const ctx = { orderId: id, actorId: options.actor.id };
+      if (options.stock === "ship") await shipMany(tx, items, ctx);
+      else await releaseMany(tx, items, ctx);
+    }
+    if (options.reason) {
+      const current = await tx.order.findUniqueOrThrow({ where: { id }, select: { note: true } });
+      await tx.order.update({
+        where: { id },
+        data: { note: [current.note, `Cancelled: ${options.reason}`].filter(Boolean).join("\n") },
+      });
+    }
+    return true;
+  }
+
   private async transition(
     id: string,
     action: "pay" | "pack" | "ship" | "complete" | "cancel",
@@ -349,31 +401,7 @@ export class OrdersService {
       ip: string | undefined;
     },
   ): Promise<OrderDetailDto> {
-    const changed = await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.order.updateMany({
-        where: { id, status: { in: options.from }, ...options.extraWhere },
-        data: { status: options.to, ...options.data },
-      });
-      if (count === 0) return false;
-
-      if (options.stock) {
-        const items = await tx.orderItem.findMany({
-          where: { orderId: id },
-          select: { variantId: true, warehouseId: true, quantity: true },
-        });
-        const ctx = { orderId: id, actorId: options.actor.id };
-        if (options.stock === "ship") await shipMany(tx, items, ctx);
-        else await releaseMany(tx, items, ctx);
-      }
-      if (options.reason) {
-        const current = await tx.order.findUniqueOrThrow({ where: { id }, select: { note: true } });
-        await tx.order.update({
-          where: { id },
-          data: { note: [current.note, `Cancelled: ${options.reason}`].filter(Boolean).join("\n") },
-        });
-      }
-      return true;
-    });
+    const changed = await this.prisma.$transaction((tx) => this.applyTransition(tx, id, options));
 
     if (!changed) await this.failTransition(id, action);
 
@@ -388,8 +416,13 @@ export class OrdersService {
     return toOrderDetail(await this.requireDetail(id));
   }
 
-  private async failTransition(id: string, action: string): Promise<never> {
-    const order = await this.prisma.order.findUnique({ where: { id }, select: { status: true, reservedUntil: true } });
+  /** `reader` ເປັນ tx ເມື່ອເອີ້ນຈາກ payWithin (ອ່ານໃນ snapshot ດຽວກັນ); ຄ່າເລີ່ມຕົ້ນ = prisma */
+  private async failTransition(
+    id: string,
+    action: string,
+    reader: { order: Prisma.TransactionClient["order"] } = this.prisma,
+  ): Promise<never> {
+    const order = await reader.order.findUnique({ where: { id }, select: { status: true, reservedUntil: true } });
     if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
     if (
       action === "pay" &&
