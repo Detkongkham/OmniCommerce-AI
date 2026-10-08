@@ -120,4 +120,11 @@ export class SlipsController {
   ) {
     return this.review.reject(id, body, actor, req.ip);
   }
+
+  @Post("slips/:id/confirm")
+  @HttpCode(200)
+  @RequirePermissions("payments:write")
+  confirm(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.review.confirm(id, actor, req.ip);
+  }
 }

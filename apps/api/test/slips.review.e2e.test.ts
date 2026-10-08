@@ -130,4 +130,148 @@ describe("slip review (e2e)", () => {
       expect((await request(server()).post("/slips/nope/reject").set(owner).send({ reason: "x" }).expect(404)).body.code).toBe("SLIP_NOT_FOUND");
     });
   });
+
+  describe("ຢືນຢັນ", () => {
+    const confirm = (id: string, headers: { Authorization: string }) =>
+      request(server()).post(`/slips/${id}/confirm`).set(headers).send({});
+
+    it("200: ສະລິບ CONFIRMED + ຄ່າ confirmed* ເຕີມຈາກຄ່າທີ່ອ່ານ + ບິນ PAID + ຜູ້ກວດ + audit ທັງ slip.confirm ແລະ order.pay", async () => {
+      const { order, slip } = await seedSlip({ readPaidAt: new Date("2026-10-07T09:00:00.000Z"), readDestAccount: "010-12" });
+      const res = await confirm(slip.id, await as("OWNER")).expect(200);
+      expect(res.body).toMatchObject({
+        status: "CONFIRMED",
+        confirmed: { amount: "100000.00", currency: "LAK", refNo: "R1", destAccount: "010-12" },
+      });
+      expect(res.body.reviewedBy).toMatchObject({ name: "OWNER" });
+      const paid = await db.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(paid.status).toBe("PAID");
+      expect(paid.paidAt).not.toBeNull();
+      expect(await db.auditLog.count({ where: { action: "slip.confirm", entityId: slip.id } })).toBe(1);
+      expect(await db.auditLog.count({ where: { action: "order.pay", entityId: order.id } })).toBe(1);
+    });
+
+    it("ໃຊ້ຄ່າທີ່ແອດມິນແກ້ (confirmed*) ກ່ອນຄ່າທີ່ອ່ານ", async () => {
+      const { slip } = await seedSlip({ readAmount: "5", confirmedAmount: "100000" });
+      const res = await confirm(slip.id, await as("OWNER")).expect(200);
+      expect(res.body.confirmed.amount).toBe("100000.00");
+    });
+
+    it("ສິດ: CHAT_ADMIN (ບໍ່ມີ payments:write) → 403 ແລະ ບໍ່ປ່ຽນຫຍັງ", async () => {
+      const { order, slip } = await seedSlip();
+      await confirm(slip.id, await as("CHAT_ADMIN")).expect(403);
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING_PAYMENT");
+    });
+
+    it("ຍັງບໍ່ຜູກບິນ → 409 SLIP_NOT_LINKED; ບໍ່ມີຍອດ → 422 SLIP_AMOUNT_REQUIRED; ຍັງ PENDING_READ → 409 CONFLICT", async () => {
+      const owner = await as("OWNER");
+      const unlinked = await seedSlip({ orderId: null });
+      expect((await confirm(unlinked.slip.id, owner).expect(409)).body.code).toBe("SLIP_NOT_LINKED");
+      const noAmount = await seedSlip({ readAmount: null });
+      expect((await confirm(noAmount.slip.id, owner).expect(422)).body.code).toBe("SLIP_AMOUNT_REQUIRED");
+      const pending = await seedSlip({ status: "PENDING_READ" });
+      expect((await confirm(pending.slip.id, owner).expect(409)).body.code).toBe("CONFLICT");
+      expect((await confirm("nope", owner).expect(404)).body.code).toBe("SLIP_NOT_FOUND");
+    });
+
+    it("READ_FAILED ຢືນຢັນໄດ້ ຖ້າແອດມິນຕື່ມຍອດມື", async () => {
+      const { slip } = await seedSlip({ status: "READ_FAILED", readAmount: null, readRefNo: null });
+      const owner = await as("OWNER");
+      await confirm(slip.id, owner).expect(422);
+      await request(server()).patch(`/slips/${slip.id}`).set(owner).send({ confirmedAmount: "100000" }).expect(200);
+      await confirm(slip.id, owner).expect(200);
+    });
+
+    it("ຢືນຢັນຊ້ຳ → 409 SLIP_ALREADY_REVIEWED; ບິນຖືກ pay ຄັ້ງດຽວ", async () => {
+      const { order, slip } = await seedSlip();
+      const owner = await as("OWNER");
+      await confirm(slip.id, owner).expect(200);
+      expect((await confirm(slip.id, owner).expect(409)).body.code).toBe("SLIP_ALREADY_REVIEWED");
+      expect(await db.auditLog.count({ where: { action: "order.pay", entityId: order.id } })).toBe(1);
+    });
+
+    it("ບິນ EXPIRED/CANCELLED/PAID ແລ້ວ → 409 ORDER_INVALID_STATE ແລະ ສະລິບ rollback (ຍັງ READ, ບໍ່ມີ confirmed*)", async () => {
+      const owner = await as("OWNER");
+      for (const status of ["EXPIRED", "CANCELLED", "PAID"]) {
+        const { slip } = await seedSlip({}, { status });
+        const res = await confirm(slip.id, owner).expect(409);
+        expect(res.body.code, status).toBe("ORDER_INVALID_STATE");
+        const after = await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } });
+        expect(after.status).toBe("READ");
+        expect(after.confirmedAmount).toBeNull();
+        expect(after.reviewedByUserId).toBeNull();
+      }
+    });
+
+    it("ໝົດເວລາຈອງແຕ່ worker ຍັງບໍ່ໄດ້ expire → 409 RESERVATION_EXPIRED ແລະ rollback", async () => {
+      const { order, slip } = await seedSlip({}, { reservedUntil: new Date(Date.now() - 1000) });
+      const res = await confirm(slip.id, await as("OWNER")).expect(409);
+      expect(res.body.code).toBe("RESERVATION_EXPIRED");
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("READ");
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING_PAYMENT");
+    });
+
+    it("ຢືນຢັນພ້ອມກັນ 2 ຄັ້ງ → ສຳເລັດຄັ້ງດຽວ ອີກຄັ້ງ 409", async () => {
+      const { order, slip } = await seedSlip();
+      const owner = await as("OWNER");
+      const results = await Promise.all([confirm(slip.id, owner), confirm(slip.id, owner)]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+      expect(await db.auditLog.count({ where: { action: "order.pay", entityId: order.id } })).toBe(1);
+    });
+
+    it("ສະລິບອື່ນຂອງບິນດຽວກັນບໍ່ຖືກປ່ຽນ (ບໍ່ auto-reject)", async () => {
+      const { order, slip } = await seedSlip();
+      const other = await db.paymentSlip.create({
+        data: { source: "UPLOAD", orderId: order.id, imageKey: "slips/o", imageMime: "image/png", imageBytes: 1, imageSha256: "f".repeat(64), status: "READ" },
+      });
+      await confirm(slip.id, await as("OWNER")).expect(200);
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: other.id } })).status).toBe("READ");
+    });
+
+    it("ແຂ່ງກັບ reject: ສະລິບຖືກ REJECTED ລະຫວ່າງກວດກັບ claim → 409 SLIP_ALREADY_REVIEWED, ບໍ່ pay ບິນ, ຍັງ REJECTED", async () => {
+      const { order, slip } = await seedSlip();
+      const owner = await as("OWNER");
+      const original = db.paymentSlip.findUnique.bind(db.paymentSlip) as (args: unknown) => Promise<unknown>;
+      const spy = vi.spyOn(db.paymentSlip, "findUnique").mockImplementationOnce(((args: unknown) =>
+        original(args).then(async (row) => {
+          await db.paymentSlip.update({ where: { id: slip.id }, data: { status: "REJECTED", rejectReason: "x" } });
+          return row;
+        })) as never);
+      try {
+        const res = await confirm(slip.id, owner).expect(409);
+        expect(res.body.code).toBe("SLIP_ALREADY_REVIEWED");
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("REJECTED");
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING_PAYMENT");
+    });
+
+    it("order.pay audit ມີ slipId ແລະ slip.confirm ບັນທຶກຍອດ", async () => {
+      const { order, slip } = await seedSlip();
+      await confirm(slip.id, await as("OWNER")).expect(200);
+      const pay = await db.auditLog.findFirstOrThrow({ where: { action: "order.pay", entityId: order.id } });
+      expect(pay.after).toMatchObject({ status: "PAID", slipId: slip.id });
+      const conf = await db.auditLog.findFirstOrThrow({ where: { action: "slip.confirm", entityId: slip.id } });
+      expect(conf.after).toMatchObject({ orderId: order.id, amount: "100000.00" });
+    });
+
+    it("audit ລົ້ມຫຼັງ commit → ຍັງ 200 (ເງິນ/ບິນປ່ຽນແລ້ວ ບໍ່ຕອບ 500)", async () => {
+      const { order, slip } = await seedSlip();
+      const owner = await as("OWNER");
+      const spy = vi.spyOn(db.auditLog, "create").mockRejectedValue(new Error("audit down"));
+      try {
+        await confirm(slip.id, owner).expect(200);
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PAID");
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("CONFIRMED");
+    });
+
+    it("ສະລິບທີ່ແອດມິນແກ້ບາງຄ່າ: ຄ່າທີ່ບໍ່ໄດ້ແກ້ຖືກເຕີມຈາກ read*", async () => {
+      const { slip } = await seedSlip({ readRefNo: "RR", readDestAccount: "D1", confirmedRefNo: "EDITED" });
+      const res = await confirm(slip.id, await as("OWNER")).expect(200);
+      expect(res.body.confirmed).toMatchObject({ refNo: "EDITED", destAccount: "D1", currency: "LAK" });
+    });
+  });
 });

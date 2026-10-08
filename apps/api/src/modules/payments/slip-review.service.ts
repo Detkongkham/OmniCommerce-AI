@@ -1,6 +1,7 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { type Prisma, type PrismaClient, evaluateSlip } from "@oca/database";
 import type { PatchSlipInput, RejectSlipInput } from "@oca/shared";
+import { OrdersService } from "../orders/orders.service";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { apiError } from "../../common/api-error";
@@ -12,10 +13,13 @@ import { type SlipDto, toSlipDto } from "./slips.mapper";
 /** ສະຖານະທີ່ຍັງແກ້/retry/ປະຕິເສດໄດ້ (CONFIRMED/REJECTED ຖືວ່າປິດແລ້ວ) */
 const OPEN_STATUSES = ["PENDING_READ", "READ", "READ_FAILED"] as const;
 
-/** ການກວດຂອງແອດມິນ (payments:write): ແກ້ຄ່າ / retry / ປະຕິເສດ */
+/** ການກວດຂອງແອດມິນ (payments:write): ແກ້ຄ່າ / retry / ປະຕິເສດ / ຢືນຢັນ */
 @Injectable()
 export class SlipReviewService {
+  private readonly logger = new Logger(SlipReviewService.name);
+
   constructor(
+    @Inject(OrdersService) private readonly orders: OrdersService,
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(SLIP_QUEUE) private readonly queue: SlipQueue,
@@ -75,6 +79,70 @@ export class SlipReviewService {
       ip,
     });
     return toSlipDto(await requireRow(this.prisma, id));
+  }
+
+  /**
+   * ຢືນຢັນ: claim ສະລິບ (conditional UPDATE ກັນແຂ່ງ) + OrdersService.payWithin ໃນ transaction ດຽວ.
+   * payWithin ລົ້ມ (ບິນບໍ່ຢູ່ PENDING_PAYMENT / ໝົດເວລາຈອງ) → throw → rollback ທັງ claim ສະລິບ ແລະ ບິນ.
+   */
+  async confirm(id: string, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
+    const slip = await requireRow(this.prisma, id);
+    if (slip.status === "CONFIRMED" || slip.status === "REJECTED") {
+      throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+    }
+    if (slip.status === "PENDING_READ") throw apiError("CONFLICT", "The slip is still being read");
+    if (!slip.orderId) throw apiError("SLIP_NOT_LINKED", "Link the slip to an order before confirming");
+    const orderId = slip.orderId;
+
+    // ຄ່າສຸດທ້າຍ = ທີ່ແອດມິນແກ້ ກ່ອນ ບໍ່ດັ່ງນັ້ນທີ່ເຄື່ອງອ່ານ; ເກັບຄືນໃສ່ confirmed* ໃຫ້ຄົບ
+    const amount = slip.confirmedAmount ?? slip.readAmount;
+    if (amount === null) throw apiError("SLIP_AMOUNT_REQUIRED", "Enter the slip amount before confirming");
+
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.paymentSlip.updateMany({
+        // orderId ຢູ່ໃນ where: ຖ້າມີຄົນຍ້າຍບິນລະຫວ່າງອ່ານ claim ຈະບໍ່ຢືນຢັນຜິດບິນ; status ກັນ confirm ພ້ອມກັນ
+        where: { id, orderId, status: { in: ["READ", "READ_FAILED"] } },
+        data: {
+          status: "CONFIRMED",
+          confirmedAmount: amount,
+          confirmedCurrency: slip.confirmedCurrency ?? slip.readCurrency,
+          confirmedPaidAt: slip.confirmedPaidAt ?? slip.readPaidAt,
+          confirmedRefNo: slip.confirmedRefNo ?? slip.readRefNo,
+          confirmedDestAccount: slip.confirmedDestAccount ?? slip.readDestAccount,
+          reviewedByUserId: actor.id,
+          reviewedAt: new Date(),
+        },
+      });
+      if (count === 0) throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
+      await this.orders.payWithin(tx, orderId, actor);
+    });
+
+    // ຫຼັງ commit ເງິນ/ບິນປ່ຽນແລ້ວ: audit ລົ້ມຕ້ອງບໍ່ເຮັດໃຫ້ endpoint ຕອບ 500 (best-effort, ບັນທຶກ log)
+    await this.auditBestEffort({
+      userId: actor.id,
+      action: "slip.confirm",
+      entity: "PaymentSlip",
+      entityId: id,
+      after: { orderId, amount: amount.toFixed(2) },
+      ip,
+    });
+    await this.auditBestEffort({
+      userId: actor.id,
+      action: "order.pay",
+      entity: "Order",
+      entityId: orderId,
+      after: { status: "PAID", slipId: id },
+      ip,
+    });
+    return toSlipDto(await requireRow(this.prisma, id));
+  }
+
+  private async auditBestEffort(entry: Parameters<AuditService["record"]>[0]): Promise<void> {
+    try {
+      await this.audit.record(entry);
+    } catch (error) {
+      this.logger.error(`Failed to record audit ${entry.action} ${entry.entityId ?? ""}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
