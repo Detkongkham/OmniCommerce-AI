@@ -26,7 +26,7 @@ function parseFakeFields(text: string): FakeSlipFields {
 
 /** ເລືອກ reader ຈາກ env. ຂັ້ນ 1 ມີແຕ່ `fake`; reader ຈິງຈະເພີ່ມໃນຂັ້ນ 2 (ຫຼັງ bake-off). */
 export function createSlipReader(env: Record<string, string | undefined>): SlipReader {
-  const name = env.SLIP_READER ?? "fake";
+  const name = env.SLIP_READER?.trim() || "fake";
   if (name === "fake") {
     let fields: FakeSlipFields = {};
     if (env.SLIP_FAKE_RESULT) fields = parseFakeFields(env.SLIP_FAKE_RESULT);

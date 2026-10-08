@@ -62,6 +62,11 @@ describe("createSlipReader", () => {
     },
   );
 
+  it("treats empty or blank SLIP_READER as unset (fake)", () => {
+    expect(createSlipReader({ SLIP_READER: "" }).name).toBe("fake");
+    expect(createSlipReader({ SLIP_READER: "  ", SLIP_FAKE_RESULT: "" }).name).toBe("fake");
+  });
+
   it("SLIP_READER ລະບຸ fake ຊັດເຈນ ໃຊ້ໄດ້", () => {
     expect(createSlipReader({ SLIP_READER: "fake" }).name).toBe("fake");
   });
