@@ -16,6 +16,8 @@
     "@oca/shared": "workspace:*",
     "@oca/ui": "workspace:*",
     "@tanstack/react-query": "^5.104.1",
+    "@zxing/browser": "0.1.5",
+    "@zxing/library": "0.21.3",
     "lucide-react": "^1.52.0",
     "next": "^16.3.8",
     "react": "^19.3.0",
