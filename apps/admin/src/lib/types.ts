@@ -62,6 +62,8 @@ export interface StoreSettingsDto {
   vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
+  /** ຂໍ້ມູນໂອນທີ່ແນບທ້າຍສະຫຼຸບບິນ CF (null = ບໍ່ມີ) */
+  paymentInstructions: string | null;
 }
 
 export interface ProductListItemDto {

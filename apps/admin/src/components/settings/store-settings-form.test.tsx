@@ -23,6 +23,7 @@ const settings: StoreSettingsDto = {
   vatRate: "10.00",
   pricesIncludeVat: true,
   reservationMinutes: 30,
+  paymentInstructions: "BCEL One 0201 1234 5678",
 };
 
 function mockApi() {
@@ -63,7 +64,13 @@ describe("StoreSettingsForm", () => {
     await waitFor(() =>
       expect(apiFetch).toHaveBeenCalledWith("/settings/store", {
         method: "PATCH",
-        body: { name: "OCA Store", vatRate: "7", pricesIncludeVat: false, reservationMinutes: 45 },
+        body: {
+          name: "OCA Store",
+          vatRate: "7",
+          pricesIncludeVat: false,
+          reservationMinutes: 45,
+          paymentInstructions: "BCEL One 0201 1234 5678",
+        },
       }),
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Settings saved"));
@@ -180,6 +187,56 @@ describe("StoreSettingsForm", () => {
     expect(screen.getByLabelText("VAT (%)")).toBeDisabled();
     expect(screen.getByLabelText("Stock reservation time (minutes)")).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: "Selling prices include VAT" })).toBeDisabled();
+    expect(screen.getByLabelText("Payment details for customers")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  });
+
+  describe("ຂໍ້ມູນການໂອນ (paymentInstructions)", () => {
+    const PAYMENT = "Payment details for customers";
+    const patchBody = () =>
+      (vi.mocked(apiFetch).mock.calls.find(([, o]) => (o as { method?: string } | undefined)?.method === "PATCH")?.[1] as
+        | { body: Record<string, unknown> }
+        | undefined)?.body;
+
+    it("ໂຫຼດຄ່າເຂົ້າ textarea ພ້ອມ hint ແລະ ຕົວນັບ", async () => {
+      renderWithProviders(<StoreSettingsForm />);
+      const field = await screen.findByLabelText(PAYMENT);
+      expect(field).toHaveValue("BCEL One 0201 1234 5678");
+      expect(field).toHaveAccessibleDescription(/CF order summary/);
+      expect(screen.getByText("23/500")).toBeInTheDocument();
+    });
+
+    it("ຄ່າຈາກ server ເປັນ null: textarea ວ່າງ", async () => {
+      vi.mocked(apiFetch).mockImplementation((async () => ({ ...settings, paymentInstructions: null })) as typeof apiFetch);
+      renderWithProviders(<StoreSettingsForm />);
+      expect(await screen.findByLabelText(PAYMENT)).toHaveValue("");
+    });
+
+    it("ບັນທຶກ: trim ແລ້ວສົ່ງ; ລ້າງເປັນວ່າງ (ຫຼື ມີແຕ່ຊ່ອງວ່າງ) ສົ່ງ null", async () => {
+      const { user } = renderWithProviders(<StoreSettingsForm />);
+      const field = await screen.findByLabelText(PAYMENT);
+      await user.clear(field);
+      await user.type(field, "  LDB 123  ");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(patchBody()?.paymentInstructions).toBe("LDB 123"));
+
+      vi.mocked(apiFetch).mockClear();
+      await user.clear(field);
+      await user.type(field, "   ");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(patchBody()?.paymentInstructions).toBeNull());
+    });
+
+    it("ເກີນ 500 ຕົວ: error ແລະ ບໍ່ສົ່ງ", async () => {
+      const { user } = renderWithProviders(<StoreSettingsForm />);
+      const field = await screen.findByLabelText(PAYMENT);
+      await user.clear(field);
+      await user.click(field);
+      await user.paste("x".repeat(501));
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      expect(await screen.findByText("Too long (up to 500 characters)")).toBeInTheDocument();
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(patchBody()).toBeUndefined();
+    });
   });
 });
