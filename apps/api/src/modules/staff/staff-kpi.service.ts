@@ -117,7 +117,7 @@ export class StaffKpiService {
     const only = (column: string) =>
       userId === undefined ? Prisma.empty : Prisma.sql`AND ${Prisma.raw(column)} = ${userId}`;
 
-    const [orders, audits, adjustments, messages, responses] = await Promise.all([
+    const [orders, audits, packed, adjustments, messages, responses] = await Promise.all([
       this.prisma.$queryRaw<{ uid: string; day: string; created: bigint; closed: bigint; amount: Prisma.Decimal | null }[]>`
         SELECT "createdById" AS uid, ${storeDay('"createdAt"')} AS day,
                COUNT(*) AS created,
@@ -126,14 +126,19 @@ export class StaffKpiService {
         FROM "Order"
         WHERE "createdById" IS NOT NULL AND "createdAt" >= ${start} AND "createdAt" < ${end} ${only('"createdById"')}
         GROUP BY 1, 2`,
-      this.prisma.$queryRaw<{ uid: string; day: string; packed: bigint; shipped: bigint; cancelled: bigint }[]>`
+      this.prisma.$queryRaw<{ uid: string; day: string; shipped: bigint; cancelled: bigint }[]>`
         SELECT "userId" AS uid, ${storeDay('"createdAt"')} AS day,
-               COUNT(*) FILTER (WHERE "action" = 'order.pack') AS packed,
                COUNT(*) FILTER (WHERE "action" = 'order.ship') AS shipped,
                COUNT(*) FILTER (WHERE "action" = 'order.cancel') AS cancelled
         FROM "AuditLog"
-        WHERE "action" IN ('order.pack', 'order.ship', 'order.cancel') AND "userId" IS NOT NULL
+        WHERE "action" IN ('order.ship', 'order.cancel') AND "userId" IS NOT NULL
           AND "createdAt" >= ${start} AND "createdAt" < ${end} ${only('"userId"')}
+        GROUP BY 1, 2`,
+      // ກ່ອງທີ່ແພັກແລ້ວ = ຍິງກວດຄົບ (ຫຼື override) ຢູ່ສະຖານີແພັກ (ໂມດູນ 8): ນັບໃຫ້ຜູ້ກວດ ຕາມເວລາກວດ
+      this.prisma.$queryRaw<{ uid: string; day: string; count: bigint }[]>`
+        SELECT "verifiedById" AS uid, ${storeDay('"verifiedAt"')} AS day, COUNT(*) AS count
+        FROM "Shipment"
+        WHERE "verifiedById" IS NOT NULL AND "verifiedAt" >= ${start} AND "verifiedAt" < ${end} ${only('"verifiedById"')}
         GROUP BY 1, 2`,
       this.prisma.$queryRaw<{ uid: string; day: string; count: bigint }[]>`
         SELECT "actorId" AS uid, ${storeDay('"createdAt"')} AS day, COUNT(*) AS count
@@ -168,10 +173,10 @@ export class StaffKpiService {
     }
     for (const row of audits) {
       const bucket = at(row.uid, row.day);
-      bucket.ordersPacked += Number(row.packed);
       bucket.ordersShipped += Number(row.shipped);
       bucket.ordersCancelled += Number(row.cancelled);
     }
+    for (const row of packed) at(row.uid, row.day).ordersPacked += Number(row.count);
     for (const row of adjustments) at(row.uid, row.day).stockAdjustments += Number(row.count);
     for (const row of messages) at(row.uid, row.day).messagesSent += Number(row.count);
     for (const row of responses) {

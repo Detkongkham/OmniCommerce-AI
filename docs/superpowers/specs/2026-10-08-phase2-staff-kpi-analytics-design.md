@@ -24,7 +24,8 @@ SYSTEM_BLUEPRINT §12 ແລະ §10 ສຳລັບຮ້ານດຽວ ໂດ
 - P&L: `grossSales = Σ(subtotal + discountTotal)`, `discounts = Σ discountTotal`, `shippingIncome = Σ shippingFee`, `vat = Σ vatAmount`, `revenue = Σ(total − vatAmount)` (ລາຍຮັບກ່ອນ VAT ລວມຄ່າສົ່ງ), `cogs = Σ(unitCost × quantity)`, `grossProfit = revenue − cogs`, `grossMargin = grossProfit / revenue × 100` (null ຖ້າ revenue = 0). ເງິນເປັນ string 2 ທົດສະນິຍົມ.
 - KPI ພະນັກງານ (ຕໍ່ user ທີ່ active ຫຼື ມີກິດຈະກຳໃນຊ່ວງ):
   - `ordersCreated`: ບິນທີ່ `createdById` = user, `createdAt` ໃນຊ່ວງ. `salesClosed`/`salesAmount`: ໃນນັ້ນ ສະຖານະ PAID..COMPLETED (ລວມ `total`).
-  - `ordersPacked`, `ordersShipped`, `ordersCancelled`: ນັບ AuditLog `order.pack`/`order.ship`/`order.cancel` ຂອງ user ໃນຊ່ວງ.
+  - `ordersPacked`: ກ່ອງທີ່ຍິງກວດຄົບ (ຫຼື override) ຢູ່ສະຖານີແພັກຂອງໂມດູນ 8: `Shipment.verifiedById` = user, `verifiedAt` ໃນຊ່ວງ.
+  - `ordersShipped`, `ordersCancelled`: ນັບ AuditLog `order.ship`/`order.cancel` ຂອງ user ໃນຊ່ວງ.
   - `stockAdjustments`: StockMovement `ADJUST` ທີ່ `actorId` = user.
   - `messagesSent`: Message OUT ທີ່ `sentByUserId` = user, ບໍ່ FAILED.
   - `avgResponseSeconds`/`responses`: "ຮອບຂອງລູກຄ້າ" = ຂໍ້ຄວາມ IN ທີ່ຂໍ້ຄວາມກ່ອນໜ້າໃນເຄສບໍ່ແມ່ນ IN (ຫຼື ບໍ່ມີ). ຄຳຕອບ = ຂໍ້ຄວາມ OUT ທີ່ບໍ່ FAILED ອັນທຳອິດຫຼັງຈາກນັ້ນ; ນັບໃຫ້ຜູ້ສົ່ງຖ້າມີ `sentByUserId` (OUT ຂອງລະບົບບໍ່ນັບ). ຮອບນັບຕາມເວລາຂໍ້ຄວາມ IN ໃນຊ່ວງ. ສະເລ່ຍເປັນວິນາທີ (ເລກເຕັມ), null ຖ້າບໍ່ມີ.
@@ -74,6 +75,7 @@ SYSTEM_BLUEPRINT §12 ແລະ §10 ສຳລັບຮ້ານດຽວ ໂດ
 ## 8. ຜົນການປະຕິບັດ (2026-10-08)
 
 - ເຮັດໃນ branch ດຽວ 2 commit ຫຼັກ (API + admin) ໂດຍບໍ່ແຍກ plan ຍ່ອຍ ເພາະທຸກ endpoint ເປັນອ່ານຢ່າງດຽວ ແລະ ບໍ່ແຕະ logic ຂອງບິນ ນອກຈາກຕັ້ງ `createdById`.
+- ຫຼັງ rebase ເທິງ main ທີ່ມີໂມດູນ 8a (PR #6): `ordersPacked` ນັບຈາກ `Shipment.verifiedById/verifiedAt` (ຍິງກວດຄົບ) ແທນ audit `order.pack` ທີ່ເປັນພຽງ "ເລີ່ມແພັກ".
 - ປ່ຽນຈາກ spec: ລະຫັດ 404 ຂອງ KPI ລາຍວັນໃຊ້ `USER_NOT_FOUND`; ກຸ່ມເມນູລາຍງານຢູ່ທ້າຍສຸດ (ຖ້າຢູ່ກ່ອນ "ຕັ້ງຄ່າ" ຜູ້ມີແຕ່ `staff:read` ຈະລົງ `/staff-kpi` ແທນ `/staff`); `dateBound` ຂອງ `@oca/shared` ຖືກ export ເພື່ອໃຊ້ໃນ filter audit.
 - ກາຟໃຊ້ `recharts` (DESIGN §15) ສີຈາກ CSS token (`--brand`, `--line`, `--ink-muted`) ຈຶ່ງປ່ຽນຕາມ dark mode ເອງ; ທຸກກາຟມີຕາຕະລາງຄູ່ກັນ.
 - ທົດສອບ: API e2e ໃໝ່ 19 (KPI, audit, analytics, migration backfill) + shared 4 + admin (3 ໜ້າ, api download, ຊ່ວງວັນທີ, diff, nav); ທຸກ suite ເດີມຜ່ານ. Migration ກວດເທິງ Postgres 16 ເທົ່ານັ້ນ (ຍັງບໍ່ໄດ້ກວດ 18).

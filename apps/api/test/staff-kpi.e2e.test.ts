@@ -51,7 +51,7 @@ describe("Staff KPI (/staff-kpi)", () => {
     expect(res.body.rows[0].user.id).toBe(viewer);
   });
 
-  it("ບິນຈາກ POST /orders ບັນທຶກ createdById; pack/ship/cancel ແລະ ADJUST ຖືກນັບໃຫ້ຜູ້ກະທຳ", async () => {
+  it("ບິນຈາກ POST /orders ບັນທຶກ createdById; ກ່ອງທີ່ຍິງກວດ, ship/cancel ແລະ ADJUST ຖືກນັບໃຫ້ຜູ້ກະທຳ", async () => {
     await db.$transaction((tx) => receive(tx, { variantId: catalog.v1.id, warehouseId: catalog.whA.id, quantity: 10 }, {}));
     const create = () =>
       request(app.getHttpServer())
@@ -63,9 +63,15 @@ describe("Staff KPI (/staff-kpi)", () => {
     const b = (await create()).body as { id: string };
     expect((await db.order.findUniqueOrThrow({ where: { id: a.id } })).createdById).toBe(ids.ownerUser.id);
 
-    for (const step of ["pay", "pack", "ship"]) {
-      await request(app.getHttpServer()).post(`/orders/${a.id}/${step}`).set(owner).expect(200);
-    }
+    // ແພັກຜ່ານສະຖານີແພັກ (ໂມດູນ 8): start → ຍິງກວດຄົບ = 1 ກ່ອງ; ແລ້ວສົ່ງ
+    await request(app.getHttpServer()).post(`/orders/${a.id}/pay`).set(owner).expect(200);
+    await request(app.getHttpServer()).post(`/fulfillment/${a.id}/start`).set(owner).expect(200);
+    await request(app.getHttpServer())
+      .post(`/fulfillment/${a.id}/verify`)
+      .set(owner)
+      .send({ scans: [{ code: "SKU-1", quantity: 1 }] })
+      .expect(200);
+    await request(app.getHttpServer()).post(`/orders/${a.id}/ship`).set(owner).expect(200);
     await request(app.getHttpServer()).post(`/orders/${b.id}/cancel`).set(owner).send({ reason: "test" }).expect(200);
     await request(app.getHttpServer())
       .post("/stock/adjust")
