@@ -100,7 +100,7 @@ export function AnalyticsPage() {
             />
           </Card>
         ) : (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6" aria-busy={summary.isFetching}>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6" aria-busy={summary.isFetching}>
             <StatTile icon={Banknote} label={t("analytics.stat.revenue")} value={s ? formatMoney(s.revenue) : "…"} hint={t("analytics.stat.revenueHint")} />
             <StatTile icon={Receipt} label={t("analytics.stat.orders")} value={s ? formatQuantity(s.orders) : "…"} hint={s ? t("analytics.stat.units", { units: formatQuantity(s.units) }) : undefined} />
             <StatTile icon={ShoppingBag} label={t("analytics.stat.aov")} value={s ? formatMoney(s.avgOrderValue) : "…"} hint={s ? t("analytics.stat.customers", { count: formatQuantity(s.customers) }) : undefined} />
@@ -128,7 +128,7 @@ export function AnalyticsPage() {
           )}
         </Card>
 
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 [&>*]:min-w-0">
           <ProfitLossCard s={s} canCost={canCost} />
           <ChannelsCard
             loading={channels.isPending}

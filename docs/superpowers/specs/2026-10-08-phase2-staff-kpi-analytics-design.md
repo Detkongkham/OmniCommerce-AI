@@ -35,7 +35,7 @@ SYSTEM_BLUEPRINT §12 ແລະ §10 ສຳລັບຮ້ານດຽວ ໂດ
 
 **Staff (`staff:read`)**
 - `GET /staff-kpi?from&to` → `{ from, to, rows: StaffKpiRow[] }` ລຽງ `salesAmount` ຫຼາຍ→ໜ້ອຍ. `StaffKpiRow = { user: {id,name,email,isActive,roleName}, ordersCreated, salesClosed, salesAmount, ordersPacked, ordersShipped, ordersCancelled, stockAdjustments, messagesSent, responses, avgResponseSeconds }`.
-- `GET /staff-kpi/:userId/daily?from&to` → `{ user, days: [{ date, ...ຕົວເລກດຽວກັນ }] }` ຄົບທຸກມື້ (ມື້ບໍ່ມີກິດຈະກຳ = 0). user ບໍ່ພົບ → 404 `STAFF_NOT_FOUND`.
+- `GET /staff-kpi/:userId/daily?from&to` → `{ user, days: [{ date, ...ຕົວເລກດຽວກັນ }] }` ຄົບທຸກມື້ (ມື້ບໍ່ມີກິດຈະກຳ = 0). user ບໍ່ພົບ → 404 `USER_NOT_FOUND` (ລະຫັດທີ່ມີແລ້ວ).
 - `GET /audit-logs?userId&action&entity&entityId&from&to&page&pageSize` → Page ຂອງ `{ id, createdAt, action, entity, entityId, ip, user: {id,name,email}|null, before, after }` ລຽງໃໝ່→ເກົ່າ. `action` ກົງທັງໝົດ ຫຼື ລົງທ້າຍ `.*` = prefix (ເຊັ່ນ `order.*`). `from`/`to` ໃຊ້ `dateBound` ເດີມ.
 - `GET /audit-logs/facets` → `{ actions: string[], entities: string[] }` (distinct, ສຳລັບ dropdown).
 
@@ -53,7 +53,7 @@ SYSTEM_BLUEPRINT §12 ແລະ §10 ສຳລັບຮ້ານດຽວ ໂດ
 
 ## 5. Admin
 
-- ກຸ່ມເມນູໃໝ່ "ລາຍງານ" (ກ່ອນ "ຕັ້ງຄ່າ"): `/analytics` (`analytics:read`), `/staff-kpi` ແລະ `/audit` (`staff:read`).
+- ກຸ່ມເມນູໃໝ່ "ລາຍງານ" (ທ້າຍສຸດ ເພື່ອບໍ່ປ່ຽນໜ້າຫຼັງ login ຂອງບົດບາດເດີມ): `/analytics` (`analytics:read`), `/staff-kpi` ແລະ `/audit` (`staff:read`).
 - ຕົວເລືອກຊ່ວງວັນທີຮ່ວມ: ປຸ່ມ 7 ມື້ / 30 ມື້ / ເດືອນນີ້ / ເດືອນກ່ອນ + input ວັນທີ from/to (ຄ່າເລີ່ມ 30 ມື້).
 - `/analytics`: stat tiles (ລາຍຮັບ, ບິນ, ສະເລ່ຍຕໍ່ບິນ, ກຳໄລຂັ້ນຕົ້ນ + margin ຖ້າມີ costs:read), ກາຟແທ່ງລາຍຮັບລາຍວັນ (recharts, ສີ brand, ຄວາມສູງ 280), ຕາຕະລາງ P&L, ຊ່ອງທາງ (ແທ່ງແນວນອນ + ຕາຕະລາງ), ແຫຼ່ງບິນ, ສິນຄ້າຂາຍດີ, deadstock (ເລືອກ 30/60/90 ມື້, ແບ່ງໜ້າ), ປຸ່ມ "ສົ່ງອອກ CSV".
 - `/staff-kpi`: ຕາຕະລາງ KPI (ເວລາຕອບເປັນ ນ:ວ); ກົດແຖວ → dialog ລາຍວັນ (ກາຟແທ່ງ ຍອດປິດການຂາຍ + ຕາຕະລາງ).
@@ -70,3 +70,11 @@ SYSTEM_BLUEPRINT §12 ແລະ §10 ສຳລັບຮ້ານດຽວ ໂດ
 - Query ລາຍງານເປັນ raw SQL ເທິງຕາຕະລາງຈິງ (ບໍ່ມີ rollup): ພຽງພໍສຳລັບຮ້ານດຽວ (ຫຼັກໝື່ນບິນ/ປີ). ຖ້າຊ້າ ເພີ່ມ materialized view ພາຍຫຼັງ.
 - ຂໍ້ມູນ KPI ການແພັກມາຈາກ AuditLog: ຖ້າ audit ບັນທຶກລົ້ມ (ຫຼັງ commit) ຈະບໍ່ຖືກນັບ.
 - ເວລາຕອບແຊັດບໍ່ຫັກເວລານອກໂມງເຮັດວຽກ.
+
+## 8. ຜົນການປະຕິບັດ (2026-10-08)
+
+- ເຮັດໃນ branch ດຽວ 2 commit ຫຼັກ (API + admin) ໂດຍບໍ່ແຍກ plan ຍ່ອຍ ເພາະທຸກ endpoint ເປັນອ່ານຢ່າງດຽວ ແລະ ບໍ່ແຕະ logic ຂອງບິນ ນອກຈາກຕັ້ງ `createdById`.
+- ປ່ຽນຈາກ spec: ລະຫັດ 404 ຂອງ KPI ລາຍວັນໃຊ້ `USER_NOT_FOUND`; ກຸ່ມເມນູລາຍງານຢູ່ທ້າຍສຸດ (ຖ້າຢູ່ກ່ອນ "ຕັ້ງຄ່າ" ຜູ້ມີແຕ່ `staff:read` ຈະລົງ `/staff-kpi` ແທນ `/staff`); `dateBound` ຂອງ `@oca/shared` ຖືກ export ເພື່ອໃຊ້ໃນ filter audit.
+- ກາຟໃຊ້ `recharts` (DESIGN §15) ສີຈາກ CSS token (`--brand`, `--line`, `--ink-muted`) ຈຶ່ງປ່ຽນຕາມ dark mode ເອງ; ທຸກກາຟມີຕາຕະລາງຄູ່ກັນ.
+- ທົດສອບ: API e2e ໃໝ່ 19 (KPI, audit, analytics, migration backfill) + shared 4 + admin (3 ໜ້າ, api download, ຊ່ວງວັນທີ, diff, nav); ທຸກ suite ເດີມຜ່ານ. Migration ກວດເທິງ Postgres 16 ເທົ່ານັ້ນ (ຍັງບໍ່ໄດ້ກວດ 18).
+- Smoke ໃນ Chromium (API + admin build, ຂໍ້ມູນຈິງຜ່ານ API): ຕົວເລກ P&L ກົງກັບການຄິດມື (ລາຍຮັບ 1,580,000 − VAT 143,636.37 = 1,436,363.63), KPI ເວລາຕອບ 1:15 = (90+60)/2 ວິ, audit ສະແດງ `price` 150000 → 160000, ດາວໂຫຼດ CSV ໄດ້, dark mode ແລະ ຈໍ 390px ບໍ່ມີ scroll ແນວນອນ (ແກ້ grid ຂອງ P&L/ຊ່ອງທາງ ທີ່ຂະຫຍາຍເກີນຈໍ).
