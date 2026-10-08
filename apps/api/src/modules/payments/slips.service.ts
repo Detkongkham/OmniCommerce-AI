@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { type Prisma, type PrismaClient, evaluateSlip } from "@oca/database";
+import type { PrismaClient } from "@oca/database";
 import { type StorageService, StorageNotFoundError, newStorageKey } from "@oca/ai-engine";
-import { type LinkChatSlipInput, type PatchSlipInput, type RejectSlipInput, SLIP_MAX_BYTES } from "@oca/shared";
+import { type LinkChatSlipInput, SLIP_MAX_BYTES } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { apiError } from "../../common/api-error";
@@ -10,10 +10,8 @@ import { ENV, type Env } from "../../config/env";
 import { PRISMA } from "../../prisma/prisma.module";
 import { SLIP_FETCH, SLIP_QUEUE, SLIP_STORAGE, type SlipQueue } from "./slip.providers";
 import { SlipImageError, detectImageMime, fetchImageBytes, sha256Hex } from "./slip-image";
+import { requireOrder, requireRow } from "./slip-queries";
 import { type SlipDto, type SlipRow, slipInclude, toSlipDto } from "./slips.mapper";
-
-/** ສະຖານະທີ່ຍັງແກ້/retry/ປະຕິເສດໄດ້ (CONFIRMED/REJECTED ຖືວ່າປິດແລ້ວ) */
-const OPEN_STATUSES = ["PENDING_READ", "READ", "READ_FAILED"] as const;
 
 export interface UploadedImage {
   buffer: Buffer;
@@ -45,13 +43,13 @@ export class SlipsService {
   ) {}
 
   async upload(orderId: string, file: UploadedImage | undefined, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
-    await this.requireOrder(orderId);
+    await requireOrder(this.prisma, orderId);
     const { bytes, mime } = this.validateImage(file?.buffer);
     return this.createSlip({ bytes, mime, source: "UPLOAD", orderId, actor, ip });
   }
 
   async listForOrder(orderId: string): Promise<SlipDto[]> {
-    await this.requireOrder(orderId);
+    await requireOrder(this.prisma, orderId);
     const rows = await this.prisma.paymentSlip.findMany({
       where: { orderId },
       include: slipInclude,
@@ -134,7 +132,7 @@ export class SlipsService {
   }
 
   async get(id: string): Promise<SlipDto> {
-    return toSlipDto(await this.requireRow(id));
+    return toSlipDto(await requireRow(this.prisma, id));
   }
 
   async readImage(id: string): Promise<{ bytes: Uint8Array; mime: string }> {
@@ -149,76 +147,6 @@ export class SlipsService {
     }
   }
 
-  /**
-   * ແກ້ຄ່າທີ່ແອດມິນຢືນຢັນ ແລະ/ຫຼື ຜູກ/ຍ້າຍບິນ; ຄິດ flag ໃໝ່ສະເໝີ.
-   * ຍ້າຍໄປບິນຂອງເຄສອື່ນໄດ້ (ແອດມິນຕັດສິນ) ຂໍພຽງບິນມີຢູ່ຈິງ.
-   */
-  async patch(id: string, input: PatchSlipInput, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
-    await this.requireRow(id);
-    if (input.orderId) await this.requireOrder(input.orderId);
-    // conditional update: ຖ້າຖືກ confirm/reject ລະຫວ່າງ requireRow ກັບບ່ອນນີ້ → count = 0 → 409
-    const { count } = await this.prisma.paymentSlip.updateMany({
-      where: { id, status: { in: [...OPEN_STATUSES] } },
-      data: {
-        orderId: input.orderId,
-        confirmedAmount: input.confirmedAmount,
-        confirmedCurrency: input.confirmedCurrency,
-        confirmedPaidAt: input.confirmedPaidAt,
-        confirmedRefNo: input.confirmedRefNo,
-        confirmedDestAccount: input.confirmedDestAccount,
-      },
-    });
-    if (count === 0) throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
-    await evaluateSlip(this.prisma, id);
-    await this.audit.record({
-      userId: actor.id,
-      action: "slip.update",
-      entity: "PaymentSlip",
-      entityId: id,
-      // round-trip ເພື່ອໃຫ້ Date ກາຍເປັນ string ແລະ JSON-safe
-      after: JSON.parse(JSON.stringify(input)) as Prisma.InputJsonValue,
-      ip,
-    });
-    return toSlipDto(await this.requireRow(id));
-  }
-
-  /** ອ່ານໃໝ່: ຕັ້ງ PENDING_READ ແລ້ວ enqueue. ຖ້າ enqueue ລົ້ມ ສະຖານະ PENDING_READ ຍັງຄົງ ແລະ ຕອບ 500 (ກົດໃໝ່ໄດ້) */
-  async retry(id: string, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
-    const { count } = await this.prisma.paymentSlip.updateMany({
-      where: { id, status: { in: [...OPEN_STATUSES] } },
-      data: { status: "PENDING_READ" },
-    });
-    if (count === 0) {
-      await this.requireRow(id);
-      throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
-    }
-    // ບໍ່ກືນ error ຄືຕອນສ້າງ: retry ມີໄວ້ເພື່ອ enqueue ຈຶ່ງຕ້ອງໃຫ້ແອດມິນເຫັນເມື່ອລົ້ມ
-    await this.queue.enqueueRead(id);
-    await this.audit.record({ userId: actor.id, action: "slip.retry", entity: "PaymentSlip", entityId: id, ip });
-    return toSlipDto(await this.requireRow(id));
-  }
-
-  /** ປະຕິເສດສະລິບ: ບໍ່ແຕະບິນ */
-  async reject(id: string, input: RejectSlipInput, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
-    const { count } = await this.prisma.paymentSlip.updateMany({
-      where: { id, status: { in: [...OPEN_STATUSES] } },
-      data: { status: "REJECTED", rejectReason: input.reason, reviewedByUserId: actor.id, reviewedAt: new Date() },
-    });
-    if (count === 0) {
-      await this.requireRow(id);
-      throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
-    }
-    await this.audit.record({
-      userId: actor.id,
-      action: "slip.reject",
-      entity: "PaymentSlip",
-      entityId: id,
-      after: { reason: input.reason },
-      ip,
-    });
-    return toSlipDto(await this.requireRow(id));
-  }
-
   // ---------------------------------------------------------------------------
   // helpers
   // ---------------------------------------------------------------------------
@@ -228,17 +156,6 @@ export class SlipsService {
     const mime = detectImageMime(buffer);
     if (!mime) throw apiError("SLIP_FILE_INVALID", "Image must be JPEG, PNG or WebP");
     return { bytes: buffer, mime };
-  }
-
-  private async requireOrder(orderId: string): Promise<void> {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
-    if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
-  }
-
-  private async requireRow(id: string): Promise<SlipRow> {
-    const row = await this.prisma.paymentSlip.findUnique({ where: { id }, include: slipInclude });
-    if (!row) throw apiError("SLIP_NOT_FOUND", "Slip not found");
-    return row;
   }
 
   /** ເກັບຮູບ → ສ້າງແຖວ → audit → enqueue (enqueue ລົ້ມ = ຍັງຖືວ່າສຳເລັດ; ສະລິບຄ້າງ PENDING_READ ໃຫ້ retry) */

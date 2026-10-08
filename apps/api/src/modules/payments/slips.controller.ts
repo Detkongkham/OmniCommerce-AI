@@ -13,6 +13,7 @@ import type { Request, Response } from "express";
 import type { AuthUser } from "../../common/auth-types";
 import { CurrentUser, RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { SlipReviewService } from "./slip-review.service";
 import { type UploadedImage, SlipsService } from "./slips.service";
 
 /**
@@ -21,7 +22,10 @@ import { type UploadedImage, SlipsService } from "./slips.service";
  */
 @Controller()
 export class SlipsController {
-  constructor(@Inject(SlipsService) private readonly slips: SlipsService) {}
+  constructor(
+    @Inject(SlipsService) private readonly slips: SlipsService,
+    @Inject(SlipReviewService) private readonly review: SlipReviewService,
+  ) {}
 
   @Post("orders/:id/slips")
   @RequirePermissions("orders:write")
@@ -95,14 +99,14 @@ export class SlipsController {
     @CurrentUser() actor: AuthUser,
     @Req() req: Request,
   ) {
-    return this.slips.patch(id, body, actor, req.ip);
+    return this.review.patch(id, body, actor, req.ip);
   }
 
   @Post("slips/:id/retry")
   @HttpCode(200)
   @RequirePermissions("payments:write")
   retry(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
-    return this.slips.retry(id, actor, req.ip);
+    return this.review.retry(id, actor, req.ip);
   }
 
   @Post("slips/:id/reject")
@@ -114,6 +118,6 @@ export class SlipsController {
     @CurrentUser() actor: AuthUser,
     @Req() req: Request,
   ) {
-    return this.slips.reject(id, body, actor, req.ip);
+    return this.review.reject(id, body, actor, req.ip);
   }
 }
