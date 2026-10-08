@@ -17,12 +17,16 @@ import type { Request } from "express";
 import type { AuthUser } from "../../common/auth-types";
 import { CurrentUser, RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { LiveHostService } from "./live-host.service";
 import { LiveSessionsService } from "./live-sessions.service";
 
 /** ເບິ່ງ = live-cf:read; ສ້າງ/ແກ້/ເລີ່ມ/ຈົບ/ຈັດການລະຫັດ = live-cf:write */
 @Controller("live-sessions")
 export class LiveSessionsController {
-  constructor(@Inject(LiveSessionsService) private readonly sessions: LiveSessionsService) {}
+  constructor(
+    @Inject(LiveSessionsService) private readonly sessions: LiveSessionsService,
+    @Inject(LiveHostService) private readonly host: LiveHostService,
+  ) {}
 
   @Get()
   @RequirePermissions("live-cf:read")
@@ -44,6 +48,13 @@ export class LiveSessionsController {
   @RequirePermissions("live-cf:read")
   get(@Param("id") id: string) {
     return this.sessions.get(id);
+  }
+
+  /** snapshot ຂອງ Host screen (ສິນຄ້ານຳສະເໜີ, ຈຳນວນຕໍ່ລະຫັດ, ຍອດລວມ, CF ລ່າສຸດ) */
+  @Get(":id/host")
+  @RequirePermissions("live-cf:read")
+  hostSnapshot(@Param("id") id: string) {
+    return this.host.snapshot(id);
   }
 
   @Patch(":id")

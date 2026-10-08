@@ -7,6 +7,7 @@ import { CfIngestService } from "./cf-ingest.service";
 import { CfProcessorService } from "./cf-processor.service";
 import { CfQueueService } from "./cf-queue.service";
 import { CfReplyService } from "./cf-reply.service";
+import { LiveHostService } from "./live-host.service";
 import { LiveSessionsController } from "./live-sessions.controller";
 import { LiveSessionsService } from "./live-sessions.service";
 
@@ -14,7 +15,7 @@ import { LiveSessionsService } from "./live-sessions.service";
 @Module({
   imports: [ChannelsModule, OrdersModule],
   controllers: [LiveSessionsController, CfCommentsController],
-  providers: [CfCommentsService, CfIngestService, CfProcessorService, CfQueueService, CfReplyService, LiveSessionsService],
+  providers: [CfCommentsService, CfIngestService, CfProcessorService, CfQueueService, CfReplyService, LiveHostService, LiveSessionsService],
   exports: [CfIngestService, CfReplyService],
 })
 export class LiveCfModule {}
