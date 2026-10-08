@@ -288,6 +288,7 @@ model StockMovement {
 
   @@index([variantId, warehouseId, createdAt])
   @@index([orderId])
+  @@index([actorId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +338,9 @@ model Order {
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   liveSessionId   String?
   liveSession     LiveSession?  @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
+  // ພະນັກງານທີ່ເປີດບິນ (KPI ຍອດປິດການຂາຍ); null = ລະບົບ (CF Engine)
+  createdById     String?
+  createdBy       User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   // Idempotency-Key ຂອງ POST /orders: key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ. hash = sha256 ຂອງ payload
   idempotencyKey  String? @unique
@@ -361,6 +365,8 @@ model Order {
   @@index([createdAt])
   @@index([conversationId])
   @@index([liveSessionId, customerId, status])
+  @@index([createdById, createdAt])
+  @@index([paidAt])
 }
 
 model OrderItem {
@@ -432,6 +438,7 @@ model User {
   mediaFiles            MediaFile[]
   createdSocialPosts    SocialPost[]   @relation("SocialPostCreatedBy")
   scheduledSocialPosts  SocialPost[]   @relation("SocialPostScheduledBy")
+  createdOrders         Order[]
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -472,6 +479,8 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +529,7 @@ model Message {
 
   @@unique([conversationId, externalId])
   @@index([conversationId, createdAt])
+  @@index([sentByUserId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

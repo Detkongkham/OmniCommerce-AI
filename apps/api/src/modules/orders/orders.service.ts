@@ -249,6 +249,7 @@ export class OrdersService {
           source: conversation ? "CHAT" : (origin?.source ?? "MANUAL"),
           conversationId: conversation?.id,
           liveSessionId: origin?.liveSessionId,
+          createdById: actorId,
           currency: settings.baseCurrency,
           exchangeRate: 1,
           subtotal: totals.subtotal,

@@ -3,8 +3,18 @@ import { hasPermission } from "@oca/shared";
 import { type Observable, map } from "rxjs";
 import type { AuthenticatedRequest } from "./auth-types";
 
-/** ຊື່ field ຕົ້ນທຶນໃນ DTO ທັງໝົດ (Variant.costPrice, OrderItem.unitCost). ເພີ່ມຢູ່ບ່ອນດຽວເມື່ອມີ field ໃໝ່. */
-export const COST_FIELDS: ReadonlySet<string> = new Set(["costPrice", "unitCost"]);
+/**
+ * ຊື່ field ຕົ້ນທຶນໃນ DTO ທັງໝົດ (Variant.costPrice, OrderItem.unitCost, ລາຍງານ: cogs/grossProfit/grossMargin/stockValue).
+ * ເພີ່ມຢູ່ບ່ອນດຽວເມື່ອມີ field ໃໝ່.
+ */
+export const COST_FIELDS: ReadonlySet<string> = new Set([
+  "costPrice",
+  "unitCost",
+  "cogs",
+  "grossProfit",
+  "grossMargin",
+  "stockValue",
+]);
 
 export function stripCostFields(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripCostFields);
