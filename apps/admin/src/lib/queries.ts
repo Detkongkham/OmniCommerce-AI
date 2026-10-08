@@ -140,8 +140,12 @@ export function useDeleteRole() {
 // ---------------------------------------------------------------------------
 // Inventory: ສາງ / ໝວດໝູ່ / ຕັ້ງຄ່າຮ້ານ
 // ---------------------------------------------------------------------------
-export function useWarehouses() {
-  return useQuery({ queryKey: queryKeys.warehouses, queryFn: () => apiFetch<WarehouseDto[]>("/warehouses") });
+export function useWarehouses(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.warehouses,
+    queryFn: () => apiFetch<WarehouseDto[]>("/warehouses"),
+  });
 }
 
 export function useCreateWarehouse() {
