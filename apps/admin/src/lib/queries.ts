@@ -1,5 +1,11 @@
 import type {
   AdjustStockInput,
+  CreateCourierInput,
+  FulfillmentStatus,
+  OverridePackInput,
+  ShipOrderInput,
+  UpdateCourierInput,
+  UpdateShippingInput,
   CfOutcome,
   CreateLiveItemInput,
   CreateLiveSessionInput,
@@ -37,6 +43,9 @@ import type {
   AssigneeDto,
   CategoryDto,
   CfCommentDto,
+  CourierDto,
+  FulfillmentDetailDto,
+  FulfillmentListItemDto,
   HostSnapshotDto,
   LiveItemDto,
   LiveSessionDetailDto,
@@ -74,6 +83,8 @@ export const queryKeys = {
   conversations: ["conversations"] as const,
   assignees: ["inbox-assignees"] as const,
   liveSessions: ["live-sessions"] as const,
+  couriers: ["couriers"] as const,
+  fulfillment: ["fulfillment"] as const,
 };
 
 export function useStaffList() {
@@ -681,5 +692,91 @@ export function useResendCfReply() {
         { method: "POST" },
       ),
     onSettled: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Logistics: ບໍລິສັດຂົນສົ່ງ ແລະ ການແພັກ/ສົ່ງ
+// ---------------------------------------------------------------------------
+export function useCouriers(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.couriers,
+    queryFn: () => apiFetch<CourierDto[]>("/couriers"),
+  });
+}
+
+export function useSaveCourier() {
+  const invalidate = useInvalidate(queryKeys.couriers);
+  return useMutation({
+    mutationFn: (args: { id?: undefined; input: CreateCourierInput } | { id: string; input: UpdateCourierInput }) =>
+      args.id
+        ? apiFetch<CourierDto>(`/couriers/${encodeURIComponent(args.id)}`, { method: "PATCH", body: args.input })
+        : apiFetch<CourierDto>("/couriers", { method: "POST", body: args.input }),
+    onSuccess: invalidate,
+  });
+}
+
+export interface FulfillmentListParams {
+  status?: FulfillmentStatus | "";
+  warehouseId?: string;
+  q?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useFulfillmentQueue(params: FulfillmentListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.fulfillment, "list", params],
+    queryFn: () => apiFetch<Page<FulfillmentListItemDto>>(`/fulfillment${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useFulfillment(orderId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: [...queryKeys.fulfillment, "detail", orderId],
+    queryFn: () => apiFetch<FulfillmentDetailDto>(`/fulfillment/${encodeURIComponent(orderId)}`),
+  });
+}
+
+export type FulfillmentAction =
+  | { action: "start" }
+  | { action: "verify"; scans: { code: string; quantity: number }[] }
+  | { action: "override"; input: OverridePackInput }
+  | { action: "ship"; input: ShipOrderInput }
+  | { action: "notify"; force?: boolean };
+
+/** ທຸກ action ຄືນ FulfillmentDetailDto; ປ່ຽນສະຖານະ/ສະຕ໋ອກຂອງບິນ → invalidate orders/stock ນຳ */
+export function useFulfillmentAction(orderId: string) {
+  const invalidate = useInvalidate(queryKeys.fulfillment, queryKeys.orders, queryKeys.stock, queryKeys.conversations);
+  return useMutation({
+    mutationFn: (args: FulfillmentAction) => {
+      const path = `/fulfillment/${encodeURIComponent(orderId)}/${args.action}`;
+      switch (args.action) {
+        case "start":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST" });
+        case "verify":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST", body: { scans: args.scans } });
+        case "override":
+        case "ship":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST", body: args.input });
+        case "notify":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST", body: { force: args.force ?? false } });
+      }
+    },
+    onSuccess: invalidate,
+    // ລົ້ມ (ເຊັ່ນ ສະຖານະປ່ຽນ) → refetch ໃຫ້ເຫັນສະຖານະຫຼ້າສຸດ
+    onError: invalidate,
+  });
+}
+
+export function useUpdateShipping(orderId: string) {
+  const invalidate = useInvalidate(queryKeys.fulfillment, queryKeys.orders);
+  return useMutation({
+    mutationFn: (input: UpdateShippingInput) =>
+      apiFetch<FulfillmentDetailDto>(`/fulfillment/${encodeURIComponent(orderId)}/shipping`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
   });
 }

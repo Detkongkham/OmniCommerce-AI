@@ -38,7 +38,7 @@ const createdOrder: OrderDetailDto = {
   currency: "LAK", exchangeRate: "1.000000", subtotal: "200.00", discountTotal: "0.00", shippingFee: "0.00",
   vatRate: "10.00", vatAmount: "18.18", total: "200.00", shippingName: "Mali", shippingPhone: "02055550001",
   shippingAddress: null, note: null, reservedUntil: "2026-10-07T06:00:00.000Z", secondsUntilExpiry: 1800,
-  paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-07T05:30:00.000Z",
+  paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-07T05:30:00.000Z", shipment: null,
   items: [{ id: "i1", variantId: "v1", warehouseId: "w1", productName: "Tee", variantName: "Red", sku: "TEE-R", unitPrice: "100.00", quantity: 2, discount: "0.00", lineTotal: "200.00" }],
   movements: [],
 };

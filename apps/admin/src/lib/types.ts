@@ -8,6 +8,7 @@ import type {
   MessageStatus,
   OrderStatus,
   Permission,
+  ShipmentNotifyStatus,
   ProductStatus,
   SalesChannel,
   StockMovementType,
@@ -249,6 +250,14 @@ export interface OrderDetailDto {
   completedAt: string | null;
   cancelledAt: string | null;
   createdAt: string;
+  /** null = ຍັງບໍ່ເລີ່ມແພັກຜ່ານໜ້າ fulfillment */
+  shipment: {
+    courierName: string | null;
+    trackingNumber: string | null;
+    trackingUrl: string | null;
+    notifyStatus: ShipmentNotifyStatus;
+    shippedAt: string | null;
+  } | null;
   items: OrderItemDto[];
   movements: OrderMovementDto[];
 }
@@ -398,4 +407,78 @@ export interface HostSnapshotDto {
     lines: { code: string; quantity: number }[];
     createdAt: string;
   }[];
+}
+
+// ---------------------------------------------------------------------------
+// Logistics (ກົງກັບ apps/api/src/modules/logistics)
+// ---------------------------------------------------------------------------
+export interface CourierDto {
+  id: string;
+  code: string;
+  name: string;
+  trackingUrlTemplate: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface UserRefDto {
+  id: string;
+  name: string;
+}
+
+export interface ShipmentDto {
+  id: string;
+  courier: { id: string; code: string; name: string } | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  packedBy: UserRefDto | null;
+  packedAt: string | null;
+  verifiedAt: string | null;
+  verifiedBy: UserRefDto | null;
+  verifyOverrideReason: string | null;
+  shippedBy: UserRefDto | null;
+  shippedAt: string | null;
+  notifyStatus: ShipmentNotifyStatus;
+  notifyErrorCode: string | null;
+  notifiedAt: string | null;
+}
+
+export interface FulfillmentListItemDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  customer: { name: string; phone: string | null } | null;
+  itemCount: number;
+  paidAt: string | null;
+  hasShippingInfo: boolean;
+  verified: boolean;
+}
+
+export interface FulfillmentItemDto {
+  id: string;
+  variantId: string;
+  sku: string;
+  barcode: string | null;
+  productName: string;
+  variantName: string | null;
+  quantity: number;
+  warehouseId: string;
+  warehouseCode: string;
+}
+
+export interface FulfillmentDetailDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  channel: SalesChannel;
+  customer: { id: string; name: string; phone: string | null } | null;
+  shippingName: string | null;
+  shippingPhone: string | null;
+  shippingAddress: string | null;
+  note: string | null;
+  paidAt: string | null;
+  items: FulfillmentItemDto[];
+  shipment: ShipmentDto | null;
+  notifyText: string | null;
+  storeName: string;
 }

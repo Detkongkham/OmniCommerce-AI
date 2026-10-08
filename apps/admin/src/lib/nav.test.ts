@@ -43,6 +43,29 @@ describe("visibleNavGroups", () => {
   });
 });
 
+describe("visibleNavGroups: logistics", () => {
+  it("logistics:read ເຫັນ /fulfillment (ກຸ່ມສາງ) ແລະ /couriers (ກຸ່ມຕັ້ງຄ່າ)", () => {
+    const groups = visibleNavGroups(["logistics:read"]);
+    expect(groups.map((group) => [group.id, group.items.map((item) => item.href)])).toEqual([
+      ["inventory", ["/fulfillment"]],
+      ["settings", ["/couriers"]],
+    ]);
+  });
+
+  it("WAREHOUSE (inventory + logistics + orders:read): /fulfillment ຖັດຈາກ /orders; landing ຍັງ /products", () => {
+    const permissions = ["inventory:read", "logistics:read", "orders:read"];
+    expect(visibleNavGroups(permissions)[0]?.items.map((item) => item.href)).toEqual([
+      "/products",
+      "/stock",
+      "/orders",
+      "/fulfillment",
+      "/warehouses",
+      "/categories",
+    ]);
+    expect(firstAllowedHref(permissions)).toBe("/products");
+  });
+});
+
 describe("visibleNavGroups: live-cf", () => {
   it("ຜູ້ມີ live-cf:read ເຫັນກຸ່ມ live (/live)", () => {
     const groups = visibleNavGroups(["live-cf:read"]);

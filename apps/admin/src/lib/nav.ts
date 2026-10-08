@@ -1,5 +1,5 @@
 import { type Permission, hasPermission } from "@oca/shared";
-import { Boxes, ClipboardList, FolderTree, type LucideIcon, MessageSquare, Package, Radio, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
+import { Boxes, ClipboardList, PackageCheck, Truck, FolderTree, type LucideIcon, MessageSquare, Package, Radio, Settings, ShieldCheck, Users, Warehouse } from "lucide-react";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
 
 export interface NavItem {
@@ -23,6 +23,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/products", labelKey: "nav.products", icon: Package, permission: "inventory:read" },
       { href: "/stock", labelKey: "nav.stock", icon: Boxes, permission: "inventory:read" },
       { href: "/orders", labelKey: "nav.orders", icon: ClipboardList, permission: "orders:read" },
+      { href: "/fulfillment", labelKey: "nav.fulfillment", icon: PackageCheck, permission: "logistics:read" },
       { href: "/warehouses", labelKey: "nav.warehouses", icon: Warehouse, permission: "inventory:read" },
       { href: "/categories", labelKey: "nav.categories", icon: FolderTree, permission: "inventory:read" },
     ],
@@ -43,6 +44,7 @@ export const NAV_GROUPS: NavGroup[] = [
     labelKey: "nav.group.settings",
     items: [
       { href: "/settings", labelKey: "nav.storeSettings", icon: Settings, permission: "inventory:read" },
+      { href: "/couriers", labelKey: "nav.couriers", icon: Truck, permission: "logistics:read" },
       { href: "/staff", labelKey: "nav.staff", icon: Users, permission: "staff:read" },
       { href: "/roles", labelKey: "nav.roles", icon: ShieldCheck, permission: "staff:read" },
     ],
