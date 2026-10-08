@@ -1,4 +1,7 @@
+import { postsEn, postsLo } from "./posts-dictionary";
+
 const lo = {
+  ...postsLo,
   "app.name": "OmniCommerce AI",
 
   "nav.home": "ໜ້າຫຼັກ",
@@ -937,6 +940,7 @@ export type TranslateParams = Record<string, string | number>;
 export type Translate = (key: TranslationKey, params?: TranslateParams) => string;
 
 const en: Record<TranslationKey, string> = {
+  ...postsEn,
   "app.name": "OmniCommerce AI",
 
   "nav.home": "Home",

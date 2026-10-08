@@ -100,12 +100,14 @@ function send(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = Object.fromEntries(
     Object.entries(options.headers ?? {}).filter(([name]) => !SYSTEM_HEADERS.has(name.toLowerCase())),
   );
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData (ອັບໂຫຼດໄຟລ໌): ໃຫ້ browser ຕັ້ງ Content-Type + boundary ເອງ
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     credentials: "same-origin",
   });
 }
