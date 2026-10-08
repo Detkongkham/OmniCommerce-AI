@@ -19,6 +19,7 @@ export const SESSION_ROW: LiveSessionDto = {
   status: "DRAFT",
   externalPostId: "111_222",
   publicReplyEnabled: true,
+  featuredItemId: null,
   startedAt: null,
   endedAt: null,
   createdAt: "2026-10-08T03:00:00.000Z",

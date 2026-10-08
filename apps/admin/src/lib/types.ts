@@ -303,6 +303,8 @@ export interface LiveSessionDto {
   status: LiveSessionStatus;
   externalPostId: string | null;
   publicReplyEnabled: boolean;
+  /** ສິນຄ້າທີ່ກຳລັງນຳສະເໜີເທິງ Host screen */
+  featuredItemId: string | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -347,4 +349,53 @@ export interface CfCommentDto {
   replyStatus: CfReplyStatus;
   replyErrorCode: string | null;
   createdAt: string;
+}
+
+/** GET /live-sessions/:id/host (ກົງກັບ apps/api/src/modules/live-cf/live-host.service.ts) */
+export type HostItemLevel = "OK" | "LOW" | "SOLD_OUT";
+
+export interface HostItemDto {
+  id: string;
+  code: string;
+  productName: string;
+  variantName: string | null;
+  sku: string;
+  price: string;
+  imageUrl: string | null;
+  limit: number | null;
+  claimed: number;
+  /** null = ບໍ່ມີສາງຫຼັກ */
+  stockAvailable: number | null;
+  /** null = ບໍ່ຈຳກັດ */
+  remaining: number | null;
+  level: HostItemLevel;
+}
+
+export interface HostSnapshotDto {
+  session: {
+    id: string;
+    title: string;
+    kind: LiveSessionKind;
+    status: LiveSessionStatus;
+    startedAt: string | null;
+    endedAt: string | null;
+    featuredItemId: string | null;
+  };
+  items: HostItemDto[];
+  totals: {
+    buyers: number;
+    orders: number;
+    reservedAmount: string;
+    paidAmount: string;
+    unitsClaimed: number;
+    comments: number;
+  };
+  recent: {
+    id: string;
+    authorName: string;
+    message: string;
+    outcome: CfOutcome;
+    lines: { code: string; quantity: number }[];
+    createdAt: string;
+  }[];
 }
