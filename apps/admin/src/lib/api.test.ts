@@ -227,6 +227,26 @@ describe("apiFetch (token clearing & refreshed handler)", () => {
     expect(onRefreshed).toHaveBeenCalledTimes(1);
     expect(onRefreshed).toHaveBeenCalledWith(session("new"));
   });
+
+  it("FormData: ສົ່ງຕົວມັນເອງ (ບໍ່ stringify) ແລະ ບໍ່ຕັ້ງ Content-Type ເພື່ອໃຫ້ browser ໃສ່ boundary", async () => {
+    setAccessToken("tok");
+    const fetchMock = mockFetch(() => json(201, { id: "s1" }));
+    const form = new FormData();
+    form.append("file", new Blob(["x"], { type: "image/png" }), "a.png");
+    await apiFetch("/orders/o1/slips", { method: "POST", body: form });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.body).toBe(form);
+    expect(headersOf(init)["Content-Type"]).toBeUndefined();
+    expect(headersOf(init).Authorization).toBe("Bearer tok");
+  });
+
+  it("responseType blob: ຄືນ Blob; error ຍັງເປັນ ApiError", async () => {
+    mockFetch(() => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "Content-Type": "image/png" } }));
+    const blob = await apiFetch<Blob>("/slips/s1/image", { responseType: "blob" });
+    expect(blob.size).toBe(3);
+    mockFetch(() => json(404, { code: "SLIP_NOT_FOUND", message: "Slip not found" }));
+    await expect(apiFetch("/slips/s1/image", { responseType: "blob" })).rejects.toMatchObject({ status: 404, code: "SLIP_NOT_FOUND" });
+  });
 });
 
 describe("refreshSession cross-tab lock", () => {

@@ -41,6 +41,8 @@ export interface RequestOptions {
   body?: unknown;
   /** header ເພີ່ມເຕີມ (ເຊັ່ນ `Idempotency-Key`); Content-Type/Authorization ຂອງລະບົບຊະນະເມື່ອຊ້ຳ */
   headers?: Record<string, string>;
+  /** "blob" ສຳລັບຮູບ/ໄຟລ໌; ຄ່າເລີ່ມຕົ້ນ json */
+  responseType?: "json" | "blob";
 }
 
 /** Endpoint ທີ່ບໍ່ຄວນ refresh ເມື່ອໄດ້ 401 (ຜິດ credentials ຫຼື refresh ເອງລົ້ມ). */
@@ -89,9 +91,10 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, message, issues, code, parsed);
 }
 
-async function parse<T>(response: Response): Promise<T> {
+async function parse<T>(response: Response, responseType: "json" | "blob" = "json"): Promise<T> {
   if (!response.ok) throw await toApiError(response);
   if (response.status === 204) return undefined as T;
+  if (responseType === "blob") return (await response.blob()) as T;
   return (await response.json()) as T;
 }
 
@@ -100,12 +103,14 @@ function send(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = Object.fromEntries(
     Object.entries(options.headers ?? {}).filter(([name]) => !SYSTEM_HEADERS.has(name.toLowerCase())),
   );
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData: ປ່ອຍໃຫ້ browser ຕັ້ງ Content-Type ພ້ອມ boundary ເອງ
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (options.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   return fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
     credentials: "same-origin",
   });
 }
@@ -148,20 +153,20 @@ export function refreshSession(): Promise<Session | null> {
 export async function apiFetch<T = void>(path: string, options: RequestOptions = {}): Promise<T> {
   const usedToken = accessToken;
   const response = await send(path, options);
-  if (response.status !== 401 || NO_REFRESH_PATHS.has(path)) return parse<T>(response);
+  if (response.status !== 401 || NO_REFRESH_PATHS.has(path)) return parse<T>(response, options.responseType);
 
   // 401: ຖ້າ request ອື່ນ refresh ໄປແລ້ວ (token ປ່ຽນ) ລອງໃໝ່ເລີຍ; ບໍ່ດັ່ງນັ້ນ refresh (single-flight).
   const recovered = accessToken !== null && accessToken !== usedToken ? true : (await refreshSession()) !== null;
   if (!recovered) {
     onUnauthorized?.();
-    return parse<T>(response);
+    return parse<T>(response, options.responseType);
   }
   const retry = await send(path, options);
   if (retry.status === 401) {
     setAccessToken(null);
     onUnauthorized?.();
   }
-  return parse<T>(retry);
+  return parse<T>(retry, options.responseType);
 }
 
 export async function loginRequest(input: LoginInput): Promise<Session> {
