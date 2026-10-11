@@ -25,7 +25,20 @@
 * 3. AI Image Studio
 * 5. Promotion & Marketing Engine
 * 11. CRM & Customer Loyalty
-* ເພີ່ມຊ່ອງທາງ Instagram, TikTok, LINE ໃສ່ Inbox
+* ເພີ່ມຊ່ອງທາງ Instagram, LINE ໃສ່ Inbox (TikTok ປິດໄວ້ກ່ອນ)
+
+ລຳດັບລົງມື (ຕັດສິນ 2026-10-11), ແຕ່ລະອັນມີ spec → plan ຂອງຕົນ:
+
+| ລຳດັບ | Sub-project | ຂອບເຂດ |
+|---|---|---|
+| 3b | 7. Storefront | ລາຍການ/ລາຍລະອຽດສິນຄ້າ (SSR, SEO, ມືຖື), ກະຕ່າ, checkout, ຈອງສະຕ໋ອກ atomic, ໂອນ + ອັບໂຫຼດສະລິບ, ຕິດຕາມບິນ |
+| 3c | 5. Promotion | ສ່ວນຫຼຸດໃນບິນ, Flash Sale, Bundle, ເຕືອນກະຕ່າຄ້າງ (ຕ້ອງມີກະຕ່າຈາກ 3b) |
+| 3d | 11. CRM & Loyalty | Customer 360, RFM, ລະດັບສະມາຊິກ, ແຕ້ມ (ແລກແຕ້ມໃຊ້ສ່ວນຫຼຸດຈາກ 3c) |
+| 3e | ຊ່ອງທາງ Inbox | Instagram → LINE (ລໍບັນຊີ ແລະ ການອະນຸມັດຈາກແພລັດຟອມ); ລວມ Social Posting ແພລັດຟອມອື່ນ |
+| 3f | 3. Image Studio | Canvas, ລາຍນ້ຳເປັນຊຸດ, ຕັດພື້ນຫຼັງ + ສ້າງສາກດ້ວຍ Gemini API |
+
+* Image Studio ສ່ວນ AI ໃຊ້ Gemini API (key ຂອງເຈົ້າຂອງຮ້ານ, ເກັບໃນ env) — ຕ່າງຈາກ Slip OCR ທີ່ຕ້ອງ host ເອງ.
+* ຍັງບໍ່ມີ ແລະ ຈະຈັດຫາພາຍຫຼັງ: ໂດເມນໜ້າຮ້ານ, ບັນຊີ Instagram Business, LINE Official Account, TikTok Business.
 
 ## Phase 4: ເຄືອຂ່າຍຜູ້ຂາຍ
 * 6. Affiliate & Dropship Portal
