@@ -1,6 +1,7 @@
-import { SLIP_MAX_BYTES, SLIP_STATUSES } from "@oca/shared";
+import { SLIP_FLAGS, SLIP_MAX_BYTES, SLIP_STATUSES } from "@oca/shared";
 import { describe, expect, it } from "vitest";
-import { canConfirmSlip, isOpenSlip, validateSlipFile } from "./slips";
+import { dictionaries } from "./i18n/dictionary";
+import { canConfirmSlip, isOpenSlip, slipFlagKey, validateSlipFile } from "./slips";
 import type { SlipDto } from "./types";
 
 const slip = (patch: Partial<SlipDto> = {}): SlipDto => ({
@@ -39,3 +40,13 @@ describe("isOpenSlip / canConfirmSlip", () => {
   });
 });
 
+describe("slipFlagKey", () => {
+  it("ທຸກ flag ທີ່ API ອາດສົ່ງ ມີຂໍ້ຄວາມທັງ lo ແລະ en; ຄ່າທີ່ບໍ່ຮູ້ຈັກ → UNKNOWN", () => {
+    for (const flag of SLIP_FLAGS) {
+      const key = slipFlagKey(flag);
+      expect(dictionaries.lo[key], key).toBeTruthy();
+      expect(dictionaries.en[key], key).toBeTruthy();
+    }
+    expect(slipFlagKey("NEW_FLAG_FROM_FUTURE")).toBe("slips.flag.UNKNOWN");
+  });
+});
