@@ -20,12 +20,13 @@ export interface UploadedImage {
 interface CreateSlipInput {
   bytes: Uint8Array;
   mime: string;
-  source: "CHAT" | "UPLOAD";
+  source: "CHAT" | "UPLOAD" | "STOREFRONT";
   orderId: string;
   conversationId?: string;
   messageId?: string;
   attachmentIndex?: number;
-  actor: AuthUser;
+  /** null = ລູກຄ້າອັບໂຫຼດເອງຈາກໜ້າຮ້ານ */
+  actor: AuthUser | null;
   ip: string | undefined;
 }
 
@@ -46,6 +47,12 @@ export class SlipsService {
     await requireOrder(this.prisma, orderId);
     const { bytes, mime } = this.validateImage(file?.buffer);
     return this.createSlip({ bytes, mime, source: "UPLOAD", orderId, actor, ip });
+  }
+
+  /** ສະລິບທີ່ລູກຄ້າອັບໂຫຼດຈາກໜ້າບິນຂອງເວັບ. ຜູ້ເອີ້ນກວດສະຖານະບິນ ແລະ ເພດານຈຳນວນກ່ອນ */
+  async uploadFromStorefront(orderId: string, file: UploadedImage | undefined, ip: string | undefined): Promise<SlipDto> {
+    const { bytes, mime } = this.validateImage(file?.buffer);
+    return this.createSlip({ bytes, mime, source: "STOREFRONT", orderId, actor: null, ip });
   }
 
   async listForOrder(orderId: string): Promise<SlipDto[]> {
@@ -191,7 +198,7 @@ export class SlipsService {
       throw error;
     }
     await this.audit.record({
-      userId: input.actor.id,
+      userId: input.actor?.id ?? null,
       action: "slip.create",
       entity: "PaymentSlip",
       entityId: row.id,

@@ -18,5 +18,7 @@ import { SlipsService } from "./slips.service";
     { provide: SLIP_QUEUE, inject: [ENV], useFactory: (env: Env) => new BullSlipQueue(env) },
     { provide: SLIP_FETCH, useFactory: () => globalThis.fetch.bind(globalThis) },
   ],
+  // ໜ້າຮ້ານສາທາລະນະໃຊ້ SlipsService.uploadFromStorefront
+  exports: [SlipsService],
 })
 export class PaymentsModule {}

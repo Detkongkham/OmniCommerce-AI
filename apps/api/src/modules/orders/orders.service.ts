@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { type OrderSource, type Prisma, type PrismaClient, releaseCfClaims, releaseMany, reserveMany, shipMany } from "@oca/database";
+import { type OrderSource, Prisma, type PrismaClient, releaseCfClaims, releaseMany, reserveMany, shipMany } from "@oca/database";
 import {
   type CancelOrderInput,
   type CreateOrderInput,
@@ -28,11 +28,23 @@ import {
 } from "./orders.mapper";
 import { apiError } from "../../common/api-error";
 
-/** ແຫຼ່ງທີ່ມາຂອງບິນທີ່ຖືກສ້າງໂດຍລະບົບ (CF Engine); ບິນຈາກແຊັດໃຊ້ conversationId ແທນ */
+/** ສ່ວນເພີ່ມຂອງບິນຈາກໜ້າຮ້ານສາທາລະນະ */
+export interface WebOrderExtras {
+  publicToken: string;
+  shippingCourierId: string;
+  shippingBranch: string;
+  /** ຍອດທີ່ລູກຄ້າເຫັນຕອນກົດສັ່ງ; ບໍ່ຕົງກັບຍອດທີ່ server ຄິດ → PRICE_CHANGED */
+  expectedTotal: string;
+  /** ແລ່ນທຳອິດໃນ transaction (ກວດເພດານພາຍໃຕ້ lock); throw = rollback ທັງໝົດ */
+  guard: (tx: Prisma.TransactionClient) => Promise<void>;
+}
+
+/** ແຫຼ່ງທີ່ມາຂອງບິນທີ່ຖືກສ້າງໂດຍລະບົບ (CF Engine, ໜ້າຮ້ານ); ບິນຈາກແຊັດໃຊ້ conversationId ແທນ */
 export interface OrderOrigin {
   channel: SalesChannel;
   source: OrderSource;
-  liveSessionId: string;
+  liveSessionId?: string;
+  web?: WebOrderExtras;
 }
 
 /** sha256 ຂອງ payload ທີ່ zod parse ແລ້ວ (ລຳດັບ key ຄົງທີ່ຕາມ schema) */
@@ -128,8 +140,66 @@ export class OrdersService {
     return toOrderDetail(created);
   }
 
-  /** ບິນເດີມຂອງ key ນີ້ (ຖ້າມີ). payload ຕ່າງກັນ = ໃຊ້ key ຜິດ → 409 */
-  private async findReplay(key: string, hash: string): Promise<OrderDetailDto | undefined> {
+  /**
+   * ສ້າງບິນຈາກໜ້າຮ້ານສາທາລະນະ (ບໍ່ມີພະນັກງານ): STOREFRONT / WEB_CHECKOUT, idempotent ຕາມ key.
+   * key ເກັບເປັນ `sf:<key>` ເພື່ອບໍ່ຊົນກັບ key ຂອງ POST /orders. hash ບໍ່ລວມ publicToken (ສຸ່ມໃໝ່ທຸກຄຳຂໍ).
+   * ຄືນ id ຂອງບິນ (ຜູ້ເອີ້ນ map ເປັນ DTO ສາທາລະນະເອງ).
+   */
+  async createFromStorefront(
+    input: CreateOrderInput,
+    web: WebOrderExtras,
+    ip: string | undefined,
+    idempotencyKey: string,
+  ): Promise<string> {
+    const key = `sf:${idempotencyKey}`;
+    const hash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          input,
+          courierId: web.shippingCourierId,
+          branch: web.shippingBranch,
+          expectedTotal: web.expectedTotal,
+        }),
+      )
+      .digest("hex");
+    const replay = await this.findReplayId(key, hash);
+    if (replay) return replay;
+
+    let orderId: string;
+    try {
+      orderId = await this.createInTransaction(input, null, key, hash, {
+        channel: "STOREFRONT",
+        source: "WEB_CHECKOUT",
+        web,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const winner = await this.findReplayId(key, hash);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+
+    const created = await this.requireDetail(orderId);
+    await this.audit.record({
+      userId: null,
+      action: "order.create",
+      entity: "Order",
+      entityId: orderId,
+      after: {
+        orderNumber: created.orderNumber,
+        status: created.status,
+        total: created.total.toFixed(2),
+        itemCount: created.items.length,
+        channel: created.channel,
+      },
+      ip,
+    });
+    return orderId;
+  }
+
+  /** id ຂອງບິນເດີມຂອງ key ນີ້ (ຖ້າມີ). payload ຕ່າງກັນ = ໃຊ້ key ຜິດ → 409 */
+  private async findReplayId(key: string, hash: string): Promise<string | undefined> {
     const existing = await this.prisma.order.findUnique({
       where: { idempotencyKey: key },
       select: { id: true, idempotencyHash: true },
@@ -138,7 +208,12 @@ export class OrdersService {
     if (existing.idempotencyHash !== hash) {
       throw apiError("CONFLICT", "Idempotency-Key was already used with a different request body");
     }
-    return toOrderDetail(await this.requireDetail(existing.id));
+    return existing.id;
+  }
+
+  private async findReplay(key: string, hash: string): Promise<OrderDetailDto | undefined> {
+    const id = await this.findReplayId(key, hash);
+    return id ? toOrderDetail(await this.requireDetail(id)) : undefined;
   }
 
   /** outerTx = ໃຊ້ transaction ຂອງຜູ້ເອີ້ນ (CF Engine ທີ່ຕ້ອງ atomic ກັບ ledger); ບໍ່ໃສ່ = ເປີດ transaction ເອງ */
@@ -151,6 +226,7 @@ export class OrdersService {
     outerTx?: Prisma.TransactionClient,
   ): Promise<string> {
     const run = async (tx: Prisma.TransactionClient): Promise<string> => {
+      if (origin?.web) await origin.web.guard(tx);
       const settings = await ensureStoreSetting(tx);
 
       // 0) ເຄສ (ຖ້າເປີດຈາກແຊັດ): channel ຕາມເຄສ, source = CHAT. ບໍ່ພົບ → 404 ກ່ອນຈອງສະຕ໋ອກ
@@ -236,6 +312,10 @@ export class OrdersService {
         throw error;
       }
 
+      if (origin?.web && !new Prisma.Decimal(origin.web.expectedTotal).equals(totals.total)) {
+        throw apiError("PRICE_CHANGED", "The order total differs from the expected total", { total: totals.total });
+      }
+
       // 5) ເລກບິນ + ບັນທຶກ
       const [sequenceRow] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('"Order_number_seq"') AS n`;
       if (!sequenceRow) throw new Error("Order_number_seq returned no row");
@@ -261,6 +341,9 @@ export class OrdersService {
           shippingName: input.shippingName,
           shippingPhone: input.shippingPhone,
           shippingAddress: input.shippingAddress,
+          shippingCourierId: origin?.web?.shippingCourierId,
+          shippingBranch: origin?.web?.shippingBranch,
+          publicToken: origin?.web?.publicToken,
           note: input.note,
           idempotencyKey,
           idempotencyHash,
