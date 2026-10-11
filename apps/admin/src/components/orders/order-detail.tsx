@@ -231,7 +231,7 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
   }
 
   const showCost = canCosts && order.items.some((item) => item.unitCost !== undefined);
-  const hasShipping = Boolean(order.shippingName || order.shippingPhone || order.shippingAddress);
+  const hasShipping = Boolean(order.shippingName || order.shippingPhone || order.shippingAddress || order.preferredCourier || order.shippingBranch);
 
   return (
     <div>
@@ -335,6 +335,8 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
               {order.shippingName ? <p className="font-medium text-ink">{order.shippingName}</p> : null}
               {order.shippingPhone ? <p>{order.shippingPhone}</p> : null}
               {order.shippingAddress ? <p>{order.shippingAddress}</p> : null}
+              {order.preferredCourier ? <p>{t("orders.detail.preferredCourier", { courier: order.preferredCourier.name })}</p> : null}
+              {order.shippingBranch ? <p>{t("orders.detail.shippingBranch", { branch: order.shippingBranch })}</p> : null}
               {hasShipping ? null : <p>{t("orders.detail.noShipping")}</p>}
               {order.shipment?.trackingNumber ? (
                 <div className="mt-2 border-t border-line pt-2">

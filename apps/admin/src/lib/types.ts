@@ -247,6 +247,9 @@ export interface OrderDetailDto {
   shippingName: string | null;
   shippingPhone: string | null;
   shippingAddress: string | null;
+  /** ທີ່ລູກຄ້າເລືອກຕອນສັ່ງໃນເວັບ; null = ບິນຈາກຊ່ອງທາງອື່ນ */
+  preferredCourier: { id: string; name: string; isActive: boolean } | null;
+  shippingBranch: string | null;
   note: string | null;
   reservedUntil: string | null;
   secondsUntilExpiry: number | null;
@@ -510,6 +513,9 @@ export interface FulfillmentDetailDto {
   shippingName: string | null;
   shippingPhone: string | null;
   shippingAddress: string | null;
+  /** ທີ່ລູກຄ້າເລືອກຕອນສັ່ງໃນເວັບ; null = ບິນຈາກຊ່ອງທາງອື່ນ */
+  preferredCourier: { id: string; name: string; isActive: boolean } | null;
+  shippingBranch: string | null;
   note: string | null;
   paidAt: string | null;
   items: FulfillmentItemDto[];

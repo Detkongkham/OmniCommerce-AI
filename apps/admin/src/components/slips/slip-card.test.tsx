@@ -55,6 +55,11 @@ describe("SlipCard: ສະແດງ", () => {
     expect(screen.getByText("No anomalies found")).toBeInTheDocument();
   });
 
+  it("ສະລິບທີ່ລູກຄ້າອັບໂຫຼດຈາກເວັບ ມີປ້າຍແຫຼ່ງຂອງຕົນ", () => {
+    renderWithProviders(<SlipCard slip={slip({ source: "STOREFRONT" })} order={order} canReview />);
+    expect(screen.getByText("Uploaded by customer (web)")).toBeInTheDocument();
+  });
+
   it("flag ສະແດງເປັນຂໍ້ຄວາມ (ບໍ່ອີງສີ) ແລະ flag ທີ່ບໍ່ຮູ້ຈັກສະແດງຂໍ້ຄວາມທົ່ວໄປ", () => {
     renderWithProviders(<SlipCard slip={slip({ flags: ["AMOUNT_MISMATCH", "DUPLICATE_IMAGE", "FUTURE_FLAG"] })} order={order} canReview />);
     const list = screen.getByRole("list", { name: "Warnings" });

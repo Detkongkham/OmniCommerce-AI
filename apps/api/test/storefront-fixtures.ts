@@ -79,6 +79,7 @@ export function setupStoreTest(env: Record<string, string> = {}) {
 
   return {
     server: () => app.getHttpServer(),
+    app: () => app,
     db: () => db,
     state,
     enqueueRead,

@@ -84,6 +84,11 @@ function Label({ label }: { label: FulfillmentDetailDto }) {
         <p className="text-[16pt] font-bold leading-tight">{label.shippingName ?? "—"}</p>
         <p className="text-[14pt] font-semibold tabular-nums">{label.shippingPhone ?? "—"}</p>
         <p className="mt-[1mm] whitespace-pre-line text-[11pt] leading-snug">{label.shippingAddress ?? ""}</p>
+        {label.preferredCourier || label.shippingBranch ? (
+          <p className="mt-[1mm] text-[11pt] font-semibold leading-snug">
+            {[label.preferredCourier?.name, label.shippingBranch].filter(Boolean).join(" · ")}
+          </p>
+        ) : null}
       </div>
       <div className="border-b-2 border-black py-[2mm] text-center">
         <Barcode value={label.orderNumber} height={56} className="h-[16mm] w-full" />

@@ -10,6 +10,7 @@ export const orderDetailInclude = {
     include: { warehouse: { select: { code: true } }, variant: { select: { sku: true } } },
   },
   shipment: { include: { courier: true } },
+  shippingCourier: { select: { id: true, name: true, isActive: true } },
 } as const satisfies Prisma.OrderInclude;
 
 export type OrderDetailRow = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
@@ -71,6 +72,9 @@ export interface OrderDetailDto {
   shippingName: string | null;
   shippingPhone: string | null;
   shippingAddress: string | null;
+  /** ບໍລິສັດຂົນສົ່ງ + ສາຂາປາຍທາງ ທີ່ລູກຄ້າເລືອກຕອນສັ່ງໃນເວັບ (null = ບິນຈາກຊ່ອງທາງອື່ນ) */
+  preferredCourier: { id: string; name: string; isActive: boolean } | null;
+  shippingBranch: string | null;
   note: string | null;
   reservedUntil: Date | null;
   secondsUntilExpiry: number | null;
@@ -135,6 +139,8 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
     shippingName: row.shippingName,
     shippingPhone: row.shippingPhone,
     shippingAddress: row.shippingAddress,
+    preferredCourier: row.shippingCourier,
+    shippingBranch: row.shippingBranch,
     note: row.note,
     reservedUntil: row.reservedUntil,
     secondsUntilExpiry:

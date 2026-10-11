@@ -452,6 +452,13 @@ function RecipientCard({ detail, editable }: { detail: FulfillmentDetailDto; edi
           {filled(detail.shippingName) || filled(detail.shippingAddress) ? null : <p>{t("orders.detail.noShipping")}</p>}
         </div>
       )}
+      {detail.preferredCourier || detail.shippingBranch ? (
+        // ທີ່ລູກຄ້າເລືອກໃນເວັບ: ສະແດງທັງຕອນແກ້ໄຂ ແລະ ຕອນອ່ານຢ່າງດຽວ
+        <div className="mt-3 space-y-1 border-t border-line pt-3 text-sm text-ink-secondary">
+          {detail.preferredCourier ? <p>{t("orders.detail.preferredCourier", { courier: detail.preferredCourier.name })}</p> : null}
+          {detail.shippingBranch ? <p>{t("orders.detail.shippingBranch", { branch: detail.shippingBranch })}</p> : null}
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -589,7 +596,8 @@ function ShipForm({ detail, onDone }: { detail: FulfillmentDetailDto; onDone: ()
   const couriers = useCouriers();
   const act = useFulfillmentAction(detail.id);
   const active = (couriers.data ?? []).filter((courier) => courier.isActive);
-  const [courierId, setCourierId] = useState("");
+  // ຕື່ມ courier ທີ່ລູກຄ້າເລືອກໃນເວັບໄວ້ກ່ອນ (ແກ້ໄດ້); courier ທີ່ຖືກປິດແລ້ວບໍ່ຕື່ມ
+  const [courierId, setCourierId] = useState(detail.preferredCourier?.isActive ? detail.preferredCourier.id : "");
   const [tracking, setTracking] = useState("");
   const [errors, setErrors] = useState<{ courier?: string; tracking?: string; form?: string }>({});
 

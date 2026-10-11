@@ -50,6 +50,8 @@ const DETAIL: FulfillmentDetailDto = {
   shippingName: "Noy",
   shippingPhone: "020555",
   shippingAddress: "Vientiane",
+  preferredCourier: null,
+  shippingBranch: null,
   note: null,
   paidAt: "2026-10-08T02:00:00.000Z",
   items: [
@@ -206,6 +208,27 @@ describe("PackPage", () => {
     expect(toast.success).toHaveBeenCalledWith("Order shipped");
     expect(await screen.findByText("Customer notified by chat")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "AN123" })).toHaveAttribute("href", "https://an.la/t/AN123");
+  });
+
+  it("ບິນຈາກເວັບ: ສະແດງ courier + ສາຂາທີ່ລູກຄ້າເລືອກ ແລະ ຕື່ມ courier ໄວ້ໃນຟອມສົ່ງອອກ (ແກ້ໄດ້)", async () => {
+    mockApi({ ...VERIFIED, preferredCourier: { id: "c1", name: "Anousith", isActive: true }, shippingBranch: "Phonthan" });
+    state.next.ship = SHIPPED;
+    const { user } = renderWithProviders(<PackPage orderId="o1" />);
+    expect(await screen.findByText("Customer chose: Anousith")).toBeInTheDocument();
+    expect(screen.getByText("Destination branch: Phonthan")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ship" }));
+    const dialog = await screen.findByRole("dialog", { name: "Ship order SO-000001" });
+    expect(within(dialog).getByLabelText(/^Courier/)).toHaveValue("c1");
+    await user.type(within(dialog).getByLabelText(/^Tracking number/), "AN123{Enter}");
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/fulfillment/o1/ship", { method: "POST", body: { courierId: "c1", trackingNumber: "AN123" } }));
+  });
+
+  it("courier ທີ່ລູກຄ້າເລືອກຖືກປິດແລ້ວ: ບໍ່ຕື່ມໃຫ້ (ຕ້ອງເລືອກເອງ)", async () => {
+    mockApi({ ...VERIFIED, preferredCourier: { id: "c9", name: "Old Courier", isActive: false }, shippingBranch: "Phonthan" });
+    const { user } = renderWithProviders(<PackPage orderId="o1" />);
+    await user.click(await screen.findByRole("button", { name: "Ship" }));
+    const dialog = await screen.findByRole("dialog", { name: "Ship order SO-000001" });
+    expect(within(dialog).getByLabelText(/^Courier/)).toHaveValue("");
   });
 
   it("ແຈ້ງບໍ່ສຳເລັດ: ເຫດຜົນ + ສົ່ງໃໝ່ (POST notify) + copy; MANUAL ບອກໃຫ້ copy", async () => {

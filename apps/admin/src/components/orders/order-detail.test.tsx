@@ -20,7 +20,7 @@ const base: OrderDetailDto = {
   customer: { id: "c1", name: "Mali", phone: "02055550001", email: null },
   currency: "LAK", exchangeRate: "1.000000", subtotal: "190.00", discountTotal: "10.00", shippingFee: "5.00",
   vatRate: "10.00", vatAmount: "17.73", total: "195.00", shippingName: "Mali", shippingPhone: "02055550001",
-  shippingAddress: "Vientiane", note: "gift", reservedUntil: "2026-10-05T06:00:00.000Z", secondsUntilExpiry: 120,
+  shippingAddress: "Vientiane", preferredCourier: null, shippingBranch: null, note: "gift", reservedUntil: "2026-10-05T06:00:00.000Z", secondsUntilExpiry: 120,
   paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-05T05:30:00.000Z", shipment: null,
   items: [{ id: "i1", variantId: "v1", warehouseId: "w1", productName: "Tee", variantName: "Red", sku: "TEE-R", unitPrice: "100.00", unitCost: "60.00", quantity: 2, discount: "10.00", lineTotal: "190.00" }],
   movements: [{ id: "m1", type: "RESERVE", quantity: 2, variantId: "v1", sku: "TEE-R", warehouseId: "w1", warehouseCode: "MAIN", createdAt: "2026-10-05T05:30:00.000Z" }],
@@ -105,6 +105,14 @@ describe("OrderDetail: ສະແດງຂໍ້ມູນ", () => {
     await heading();
     expect(screen.queryByText("Unit cost")).toBeNull();
     expect(document.body.textContent).not.toContain("NaN");
+  });
+
+  it("ບິນຈາກເວັບ: ສະແດງ courier ແລະ ສາຂາປາຍທາງທີ່ລູກຄ້າເລືອກ", async () => {
+    mockOrder({ ...base, channel: "STOREFRONT", preferredCourier: { id: "c1", name: "Anousith", isActive: true }, shippingBranch: "Phonthan" });
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByText("Customer chose: Anousith")).toBeInTheDocument();
+    expect(screen.getByText("Destination branch: Phonthan")).toBeInTheDocument();
   });
 
   it("ລູກຄ້າໜ້າຮ້ານ (null), ບໍ່ມີທີ່ຢູ່/ໝາຍເຫດ: ຂໍ້ຄວາມ fallback ແປແລ້ວ", async () => {

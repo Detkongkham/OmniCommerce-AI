@@ -27,6 +27,7 @@ const DETAIL_INCLUDE = {
     include: { variant: { select: { sku: true, barcode: true } }, warehouse: { select: { code: true } } },
   },
   shipment: { include: SHIPMENT_INCLUDE },
+  shippingCourier: { select: { id: true, name: true, isActive: true } },
 } as const satisfies Prisma.OrderInclude;
 
 type DetailRow = Prisma.OrderGetPayload<{ include: typeof DETAIL_INCLUDE }>;
@@ -52,6 +53,9 @@ export interface FulfillmentDetailDto {
   shippingName: string | null;
   shippingPhone: string | null;
   shippingAddress: string | null;
+  /** ທີ່ລູກຄ້າເລືອກຕອນສັ່ງໃນເວັບ: ໃຊ້ຕື່ມຟອມສົ່ງອອກ ແລະ ພິມໃນໃບປະໜ້າ */
+  preferredCourier: { id: string; name: string; isActive: boolean } | null;
+  shippingBranch: string | null;
   note: string | null;
   paidAt: Date | null;
   items: {
@@ -284,6 +288,8 @@ function toDetail(row: DetailRow, storeName: string): FulfillmentDetailDto {
     shippingName: row.shippingName,
     shippingPhone: row.shippingPhone,
     shippingAddress: row.shippingAddress,
+    preferredCourier: row.shippingCourier,
+    shippingBranch: row.shippingBranch,
     note: row.note,
     paidAt: row.paidAt,
     items: row.items.map((item) => ({

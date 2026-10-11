@@ -1,6 +1,6 @@
 # Phase 3 ໂມດູນ 7: E-Commerce Storefront, sub-project 3b (ໜ້າຮ້ານສາທາລະນະ)
 
-ວັນທີ: 2026-10-11 · ສະຖານະ: B1 (API), B2 (ໜ້າສິນຄ້າ), B3 (ກະຕ່າ/checkout/ໜ້າບິນ) ສຳເລັດ; B4 ຍັງບໍ່ເລີ່ມ · Branch: `phase3-storefront`
+ວັນທີ: 2026-10-11 · ສະຖານະ: ສຳເລັດ (B1–B4). ຍັງບໍ່ໄດ້ smoke ໜ້າ admin ໃນ browser ຈິງ (ມີ test ຂອງ component + e2e ຂອງ API) · Branch: `phase3-storefront`
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
@@ -104,7 +104,7 @@ Migration ໃໝ່ແບບເພີ່ມຢ່າງດຽວ:
 
 - ລາຍການບິນ ແລະ ໜ້າບິນ: ປ້າຍຊ່ອງທາງ "ເວັບ" ສຳລັບ `STOREFRONT`.
 - ໜ້າບິນ: ສະແດງ courier + ສາຂາທີ່ລູກຄ້າເລືອກ; dialog ສົ່ງອອກຕື່ມ courier ນັ້ນໄວ້ກ່ອນ (ແກ້ໄດ້).
-- ໃບປະໜ້າ: ເພີ່ມສາຂາປາຍທາງຖ້າມີ.
+- ໃບປະໜ້າ: ເພີ່ມ courier + ສາຂາປາຍທາງທີ່ລູກຄ້າເລືອກ ຖ້າມີ. API ຂອງ admin (`GET /orders/:id`, `GET /fulfillment/:orderId`) ຄືນ `preferredCourier` ແລະ `shippingBranch`.
 - Slip panel: ປ້າຍ "ລູກຄ້າອັບໂຫຼດ" ສຳລັບ `source=STOREFRONT`.
 - ບໍ່ມີສິດໃໝ່: ໃຊ້ `orders:*`, `payments:*`, `logistics:*` ທີ່ມີ.
 

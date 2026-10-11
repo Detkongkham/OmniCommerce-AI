@@ -3,7 +3,7 @@ import { z } from "zod";
 // ---------------------------------------------------------------------------
 // ຄ່າຄົງທີ່ (ກົງກັບ enum ໃນ Prisma schema)
 // ---------------------------------------------------------------------------
-export const SLIP_SOURCES = ["CHAT", "UPLOAD"] as const;
+export const SLIP_SOURCES = ["CHAT", "UPLOAD", "STOREFRONT"] as const;
 export const SLIP_STATUSES = ["PENDING_READ", "READ", "READ_FAILED", "CONFIRMED", "REJECTED"] as const;
 /** flag ທີ່ລະບົບໃສ່ໃຫ້ (ຊ່ວຍຕັດສິນ ບໍ່ບລັອກ). ລຳດັບນີ້ຄືລຳດັບທີ່ເກັບ/ສະແດງ. */
 export const SLIP_FLAGS = [

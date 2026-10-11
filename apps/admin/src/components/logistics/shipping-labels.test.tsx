@@ -19,6 +19,8 @@ const base: FulfillmentDetailDto = {
   shippingName: "Noy",
   shippingPhone: "02055551234",
   shippingAddress: "Ban Sisavat, Vientiane",
+  preferredCourier: null,
+  shippingBranch: null,
   note: null,
   paidAt: null,
   items: [
@@ -68,6 +70,16 @@ describe("ShippingLabels", () => {
     expect(await screen.findByRole("img", { name: "AN123" })).toBeInTheDocument();
     expect(screen.getByTestId("label-o2")).toHaveTextContent("Anousith");
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+  });
+
+  it("ບິນຈາກເວັບ: ພິມ courier ແລະ ສາຂາປາຍທາງທີ່ລູກຄ້າເລືອກ", async () => {
+    vi.mocked(apiFetch).mockImplementation((async () => ({
+      ...base,
+      preferredCourier: { id: "c1", name: "Anousith", isActive: true },
+      shippingBranch: "Phonthan branch",
+    })) as typeof apiFetch);
+    renderWithProviders(<ShippingLabels ids={["o1"]} />);
+    expect(await screen.findByTestId("label-o1")).toHaveTextContent("Anousith · Phonthan branch");
   });
 
   it("ບາງບິນໂຫຼດບໍ່ໄດ້: ແຈ້ງ ແລະ ພິມສະເພາະທີ່ໄດ້ (ບໍ່ພິມອັດຕະໂນມັດ)", async () => {
