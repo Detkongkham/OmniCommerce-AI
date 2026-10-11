@@ -36,9 +36,16 @@ export function slipFlagKey(flag: string): TranslationKey {
   return (SLIP_FLAGS as readonly string[]).includes(flag) ? SLIP_FLAG_KEYS[flag as SlipFlag] : "slips.flag.UNKNOWN";
 }
 
-/** ກວດໄຟລ໌ຝັ່ງ client ກ່ອນສົ່ງ (API ກວດ magic bytes ຊ້ຳ): "type" | "size" | null */
-export function validateSlipFile(file: { type: string; size: number }): "type" | "size" | null {
-  if (!(SLIP_ALLOWED_MIMES as readonly string[]).includes(file.type)) return "type";
+const EXT_MIME: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+const HEIC_TYPES = new Set(["image/heic", "image/heif"]);
+
+/** ກວດໄຟລ໌ຝັ່ງ client ກ່ອນສົ່ງ (API ກວດ magic bytes ຊ້ຳ ແລະ ເປັນຜູ້ຕັດສິນ): "type" | "size" | "heic" | null.
+ *  gallery ມືຖືບາງເຄື່ອງສົ່ງ type ວ່າງ: ຖ້າ type ວ່າງ ໃຫ້ເດົາຈາກນາມສະກຸນ */
+export function validateSlipFile(file: { type: string; size: number; name?: string }): "type" | "size" | "heic" | null {
+  const ext = file.name?.includes(".") ? file.name.split(".").pop()?.toLowerCase() : undefined;
+  if (HEIC_TYPES.has(file.type.toLowerCase()) || ext === "heic" || ext === "heif") return "heic";
+  const mime = file.type === "" && ext ? EXT_MIME[ext] : file.type;
+  if (!mime || !(SLIP_ALLOWED_MIMES as readonly string[]).includes(mime)) return "type";
   if (file.size <= 0 || file.size > SLIP_MAX_BYTES) return "size";
   return null;
 }

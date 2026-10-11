@@ -36,7 +36,7 @@ function OrderSlipsInner({ order }: { order: SlipOrderInfo }) {
     if (!file) return;
     const problem = validateSlipFile(file);
     if (problem) {
-      setFileError(problem === "type" ? t("slips.file.type") : t("slips.file.size", { max: MAX_MB }));
+      setFileError(problem === "type" ? t("slips.file.type") : problem === "heic" ? t("slips.file.heic") : t("slips.file.size", { max: MAX_MB }));
       return;
     }
     setFileError(null);
@@ -62,7 +62,8 @@ function OrderSlipsInner({ order }: { order: SlipOrderInfo }) {
               id={`${uid}-file`}
               type="file"
               accept="image/jpeg,image/png,image/webp"
-              aria-label={t("slips.upload")}
+              aria-hidden="true"
+              tabIndex={-1}
               className="sr-only"
               onChange={(event) => void onPick(event)}
             />
@@ -88,7 +89,7 @@ function OrderSlipsInner({ order }: { order: SlipOrderInfo }) {
         </div>
       ) : slips.isPending ? (
         <Skeleton role="status" aria-busy="true" aria-label={t("common.loading")} className="h-24 w-full" />
-      ) : slips.data && slips.data.length > 0 ? (
+      ) : Array.isArray(slips.data) && slips.data.length > 0 ? (
         <div className="space-y-4">
           {slips.data.map((slip) => (
             <SlipCard key={slip.id} slip={slip} order={order} canReview={canReview} />

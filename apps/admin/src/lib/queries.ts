@@ -582,8 +582,11 @@ export function useAssignees(options: { enabled?: boolean } = {}) {
 // ສະລິບໂອນເງິນ
 // ---------------------------------------------------------------------------
 /** ມີສະລິບຍັງ PENDING_READ → poll ທຸກ 3 ວິ ຈົນ worker ອ່ານແລ້ວ */
-const slipsRefetchInterval = (query: { state: { data: SlipDto[] | undefined } }): number | false =>
-  query.state.data?.some((slip) => slip.status === "PENDING_READ") ? 3000 : false;
+export const slipsRefetchInterval = (query: { state: { data: SlipDto[] | undefined } }): number | false => {
+  const data: unknown = query.state.data;
+  // ກັນ response ທີ່ບໍ່ແມ່ນ array (ບໍ່ໃຫ້ poll ພັງ)
+  return Array.isArray(data) && data.some((slip: SlipDto) => slip.status === "PENDING_READ") ? 3000 : false;
+};
 
 export function useOrderSlips(orderId: string, options: { enabled?: boolean } = {}) {
   return useQuery({

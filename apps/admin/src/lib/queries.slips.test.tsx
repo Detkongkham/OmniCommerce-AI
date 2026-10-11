@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "./api";
 import {
+  slipsRefetchInterval,
   useConfirmSlip,
   useConversationSlips,
   useLinkChatSlip,
@@ -124,5 +125,17 @@ describe("slip hooks", () => {
     });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["slips"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["orders"] });
+  });
+});
+
+describe("slipsRefetchInterval", () => {
+  const interval = (data: unknown) => slipsRefetchInterval({ state: { data } } as never);
+  const row = (status: string) => ({ status });
+  it("poll 3 ວິ ສະເພາະເມື່ອມີ PENDING_READ; ຂໍ້ມູນບໍ່ເປັນ array = ບໍ່ poll ແລະ ບໍ່ throw", () => {
+    expect(interval(undefined)).toBe(false);
+    expect(interval({ id: "o1" })).toBe(false);
+    expect(interval([])).toBe(false);
+    expect(interval([row("READ")])).toBe(false);
+    expect(interval([row("READ"), row("PENDING_READ")])).toBe(3000);
   });
 });

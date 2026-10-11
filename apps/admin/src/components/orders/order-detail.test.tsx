@@ -29,15 +29,10 @@ const withStatus = (status: OrderDetailDto["status"], patch: Partial<OrderDetail
   ...base, status, secondsUntilExpiry: null, ...patch,
 });
 
-// panel ສະລິບເອີ້ນ GET /orders/:id/slips ເຊິ່ງຕ້ອງໄດ້ array: ຫໍ່ທຸກ mockImplementation ຂອງ test ນີ້
-// ໃຫ້ GET .../slips ຕອບ [] ສະເໝີ (test ເກົ່າຕອບບິນໃຫ້ທຸກ path) ແລະ ບໍ່ກະທົບ logic ຂອງແຕ່ລະ test
-const rawMockImplementation = vi.mocked(apiFetch).mockImplementation.bind(vi.mocked(apiFetch));
-vi.mocked(apiFetch).mockImplementation = ((impl: typeof apiFetch) =>
-  rawMockImplementation(((path: string, options?: { method?: string }) =>
-    !options?.method && path.endsWith("/slips") ? Promise.resolve([]) : impl(path, options as never)) as typeof apiFetch)) as never;
-
+// panel ສະລິບເອີ້ນ GET /orders/:id/slips: mockOrder ຕອບ [] ໃຫ້ path ນັ້ນ; test ທີ່ມີ mock ຂອງຕົນເອງ (ຕອບບິນທຸກ path)
+// ກໍ່ບໍ່ເປັນຫຍັງ ເພາະ panel ທົນ response ທີ່ບໍ່ແມ່ນ array
 function mockOrder(order: OrderDetailDto) {
-  vi.mocked(apiFetch).mockImplementation((async () => order) as typeof apiFetch);
+  vi.mocked(apiFetch).mockImplementation((async (path: string) => (path.endsWith("/slips") ? [] : order)) as typeof apiFetch);
 }
 const posts = () => vi.mocked(apiFetch).mock.calls.filter((call) => call[1]?.method === "POST");
 const gets = () => vi.mocked(apiFetch).mock.calls.filter((call) => !call[1]?.method && !String(call[0]).endsWith("/slips"));

@@ -26,6 +26,26 @@ describe("validateSlipFile", () => {
   });
 });
 
+describe("validateSlipFile: ຮູບຈາກ gallery ມືຖື", () => {
+  it("type ວ່າງ + ນາມສະກຸນ jpg/jpeg/png/webp (ບໍ່ສົນຕົວພິມ) = ຜ່ານ; ນາມສະກຸນອື່ນ/ບໍ່ມີ = type", () => {
+    for (const name of ["a.jpg", "a.JPEG", "a.png", "A.WebP"]) expect(validateSlipFile({ type: "", size: 10, name })).toBeNull();
+    expect(validateSlipFile({ type: "", size: 10, name: "a.pdf" })).toBe("type");
+    expect(validateSlipFile({ type: "", size: 10, name: "noext" })).toBe("type");
+    expect(validateSlipFile({ type: "", size: 10 })).toBe("type");
+    expect(validateSlipFile({ type: "", size: 0, name: "a.jpg" })).toBe("size");
+  });
+  it("HEIC/HEIF (ຕາມ type ຫຼື ນາມສະກຸນ) = heic", () => {
+    expect(validateSlipFile({ type: "image/heic", size: 10 })).toBe("heic");
+    expect(validateSlipFile({ type: "image/heif", size: 10 })).toBe("heic");
+    expect(validateSlipFile({ type: "", size: 10, name: "IMG_1.HEIC" })).toBe("heic");
+    expect(validateSlipFile({ type: "application/octet-stream", size: 10, name: "x.heif" })).toBe("heic");
+  });
+  it("dictionary ມີ slips.file.heic ທັງ lo ແລະ en", () => {
+    expect(dictionaries.en["slips.file.heic"]).toBe("iPhone HEIC photos are not supported; send a screenshot or convert to JPG");
+    expect(dictionaries.lo["slips.file.heic"]).toBeTruthy();
+  });
+});
+
 describe("isOpenSlip / canConfirmSlip", () => {
   it("open = ຍັງບໍ່ຢືນຢັນ/ປະຕິເສດ", () => {
     for (const status of SLIP_STATUSES) expect(isOpenSlip(slip({ status }))).toBe(["PENDING_READ", "READ", "READ_FAILED"].includes(status));
