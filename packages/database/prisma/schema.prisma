@@ -60,6 +60,7 @@ enum OrderStatus {
 enum SlipSource {
   CHAT
   UPLOAD
+  STOREFRONT // ລູກຄ້າອັບໂຫຼດເອງຈາກໜ້າບິນຂອງເວັບ
 }
 
 enum SlipStatus {
@@ -347,6 +348,12 @@ model Order {
   shippingName    String?
   shippingPhone   String?
   shippingAddress String?
+  // ທີ່ລູກຄ້າເລືອກຕອນ checkout ໃນເວັບ (ທີ່ສົ່ງຈິງຢູ່ Shipment.courierId)
+  shippingCourierId String?
+  shippingCourier   Courier? @relation("OrderShippingCourier", fields: [shippingCourierId], references: [id], onDelete: SetNull)
+  shippingBranch    String? // ສາຂາປາຍທາງ
+  // ລິ້ງລັບຕິດຕາມບິນຂອງເວັບ (32 byte base64url); null = ບິນທີ່ບໍ່ໄດ້ມາຈາກເວັບ
+  publicToken     String? @unique
   note            String?
   conversationId  String?
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
@@ -382,6 +389,7 @@ model Order {
   @@index([liveSessionId, customerId, status])
   @@index([createdById, createdAt])
   @@index([paidAt])
+  @@index([shippingCourierId])
 }
 
 model OrderItem {
@@ -645,6 +653,7 @@ model Courier {
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
   shipments           Shipment[]
+  preferredByOrders   Order[]    @relation("OrderShippingCourier")
 }
 
 // ການແພັກ/ສົ່ງຂອງບິນ (1 ຕໍ່ 1); ສ້າງຕອນເລີ່ມແພັກ
