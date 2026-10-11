@@ -26,6 +26,7 @@ const order = (patch: Partial<StoreOrder> = {}): StoreOrder => ({
   subtotal: "200000.00",
   vatAmount: "0.00",
   total: "200000.00",
+  coupon: null,
   items: [
     { variantId: "v1", productName: "ເສື້ອ", variantName: "ດຳ", quantity: 2, unitPrice: "100000.00", lineTotal: "200000.00" },
   ],
@@ -76,6 +77,14 @@ describe("OrderView", () => {
     for (const text of ["ນາງ ກ", "02055555555", "ບ້ານ ກ", "ອານຸສິດ · ໂພນທັນ", "ໂທກ່ອນສົ່ງ"]) {
       expect(within(shipping).getByText(text)).toBeInTheDocument();
     }
+  });
+
+  it("ບິນທີ່ໃຊ້ໂຄດ: ສະແດງສ່ວນຫຼຸດ ແລະ ລະຫັດ ກ່ອນຍອດລວມ", () => {
+    view(order({ subtotal: "180000.00", total: "180000.00", coupon: { code: "NEW10", discount: "20000.00" } }));
+    const items = screen.getByRole("region", { name: "ລາຍການສິນຄ້າ" });
+    expect(within(items).getByText("ສ່ວນຫຼຸດ (NEW10)")).toBeInTheDocument();
+    expect(within(items).getByText("−20,000 ກີບ")).toBeInTheDocument();
+    expect(within(items).getByText("180,000 ກີບ")).toBeInTheDocument();
   });
 
   it("ຮ້ານຍັງບໍ່ໄດ້ຕັ້ງບັນຊີ → ບອກໃຫ້ຕິດຕໍ່ຮ້ານ", () => {

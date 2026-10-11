@@ -1,4 +1,5 @@
-import { STORE_MAX_OPEN_ORDERS } from "@oca/shared";
+import { type CouponRejectReason, STORE_MAX_OPEN_ORDERS } from "@oca/shared";
+import { formatLak } from "./format";
 
 /** ຂໍ້ຄວາມສຳລັບ error ຂອງ API ທີ່ລູກຄ້າແກ້ໄຂເອງໄດ້; ຢ່າງອື່ນໃຊ້ `fallback` */
 const MESSAGES: Record<string, string> = {
@@ -16,4 +17,24 @@ const MESSAGES: Record<string, string> = {
 
 export function apiMessage(code: string | undefined, fallback: string): string {
   return (code && MESSAGES[code]) || fallback;
+}
+
+const COUPON_MESSAGES: Record<CouponRejectReason, string> = {
+  NOT_FOUND: "ບໍ່ພົບໂຄດນີ້ ກະລຸນາກວດຕົວສະກົດ",
+  INACTIVE: "ໂຄດນີ້ຖືກປິດໃຊ້ແລ້ວ",
+  NOT_STARTED: "ໂຄດນີ້ຍັງບໍ່ຮອດເວລາໃຊ້",
+  EXPIRED: "ໂຄດນີ້ໝົດອາຍຸແລ້ວ",
+  MIN_SUBTOTAL: "ຍອດຊື້ຍັງບໍ່ຮອດຂັ້ນຕ່ຳຂອງໂຄດນີ້",
+  USAGE_LIMIT: "ໂຄດນີ້ຖືກໃຊ້ຄົບຈຳນວນແລ້ວ",
+  PHONE_LIMIT: "ເບີໂທນີ້ໃຊ້ໂຄດນີ້ຄົບຈຳນວນແລ້ວ",
+  PHONE_REQUIRED: "ໂຄດນີ້ໃຊ້ບໍ່ໄດ້ກັບຄຳສັ່ງຊື້ນີ້",
+};
+
+/** ເຫດຜົນທີ່ໂຄດໃຊ້ບໍ່ໄດ້ ເປັນຂໍ້ຄວາມສຳລັບລູກຄ້າ */
+export function couponMessage(error: { reason?: unknown; minSubtotal?: unknown }): string {
+  const reason = typeof error.reason === "string" && error.reason in COUPON_MESSAGES ? (error.reason as CouponRejectReason) : null;
+  if (reason === "MIN_SUBTOTAL" && typeof error.minSubtotal === "string") {
+    return `ໂຄດນີ້ໃຊ້ໄດ້ເມື່ອຊື້ຄົບ ${formatLak(error.minSubtotal)}`;
+  }
+  return reason ? COUPON_MESSAGES[reason] : "ໂຄດນີ້ໃຊ້ບໍ່ໄດ້";
 }

@@ -1,4 +1,4 @@
-import type { OrderStatus, ReceivingAccount, StoreSlipStatus, StoreStock, StoreStockStatus } from "@oca/shared";
+import type { CouponRejectReason, OrderStatus, ReceivingAccount, StoreSlipStatus, StoreStock, StoreStockStatus } from "@oca/shared";
 
 /** ຮູບຮ່າງ response ຂອງ API ສາທາລະນະ `/store/*` (ກົງກັບ DTO ໃນ apps/api/src/modules/storefront) */
 
@@ -69,6 +69,7 @@ export interface StoreOrder {
   subtotal: string;
   vatAmount: string;
   total: string;
+  coupon: { code: string; discount: string } | null;
   items: { variantId: string; productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
   shipping: {
     name: string | null;
@@ -100,6 +101,8 @@ export type StoreCartLine =
 
 export interface StoreCart {
   items: StoreCartLine[];
+  coupon: { code: string; discount: string } | null;
+  couponError: { reason: CouponRejectReason; minSubtotal?: string } | null;
   subtotal: string;
   vatAmount: string;
   total: string;

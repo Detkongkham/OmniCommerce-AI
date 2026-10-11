@@ -28,6 +28,8 @@ const line = (variantId: string, quantity: number, patch: object = {}): StoreCar
 });
 const cartOf = (items: StoreCartLine[], patch: Partial<StoreCart> = {}): StoreCart => ({
   items,
+  coupon: null,
+  couponError: null,
   subtotal: "0.00",
   vatAmount: "0.00",
   total: "300.00",
@@ -63,10 +65,13 @@ describe("CartView", () => {
     expect(screen.getByText("300 ກີບ")).toBeInTheDocument();
     expect(screen.getByText("ຄ່າຂົນສົ່ງຊຳລະຕອນຮັບສິນຄ້າ")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "ດຳເນີນການສັ່ງຊື້" })).toHaveAttribute("href", "/checkout");
-    expect(checkCartMock).toHaveBeenCalledWith([
-      { variantId: "a", quantity: 2 },
-      { variantId: "b", quantity: 1 },
-    ]);
+    expect(checkCartMock).toHaveBeenCalledWith(
+      [
+        { variantId: "a", quantity: 2 },
+        { variantId: "b", quantity: 1 },
+      ],
+      undefined,
+    );
   });
 
   it("ປ່ຽນຈຳນວນ → ອັບເດດກະຕ່າ ແລະ ຖາມ server ໃໝ່; ລຶບ → ລາຍການຫາຍ", async () => {
@@ -77,7 +82,7 @@ describe("CartView", () => {
     render(<CartView />);
     await user.click(within(await screen.findByRole("listitem", { name: "ສິນຄ້າ a" })).getByRole("button", { name: "ເພີ່ມຈຳນວນ ສິນຄ້າ a" }));
     expect(getCart()[0]).toEqual({ variantId: "a", quantity: 3 });
-    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "a", quantity: 3 }, { variantId: "b", quantity: 1 }]));
+    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "a", quantity: 3 }, { variantId: "b", quantity: 1 }], undefined));
     await user.click(within(row("ສິນຄ້າ b")).getByRole("button", { name: "ລຶບ ສິນຄ້າ b ອອກຈາກກະຕ່າ" }));
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "ສິນຄ້າ b" })).not.toBeInTheDocument());
     expect(getCart()).toEqual([{ variantId: "a", quantity: 3 }]);

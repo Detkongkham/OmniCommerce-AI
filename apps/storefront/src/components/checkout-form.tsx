@@ -10,7 +10,7 @@ import { clearCart, useCart } from "@/lib/cart";
 import { ClientApiError, createOrder } from "@/lib/client-api";
 import { formatLak } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
-import { apiMessage } from "@/lib/messages";
+import { apiMessage, couponMessage } from "@/lib/messages";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { useCartCheck } from "@/lib/use-cart-check";
 
@@ -39,7 +39,10 @@ function validate(values: Values): Partial<Record<FieldName, string>> {
 export function CheckoutForm({ couriers }: { couriers: { id: string; name: string }[] }) {
   const router = useRouter();
   const items = useCart();
-  const { state, reload } = useCartCheck();
+  // ໂຄດທີ່ລູກຄ້າກົດ "ໃຊ້" (server ເປັນຜູ້ຕັດສິນວ່າໃຊ້ໄດ້ ຫຼື ບໍ່)
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCode, setAppliedCode] = useState<string | undefined>(undefined);
+  const { state, reload } = useCartCheck(appliedCode);
   const [values, setValues] = useState<Values>(EMPTY_VALUES);
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -120,6 +123,8 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
       courierId: values.courierId,
       branch: values.branch.trim(),
       ...(note ? { note } : {}),
+      // ສົ່ງສະເພາະໂຄດທີ່ server ຢືນຢັນວ່າໃຊ້ໄດ້ (ຍອດທີ່ຄາດລວມສ່ວນຫຼຸດແລ້ວ)
+      ...(cart.coupon ? { couponCode: cart.coupon.code } : {}),
       expectedTotal: cart.total,
     };
     const serialized = JSON.stringify(body);
@@ -142,6 +147,11 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
             : "ລາຄາມີການປ່ຽນແປງ ກະລຸນາກວດຍອດໃໝ່ແລ້ວກົດຢືນຢັນອີກຄັ້ງ",
         });
         reload();
+      } else if (code === "COUPON_INVALID" && error instanceof ClientApiError) {
+        // ໂຄດຖືກປະຕິເສດຕອນສັ່ງ (ເຊັ່ນ limit ຕໍ່ເບີ): ຖອດອອກ ແລ້ວໃຫ້ລູກຄ້າຕັດສິນໃຈສັ່ງຕໍ່ໃນລາຄາເຕັມ
+        setProblem({ message: `${couponMessage(error.body)} ໂຄດຖືກຖອດອອກແລ້ວ ກະລຸນາກວດຍອດໃໝ່` });
+        setAppliedCode(undefined);
+        setCouponInput("");
       } else if (code && CART_PROBLEM_CODES.has(code)) {
         setProblem({ message: "ສິນຄ້າບາງລາຍການມີບໍ່ພໍ ຫຼື ບໍ່ມີຂາຍແລ້ວ", cartLink: true });
         reload();
@@ -207,6 +217,63 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
             ),
           )}
         </ul>
+        <div className="flex flex-col gap-2 border-t border-line pt-3">
+          <label htmlFor="checkout-coupon" className="text-xs font-semibold text-ink-secondary">
+            ໂຄດສ່ວນຫຼຸດ
+          </label>
+          <div className="flex gap-2">
+            <Input
+              id="checkout-coupon"
+              className="h-10 uppercase"
+              maxLength={30}
+              autoCapitalize="characters"
+              autoComplete="off"
+              value={couponInput}
+              onChange={(event) => setCouponInput(event.target.value)}
+              onKeyDown={(event) => {
+                // Enter ໃນຊ່ອງໂຄດ = ໃຊ້ໂຄດ ບໍ່ແມ່ນສົ່ງຄຳສັ່ງຊື້
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  setAppliedCode(couponInput.trim().toUpperCase() || undefined);
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outlinePrimary"
+              className="h-10 shrink-0 rounded-xl"
+              aria-label="ໃຊ້ໂຄດ"
+              disabled={!couponInput.trim()}
+              onClick={() => setAppliedCode(couponInput.trim().toUpperCase() || undefined)}
+            >
+              ໃຊ້
+            </Button>
+          </div>
+          {cart.couponError && !refreshing ? (
+            <p role="status" className="text-xs font-semibold text-danger-ink">
+              {couponMessage(cart.couponError)}
+            </p>
+          ) : null}
+          {cart.coupon ? (
+            <div className="flex items-center justify-between gap-3 text-sm text-success-ink">
+              <span>{`ສ່ວນຫຼຸດ (${cart.coupon.code})`}</span>
+              <span className="flex items-center gap-2">
+                <span>{`−${formatLak(cart.coupon.discount)}`}</span>
+                <button
+                  type="button"
+                  aria-label={`ລຶບໂຄດ ${cart.coupon.code}`}
+                  className="rounded-md px-1 text-xs text-ink-secondary underline underline-offset-4 hover:text-danger-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setAppliedCode(undefined);
+                    setCouponInput("");
+                  }}
+                >
+                  ລຶບ
+                </button>
+              </span>
+            </div>
+          ) : null}
+        </div>
         <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
           <span className="text-sm text-ink-secondary">ຍອດທີ່ຕ້ອງໂອນ</span>
           <span className="text-xl font-bold text-ink">{formatLak(cart.total)}</span>

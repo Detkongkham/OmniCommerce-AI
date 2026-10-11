@@ -35,8 +35,9 @@ const postJson = (body: unknown, headers: Record<string, string> = {}): RequestI
   body: JSON.stringify(body),
 });
 
-export function checkCart(items: readonly CartItem[]): Promise<StoreCart> {
-  return send<StoreCart>("/cart/check", postJson({ items }));
+/** `couponCode`: ໂຄດທີ່ລູກຄ້າໃສ່ (server ບອກວ່າໃຊ້ໄດ້ ຫຼື ບໍ່ ໃນ `coupon` / `couponError`) */
+export function checkCart(items: readonly CartItem[], couponCode?: string): Promise<StoreCart> {
+  return send<StoreCart>("/cart/check", postJson(couponCode ? { items, couponCode } : { items }));
 }
 
 /** `idempotencyKey` ຕ້ອງຄືເກົ່າເມື່ອລອງສົ່ງ body ເດີມຄືນ (ກັນໄດ້ສອງບິນ) */

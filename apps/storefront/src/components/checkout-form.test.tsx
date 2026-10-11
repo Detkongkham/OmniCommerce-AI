@@ -16,7 +16,7 @@ vi.mock("@/lib/client-api", async (original) => ({
 const checkCartMock = vi.mocked(checkCart);
 const createOrderMock = vi.mocked(createOrder);
 
-const cart = (total = "200.00", orderable = true): StoreCart => ({
+const cart = (total = "200.00", orderable = true, patch: Partial<StoreCart> = {}): StoreCart => ({
   items: [
     {
       variantId: "v1",
@@ -32,10 +32,13 @@ const cart = (total = "200.00", orderable = true): StoreCart => ({
       insufficient: false,
     },
   ],
+  coupon: null,
+  couponError: null,
   subtotal: total,
   vatAmount: "0.00",
   total,
   orderable,
+  ...patch,
 });
 
 const couriers = [
@@ -214,5 +217,82 @@ describe("CheckoutForm", () => {
     render(<CheckoutForm couriers={[]} />);
     expect(await screen.findByText("ຮ້ານຍັງບໍ່ໄດ້ຕັ້ງບໍລິສັດຂົນສົ່ງ ຈຶ່ງຍັງສັ່ງຊື້ທາງເວັບບໍ່ໄດ້")).toBeInTheDocument();
     expect(submit()).toBeDisabled();
+  });
+});
+
+describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
+  const apply = async (user: ReturnType<typeof userEvent.setup>, code: string) => {
+    await user.type(await screen.findByLabelText("ໂຄດສ່ວນຫຼຸດ"), code);
+    await user.click(screen.getByRole("button", { name: "ໃຊ້ໂຄດ" }));
+  };
+
+  it("ໃສ່ໂຄດ → ຖາມ server ພ້ອມໂຄດ (ຕົວພິມໃຫຍ່), ສະແດງສ່ວນຫຼຸດ ແລະ ຍອດໃໝ່", async () => {
+    const user = userEvent.setup();
+    render(<CheckoutForm couriers={couriers} />);
+    await screen.findByLabelText("ໂຄດສ່ວນຫຼຸດ");
+    checkCartMock.mockResolvedValue(cart("180.00", true, { coupon: { code: "NEW10", discount: "20.00" } }));
+    await apply(user, " new10 ");
+    expect(await screen.findByText("ສ່ວນຫຼຸດ (NEW10)")).toBeInTheDocument();
+    expect(screen.getByText("−20 ກີບ")).toBeInTheDocument();
+    expect(screen.getByText("180 ກີບ")).toBeInTheDocument();
+    expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], "NEW10");
+  });
+
+  it("ສັ່ງຊື້ສົ່ງໂຄດທີ່ server ຢືນຢັນ ແລະ ຍອດຫຼັງຫຼຸດ", async () => {
+    const user = userEvent.setup();
+    createOrderMock.mockResolvedValue({ orderNumber: "SO-1", token: "tok" });
+    render(<CheckoutForm couriers={couriers} />);
+    await fill(user);
+    checkCartMock.mockResolvedValue(cart("180.00", true, { coupon: { code: "NEW10", discount: "20.00" } }));
+    await apply(user, "new10");
+    await screen.findByText("ສ່ວນຫຼຸດ (NEW10)");
+    await waitFor(() => expect(submit()).toBeEnabled());
+    await user.click(submit());
+    await waitFor(() => expect(createOrderMock).toHaveBeenCalled());
+    expect(createOrderMock.mock.calls[0]?.[0]).toMatchObject({ couponCode: "NEW10", expectedTotal: "180.00" });
+  });
+
+  it("ໂຄດໃຊ້ບໍ່ໄດ້ → ບອກເຫດຜົນ, ຍອດບໍ່ຫຼຸດ ແລະ ການສັ່ງຊື້ບໍ່ສົ່ງໂຄດ", async () => {
+    const user = userEvent.setup();
+    createOrderMock.mockResolvedValue({ orderNumber: "SO-1", token: "tok" });
+    render(<CheckoutForm couriers={couriers} />);
+    await fill(user);
+    checkCartMock.mockResolvedValue(cart("200.00", true, { couponError: { reason: "MIN_SUBTOTAL", minSubtotal: "500.00" } }));
+    await apply(user, "BIG");
+    expect(await screen.findByText("ໂຄດນີ້ໃຊ້ໄດ້ເມື່ອຊື້ຄົບ 500 ກີບ")).toBeInTheDocument();
+    expect(screen.queryByText(/ສ່ວນຫຼຸດ \(/)).not.toBeInTheDocument();
+    await waitFor(() => expect(submit()).toBeEnabled());
+    await user.click(submit());
+    await waitFor(() => expect(createOrderMock).toHaveBeenCalled());
+    expect(createOrderMock.mock.calls[0]?.[0]).not.toHaveProperty("couponCode");
+  });
+
+  it("ລຶບໂຄດ → ຖາມ server ໃໝ່ໂດຍບໍ່ມີໂຄດ", async () => {
+    const user = userEvent.setup();
+    render(<CheckoutForm couriers={couriers} />);
+    await screen.findByLabelText("ໂຄດສ່ວນຫຼຸດ");
+    checkCartMock.mockResolvedValue(cart("180.00", true, { coupon: { code: "NEW10", discount: "20.00" } }));
+    await apply(user, "NEW10");
+    await screen.findByText("ສ່ວນຫຼຸດ (NEW10)");
+    checkCartMock.mockResolvedValue(cart());
+    await user.click(screen.getByRole("button", { name: "ລຶບໂຄດ NEW10" }));
+    await waitFor(() => expect(screen.queryByText("ສ່ວນຫຼຸດ (NEW10)")).not.toBeInTheDocument());
+    expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined);
+  });
+
+  it("server ປະຕິເສດໂຄດຕອນສັ່ງ (ເຊັ່ນ ເບີນີ້ໃຊ້ຄົບແລ້ວ) → ບອກເຫດຜົນ ແລະ ຖອດໂຄດອອກ", async () => {
+    const user = userEvent.setup();
+    createOrderMock.mockRejectedValueOnce(new ClientApiError(409, "COUPON_INVALID", { reason: "PHONE_LIMIT" }));
+    render(<CheckoutForm couriers={couriers} />);
+    await fill(user);
+    checkCartMock.mockResolvedValue(cart("180.00", true, { coupon: { code: "NEW10", discount: "20.00" } }));
+    await apply(user, "NEW10");
+    await screen.findByText("ສ່ວນຫຼຸດ (NEW10)");
+    await waitFor(() => expect(submit()).toBeEnabled());
+    checkCartMock.mockResolvedValue(cart());
+    await user.click(submit());
+    expect(await screen.findByRole("alert")).toHaveTextContent("ເບີໂທນີ້ໃຊ້ໂຄດນີ້ຄົບຈຳນວນແລ້ວ");
+    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined));
+    expect(push).not.toHaveBeenCalled();
   });
 });

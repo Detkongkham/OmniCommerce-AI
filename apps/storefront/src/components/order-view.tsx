@@ -185,7 +185,13 @@ export function OrderView({ token, initialOrder, payment }: OrderViewProps) {
             </li>
           ))}
         </ul>
-        <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+        {order.coupon ? (
+          <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3 text-sm text-success-ink">
+            <span>{`ສ່ວນຫຼຸດ (${order.coupon.code})`}</span>
+            <span>{`−${formatLak(order.coupon.discount)}`}</span>
+          </div>
+        ) : null}
+        <div className={cn("flex items-baseline justify-between gap-3", order.coupon ? "" : "border-t border-line pt-3")}>
           <span className="text-sm text-ink-secondary">ຍອດລວມ</span>
           <span className="text-lg font-bold text-ink">{formatLak(order.total)}</span>
         </div>
