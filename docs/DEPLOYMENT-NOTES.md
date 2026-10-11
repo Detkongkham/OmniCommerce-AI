@@ -130,7 +130,12 @@
 - ຕ້ອງ `pnpm --filter @oca/database db:deploy` ເພື່ອໃຫ້ migration `20261011000000_storefront` ຖືກໃຊ້ (ເພີ່ມ `Order.publicToken`, `shippingCourierId`, `shippingBranch` ແລະ ຄ່າ `STOREFRONT` ຂອງ `SlipSource`; ເພີ່ມຢ່າງດຽວ).
 - `/store/*` **ບໍ່ຕ້ອງ login** ແລະ ຖືກອອກແບບໃຫ້ເວັບ (`apps/storefront`) ເອີ້ນຜ່ານ rewrite ຂອງຕົນ. CORS ບໍ່ຕ້ອງເປີດເພີ່ມ.
 - ຈຳກັດຄວາມຖີ່ຂອງ `POST` ຕໍ່ IP: `STORE_ORDER_RATE_LIMIT` (ຄ່າເລີ່ມຕົ້ນ 5 ຕໍ່ 10 ນາທີ), `STORE_SLIP_RATE_LIMIT` (10 ຕໍ່ 10 ນາທີ), `STORE_CHECK_RATE_LIMIT` (60 ຕໍ່ນາທີ). ຕົວນັບຢູ່ໃນ memory ຂອງ API process ດຽວ: restart ລ້າງຕົວນັບ ແລະ ຫຼາຍ instance ນັບແຍກກັນ. `GET` ບໍ່ຖືກຈຳກັດ (ເວັບ render ຝັ່ງ server ຈຶ່ງມາຈາກ IP ດຽວ); ຖ້າເປີດ API ອອກອິນເຕີເນັດໂດຍກົງ ໃຫ້ຈຳກັດທີ່ reverse proxy.
-- **`TRUST_PROXY` ຕ້ອງຖືກ** (ຂໍ້ 1): ຖ້າ API ເຫັນທຸກຄຳຂໍເປັນ IP ຂອງ proxy/ເວັບ ລູກຄ້າທັງໝົດຈະແບ່ງໂຄຕ້າດຽວກັນ ແລະ ຖືກ 429 ໄວ. ເວັບຕ້ອງສົ່ງ `X-Forwarded-For` ຂອງລູກຄ້າຕໍ່ມາໃຫ້ API.
+- **IP ຂອງລູກຄ້າ (ຈຳເປັນສຳລັບ rate limit):** ຄຳຂໍຈາກ browser ເຂົ້າ `apps/storefront` ທີ່ `/api/store/*` ແລ້ວ route ຂອງເວັບສົ່ງຕໍ່ໄປ API ພ້ອມ `X-Forwarded-For` (ຄ່າສຸດທ້າຍຂອງ header ທີ່ເຂົ້າມາ ຫຼື ທີ່ຢູ່ຂອງ socket). ສະນັ້ນ:
+  - API ຕ້ອງຕັ້ງ **`TRUST_PROXY=1`** ເມື່ອ API ຮັບຄຳຂໍຈາກເວັບໂດຍກົງ (ເພີ່ມ 1 ຕໍ່ proxy ແຕ່ລະຊັ້ນທີ່ຢູ່ລະຫວ່າງເວັບ ແລະ API). ຖ້າປະ `false` ລູກຄ້າທຸກຄົນຖືກນັບເປັນ IP ຂອງເວັບ ແລະ ທັງຮ້ານສັ່ງໄດ້ລວມກັນພຽງ 5 ບິນຕໍ່ 10 ນາທີ.
+  - reverse proxy ທີ່ຢູ່ໜ້າເວັບ (nginx/Caddy) ຕ້ອງ **ຂຽນທັບ** `X-Forwarded-For` ດ້ວຍ IP ຈິງ (`proxy_set_header X-Forwarded-For $remote_addr;`). ຖ້າເປີດເວັບອອກອິນເຕີເນັດໂດຍບໍ່ມີ proxy ລູກຄ້າປອມ header ນີ້ເພື່ອຫຼົບ rate limit ໄດ້ (ເພດານບິນຄ້າງຕໍ່ເບີໂທຍັງໃຊ້ຢູ່).
+  - ກວດຫຼັງ deploy: ສັ່ງບິນທົດສອບ ແລ້ວເບິ່ງ `ip` ຂອງ audit `order.create` ໃນ `/audit` ວ່າເປັນ IP ຂອງເຄື່ອງທີ່ສັ່ງ ບໍ່ແມ່ນຂອງ server.
+- env ຂອງເວັບ (`apps/storefront`): `API_URL` (ທີ່ຢູ່ API; ໃຊ້ທັງຕອນ **build** ສຳລັບ rewrite ຮູບ `/media/*` ແລະ ຕອນແລ່ນ ຈຶ່ງຕ້ອງຕັ້ງຄ່າດຽວກັນທັງສອງບ່ອນ), `STOREFRONT_URL` (URL ສາທາລະນະ ສຳລັບ sitemap/robots/ລິ້ງແຊຣ໌). build ເວັບບໍ່ຕ້ອງມີ API ແລ່ນຢູ່.
+- ຂໍ້ມູນສິນຄ້າໃນເວັບ cache 60 ວິ: ແກ້ລາຄາ/ປິດຂາຍໃນ admin ແລ້ວ ໜ້າລາຍການອາດຍັງສະແດງຄ່າເກົ່າເຖິງ 1 ນາທີ (ກະຕ່າ ແລະ ການສັ່ງຊື້ກວດສົດສະເໝີ).
 - ເວັບຂາຍສະເພາະສະຕ໋ອກຂອງ **ສາງ default** (ສາງດຽວກັບທີ່ການສ້າງບິນຈອງ). ບໍ່ມີສາງ default ທີ່ເປີດໃຊ້ = ທຸກສິນຄ້າຂຶ້ນ "ໝົດ" ແລະ ສັ່ງບໍ່ໄດ້.
 - ເພດານ (ຄ່າຄົງທີ່ໃນ `@oca/shared`, ບໍ່ແມ່ນ env): 20 ລາຍການ ແລະ 20 ອັນຕໍ່ລາຍການຕໍ່ບິນ, 2 ບິນຄ້າງຈ່າຍຕໍ່ເບີໂທ, 3 ສະລິບຕໍ່ບິນ, ປ້າຍ "ເຫຼືອ N" ເມື່ອ ≤ 5.
 - ໃຜມີລິ້ງບິນ (`publicToken`, 256 bit) ເບິ່ງຊື່/ເບີ/ທີ່ຢູ່/ລາຍການຂອງບິນນັ້ນ ແລະ ອັບໂຫຼດສະລິບໄດ້. ຢ່າ log URL ເຕັມຂອງ `/store/orders/:token` ທີ່ proxy (ຫຼື ຕັດ path ອອກ). API ຕອບ `Cache-Control: no-store` ສຳລັບເສັ້ນທາງບິນ.

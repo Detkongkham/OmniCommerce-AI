@@ -1,6 +1,6 @@
 # Phase 3 ໂມດູນ 7: E-Commerce Storefront, sub-project 3b (ໜ້າຮ້ານສາທາລະນະ)
 
-ວັນທີ: 2026-10-11 · ສະຖານະ: B1 (API) ສຳເລັດ; B2–B4 ຍັງບໍ່ເລີ່ມ · Branch: `phase3-storefront`
+ວັນທີ: 2026-10-11 · ສະຖານະ: B1 (API), B2 (ໜ້າສິນຄ້າ), B3 (ກະຕ່າ/checkout/ໜ້າບິນ) ສຳເລັດ; B4 ຍັງບໍ່ເລີ່ມ · Branch: `phase3-storefront`
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
@@ -64,14 +64,14 @@ Migration ໃໝ່ແບບເພີ່ມຢ່າງດຽວ:
 
 | Path | ເນື້ອຫາ | Render |
 |---|---|---|
-| `/` | ສິນຄ້າໃໝ່, ໝວດໝູ່ | server, revalidate 60 ວິ |
-| `/products` | ລາຍການ + ຕົວກັ່ນຕອງໝວດໝູ່ + ຄົ້ນຫາ + ແບ່ງໜ້າ | server, revalidate 60 ວິ |
+| `/` | ສິນຄ້າໃໝ່, ໝວດໝູ່ | server ຕອນມີຄຳຂໍ, ຂໍ້ມູນ cache 60 ວິ |
+| `/products` | ລາຍການ + ຕົວກັ່ນຕອງໝວດໝູ່ + ຄົ້ນຫາ + ແບ່ງໜ້າ | server ຕອນມີຄຳຂໍ, ຂໍ້ມູນ cache 60 ວິ |
 | `/products/[slug]` | ຮູບ, ເລືອກ variant, ລາຄາ, ສະຖານະສະຕ໋ອກ, ໃສ່ກະຕ່າ | server (ຂໍ້ມູນສິນຄ້າ) + client (ສະຕ໋ອກສົດ) |
 | `/cart` | ແກ້ຈຳນວນ/ລຶບ, ຍອດຈາກ `cart/check` | client |
 | `/checkout` | ຟອມ + ສະຫຼຸບ + ຢືນຢັນ | client |
 | `/orders/[token]` | ໜ້າບິນ | server, ບໍ່ cache, `noindex` |
 
-- ການເອີ້ນ API: ຝັ່ງ server ໃຊ້ `API_URL`; ຝັ່ງ client ຜ່ານ rewrite `/api/*` (ແບບດຽວກັບ admin).
+- ການເອີ້ນ API: ຝັ່ງ server ໃຊ້ `API_URL`; ຝັ່ງ client ຜ່ານ route handler `/api/store/*` ຂອງເວັບ ທີ່ສົ່ງຕໍ່ພ້ອມ `X-Forwarded-For` (rewrite ຂອງ Next ບໍ່ແນບ IP ລູກຄ້າ ຈຶ່ງໃຊ້ກັບ rate limit ບໍ່ໄດ້). ຮູບ `/media/*` ຍັງໃຊ້ rewrite.
 - ກະຕ່າ: `localStorage` ເກັບ `[{ variantId, quantity }]` ເທົ່ານັ້ນ; ຂໍ້ມູນສະແດງມາຈາກ `cart/check`. ຖ້າອ່ານ `localStorage` ບໍ່ໄດ້ ກະຕ່າຢູ່ໃນ memory ຂອງ session ນັ້ນ.
 - `Idempotency-Key` ສ້າງຕອນເປີດໜ້າ checkout ແລະ ໃຊ້ຄືເກົ່າຈົນສັ່ງສຳເລັດ.
 - ໃຊ້ component ຈາກ `@oca/ui`; ມືຖືກ່ອນ (ຈໍ 360 px ໃຊ້ໄດ້ຄົບ).
