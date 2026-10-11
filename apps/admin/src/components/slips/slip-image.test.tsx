@@ -1,5 +1,5 @@
 import { act, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type MockInstance, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import { queryKeys } from "@/lib/queries";
 import { renderWithProviders } from "@/test/render";
@@ -7,15 +7,18 @@ import { SlipImage } from "./slip-image";
 
 vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/api")>()), apiFetch: vi.fn() }));
 
-const create = vi.fn(() => "blob:mock-1");
-const revoke = vi.fn();
+// jsdom ບໍ່ມີ createObjectURL/revokeObjectURL: ກຳນົດກ່ອນ ແລ້ວ spy (restoreAllMocks ຄືນຄ່າ)
+const urlApi = URL as unknown as { createObjectURL?: (b: Blob) => string; revokeObjectURL?: (u: string) => void };
+urlApi.createObjectURL ??= () => "";
+urlApi.revokeObjectURL ??= () => {};
+let create: MockInstance<(b: Blob) => string>;
+let revoke: MockInstance<(u: string) => void>;
 beforeEach(() => {
   vi.mocked(apiFetch).mockReset();
-  create.mockClear();
-  revoke.mockClear();
-  vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
+  create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-1");
+  revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => vi.restoreAllMocks());
 
 describe("SlipImage", () => {
   it("ໂຫຼດ blob ດ້ວຍ auth ແລ້ວສະແດງຮູບ + ລິ້ງເປີດເຕັມ", async () => {
@@ -56,6 +59,23 @@ describe("SlipImage", () => {
     vi.mocked(apiFetch).mockResolvedValueOnce(new Blob(["x"]));
     await user.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByRole("img")).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("refetch ພື້ນຫຼັງລົ້ມ → ຍັງສະແດງຮູບເດີມ ບໍ່ສະແດງ error", async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce(new Blob(["x"]));
+    const { queryClient } = renderWithProviders(<SlipImage slipId="s1" />);
+    await screen.findByRole("img");
+    vi.mocked(apiFetch).mockRejectedValueOnce(new ApiError(500, "boom", [], "INTERNAL"));
+    await act(() => queryClient.refetchQueries({ queryKey: [...queryKeys.slipImages, "s1"] }));
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    expect(queryClient.getQueryState([...queryKeys.slipImages, "s1"])?.status).toBe("error");
+    // ໃຫ້ notifyManager (batch ດ້ວຍ setTimeout) ສົ່ງ state ໃຫ້ component ກ່ອນ assert
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.getByRole("img")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("ກຳລັງໂຫຼດ → skeleton ທີ່ບອກ busy", () => {

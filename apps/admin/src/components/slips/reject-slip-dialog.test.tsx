@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import { renderWithProviders } from "@/test/render";
@@ -6,8 +7,9 @@ import { RejectSlipDialog } from "./reject-slip-dialog";
 
 function setup(onConfirm = vi.fn().mockResolvedValue(undefined)) {
   const onOpenChange = vi.fn();
-  const view = renderWithProviders(<RejectSlipDialog open onOpenChange={onOpenChange} onConfirm={onConfirm} />);
-  return { ...view, onConfirm, onOpenChange };
+  const restoreFocus = vi.fn();
+  const view = renderWithProviders(<RejectSlipDialog open onOpenChange={onOpenChange} onConfirm={onConfirm} restoreFocus={restoreFocus} />);
+  return { ...view, onConfirm, onOpenChange, restoreFocus };
 }
 
 describe("RejectSlipDialog", () => {
@@ -18,11 +20,52 @@ describe("RejectSlipDialog", () => {
     await user.type(screen.getByLabelText("Reason"), "   ");
     await user.click(screen.getByRole("button", { name: "Reject slip" }));
     expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Reason")).toHaveAttribute("aria-invalid", "true");
   });
 
-  it("ຈຳກັດເຫດຜົນ 500 ໂຕ", () => {
-    setup();
-    expect(screen.getByLabelText("Reason")).toHaveAttribute("maxlength", "500");
+  it("ຈຳກັດເຫດຜົນ 500 ໂຕ", async () => {
+    const { user } = setup();
+    const input = screen.getByLabelText("Reason");
+    expect(input).toHaveAttribute("maxlength", "500");
+    await user.click(input);
+    await user.paste("a".repeat(501));
+    expect((input as HTMLInputElement).value).toHaveLength(500);
+  });
+
+  it("Escape (ບໍ່ໄດ້ກຳລັງບັນທຶກ) → ປິດ ແລະ ຄືນ focus", async () => {
+    const onOpenChange = vi.fn();
+    const restoreFocus = vi.fn();
+    function Host() {
+      const [open, setOpen] = useState(true);
+      return (
+        <RejectSlipDialog
+          open={open}
+          onOpenChange={(next) => {
+            onOpenChange(next);
+            setOpen(next);
+          }}
+          onConfirm={vi.fn().mockResolvedValue(undefined)}
+          restoreFocus={restoreFocus}
+        />
+      );
+    }
+    const { user } = renderWithProviders(<Host />);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(restoreFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it("ສຳເລັດ → ປິດ dialog ແລະ ຄືນ focus ຄັ້ງດຽວ", async () => {
+    const restoreFocus = vi.fn();
+    function Host() {
+      const [open, setOpen] = useState(true);
+      return <RejectSlipDialog open={open} onOpenChange={setOpen} onConfirm={vi.fn().mockResolvedValue(undefined)} restoreFocus={restoreFocus} />;
+    }
+    const { user } = renderWithProviders(<Host />);
+    await user.type(screen.getByLabelText("Reason"), "dup");
+    await user.click(screen.getByRole("button", { name: "Reject slip" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(restoreFocus).toHaveBeenCalledTimes(1);
   });
 
   it("ສົ່ງເຫດຜົນທີ່ຕັດຍະຫວ່າງແລ້ວ ແລະ ປິດ dialog ເມື່ອສຳເລັດ", async () => {
@@ -58,6 +101,7 @@ describe("RejectSlipDialog", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     await user.keyboard("{Escape}");
     expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     resolve();
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });

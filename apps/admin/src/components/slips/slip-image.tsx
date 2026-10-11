@@ -22,7 +22,8 @@ export function SlipImage({ slipId, className }: { slipId: string; className?: s
     return () => URL.revokeObjectURL(objectUrl);
   }, [query.data]);
 
-  if (query.isError) {
+  // ສະແດງ error ສະເພາະເມື່ອບໍ່ມີຮູບ: refetch ພື້ນຫຼັງລົ້ມບໍ່ຕ້ອງແທນຮູບທີ່ໂຫຼດໄດ້ແລ້ວ
+  if (query.isError && !query.data) {
     return (
       <div role="alert" className="flex flex-col items-start gap-2 text-xs text-danger">
         <span>{t("slips.image.error")}</span>
