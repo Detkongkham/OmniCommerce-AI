@@ -5,10 +5,10 @@ import { AlertCircle, ArrowLeft, MessageSquare, PanelRight } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
-import { useConversation, useConversationSlips, useMarkConversationRead, useMessages } from "@/lib/queries";
+import { useConversation, useMarkConversationRead, useMessages } from "@/lib/queries";
 import { Composer } from "./composer";
-import { LinkSlipDialog, type LinkSlipTarget } from "./link-slip-dialog";
 import { MessageBubble } from "./message-bubble";
+import { useSlipLinking } from "./use-slip-linking";
 
 export interface ThreadPaneProps {
   conversationId: string;
@@ -28,7 +28,6 @@ export function ThreadPane({ conversationId, canWrite, canLinkSlip = false, onBa
   const { t } = useT();
   const conversation = useConversation(conversationId);
   const messages = useMessages(conversationId);
-  const conversationSlips = useConversationSlips(conversationId, { enabled: canLinkSlip });
   const { mutate: markRead } = useMarkConversationRead();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -39,33 +38,7 @@ export function ThreadPane({ conversationId, canWrite, canLinkSlip = false, onBa
   // API ສົ່ງໃໝ່ສຸດກ່ອນ (ໜ້າທຳອິດ = ໃໝ່ສຸດ, ໜ້າຕໍ່ໄປ = ເກົ່າກວ່າ) → ກັບດ້ານເພື່ອສະແດງເກົ່າ→ໃໝ່
   const items = useMemo(() => [...(messages.data?.pages.flatMap((page) => page.items) ?? [])].reverse(), [messages.data]);
 
-  // messageId → index ຂອງຮູບທີ່ຜູກເປັນສະລິບແລ້ວ
-  const linkedByMessage = useMemo(() => {
-    const map = new Map<string, Set<number>>();
-    if (!canLinkSlip) return map;
-    for (const slip of conversationSlips.data ?? []) {
-      if (!slip.messageId || slip.attachmentIndex === null) continue;
-      const set = map.get(slip.messageId) ?? new Set<number>();
-      set.add(slip.attachmentIndex);
-      map.set(slip.messageId, set);
-    }
-    return map;
-  }, [canLinkSlip, conversationSlips.data]);
-  const [slipTarget, setSlipTarget] = useState<LinkSlipTarget | null>(null);
-  const openerKey = useRef<string | null>(null);
-
-  // ປ່ຽນເຄສ ຫຼື ເສຍສິດ → ປິດ dialog
-  useEffect(() => {
-    setSlipTarget(null);
-  }, [conversationId, canLinkSlip]);
-
-  /** ຄືນ focus ຫຼັງປິດ dialog: ປຸ່ມ "ໃຊ້ເປັນສະລິບ" ເດີມ ຖ້າຍັງຢູ່; ບໍ່ດັ່ງນັ້ນ (ຜູກແລ້ວ ປຸ່ມຫາຍ) ໄປທີ່ log */
-  function restoreSlipFocus() {
-    const key = openerKey.current;
-    const opener = key ? scrollRef.current?.querySelector<HTMLButtonElement>(`[data-slip-opener="${key}"]`) : null;
-    if (opener?.isConnected && !opener.disabled) opener.focus();
-    else scrollRef.current?.focus();
-  }
+  const slipLinking = useSlipLinking(conversationId, canLinkSlip);
 
   // ເປີດເຄສທີ່ມີ unread (ແລະ ມີຂໍ້ຄວາມໃໝ່ເຂົ້າຕອນເປີດຢູ່) → ໝາຍອ່ານ. deps ມີ unread ເພື່ອບໍ່ວົນເມື່ອ request ລົ້ມ
   useEffect(() => {
@@ -233,15 +206,8 @@ export function ThreadPane({ conversationId, canWrite, canLinkSlip = false, onBa
                   <MessageBubble
                     key={message.id}
                     message={message}
-                    onUseAsSlip={
-                      canLinkSlip
-                        ? (attachmentIndex) => {
-                            openerKey.current = `${message.id}:${attachmentIndex}`;
-                            setSlipTarget({ conversationId, messageId: message.id, attachmentIndex });
-                          }
-                        : undefined
-                    }
-                    linkedIndexes={linkedByMessage.get(message.id)}
+                    onUseAsSlip={canLinkSlip ? (attachmentIndex) => slipLinking.openFor(message.id, attachmentIndex) : undefined}
+                    linkedIndexes={slipLinking.linkedByMessage.get(message.id)}
                   />
                 ))}
               </ul>
@@ -250,9 +216,7 @@ export function ThreadPane({ conversationId, canWrite, canLinkSlip = false, onBa
         </div>
       </div>
 
-      {canLinkSlip ? (
-        <LinkSlipDialog target={slipTarget} onClose={() => setSlipTarget(null)} restoreFocus={restoreSlipFocus} />
-      ) : null}
+      {slipLinking.dialog(() => scrollRef.current)}
 
       <Composer
         key={conversationId}

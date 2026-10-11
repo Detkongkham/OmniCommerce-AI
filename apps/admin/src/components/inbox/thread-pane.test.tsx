@@ -8,6 +8,7 @@ import { LanguageProvider } from "@/lib/i18n/language-provider";
 import { renderWithProviders } from "@/test/render";
 import { ThreadPane } from "./thread-pane";
 
+vi.mock("@/components/auth/auth-provider", () => ({ useCan: () => true }));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   apiFetch: vi.fn(),
@@ -346,6 +347,24 @@ describe("ThreadPane: ໃຊ້ເປັນສະລິບ", () => {
     expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
     // ປຸ່ມຫາຍ (ຜູກແລ້ວ) → focus ຕ້ອງບໍ່ຕົກ body ຄ້າງ ແຕ່ຄືນມາທີ່ log (ບ່ອນທີ່ຍັງຢູ່)
     expect(document.body).not.toHaveFocus();
+  });
+
+  it("focus ກັບໄປປຸ່ມເດີມ ເຖິງ id ຂອງຂໍ້ຄວາມມີເຄື່ອງໝາຍພິເສດ (\" ແລະ ]) ໂດຍບໍ່ຕົກເປັນ selector error", async () => {
+    const weird = message('we"ird]id', 51, { text: null, attachments: [{ type: "image", url: "https://cdn.example/w.png" }] });
+    mockApi({ pages: [{ items: [weird], hasMore: false }] });
+    const base = vi.mocked(apiFetch).getMockImplementation() as (url: string, init?: { method?: string }) => Promise<unknown>;
+    vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
+      if (url === "/conversations/c1/slips") return [];
+      if (url.startsWith("/orders")) return { items: [order], total: 1, page: 1, pageSize: 20 };
+      return base(url, init);
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<ThreadPane conversationId="c1" canWrite canLinkSlip />);
+    const button = await screen.findByRole("button", { name: "Use as slip" });
+    await user.click(button);
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(button).toHaveFocus());
   });
 
   it("ປິດ dialog ໂດຍບໍ່ຜູກ: focus ກັບໄປປຸ່ມ 'Use as slip' ເດີມ", async () => {

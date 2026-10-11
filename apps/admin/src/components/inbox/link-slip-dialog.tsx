@@ -2,12 +2,15 @@
 
 import { Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, Skeleton, toast } from "@oca/ui";
 import Link from "next/link";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { OrderStatusPill } from "@/components/orders/order-status";
+import { ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
-import { useLinkChatSlip, useOrders } from "@/lib/queries";
+import { queryKeys, useLinkChatSlip, useOrders } from "@/lib/queries";
+import { useCanOpenOrder } from "@/lib/use-can-open-order";
 
 export interface LinkSlipTarget {
   conversationId: string;
@@ -70,6 +73,9 @@ function LinkForm({
   const { t } = useT();
   const orders = useOrders({ conversationId: target.conversationId, page: 1, pageSize: 20 });
   const link = useLinkChatSlip();
+  const queryClient = useQueryClient();
+  const canOpenOrder = useCanOpenOrder();
+  const uid = useId();
   const [picked, setPicked] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -92,7 +98,13 @@ function LinkForm({
       toast.success(t("slips.toast.linked"));
       onClose();
     } catch (error) {
-      setMessage(errorMessage(error, t));
+      if (error instanceof ApiError && error.code === "DUPLICATE_VALUE") {
+        // ມີຄົນ/ແຖບອື່ນຜູກຮູບນີ້ແລ້ວ: ຂໍ້ຄວາມສະເພາະຂອງ dialog + ດຶງ slips ໃໝ່ ໃຫ້ຟອງຂໍ້ຄວາມກາຍເປັນ "ຜູກແລ້ວ"
+        setMessage(t("slips.link.alreadyLinked"));
+        void queryClient.invalidateQueries({ queryKey: queryKeys.slips });
+      } else {
+        setMessage(errorMessage(error, t));
+      }
     } finally {
       onSavingChange(false);
     }
@@ -118,13 +130,18 @@ function LinkForm({
           <Skeleton role="status" aria-busy="true" aria-label={t("common.loading")} className="h-16 w-full" />
         ) : items.length === 0 ? (
           <p className="text-sm text-ink-secondary">
-            {t("slips.link.noOrders")}{" "}
-            <Link
-              href={`/orders/new?conversationId=${encodeURIComponent(target.conversationId)}`}
-              className="font-semibold text-brand underline"
-            >
-              {t("inbox.panel.openOrder")}
-            </Link>
+            {t("slips.link.noOrders")}
+            {canOpenOrder ? (
+              <>
+                {" "}
+                <Link
+                  href={`/orders/new?conversationId=${encodeURIComponent(target.conversationId)}`}
+                  className="font-semibold text-brand underline"
+                >
+                  {t("inbox.panel.openOrder")}
+                </Link>
+              </>
+            ) : null}
           </p>
         ) : (
           <fieldset className="space-y-2">
@@ -143,6 +160,7 @@ function LinkForm({
                       value={order.id}
                       checked={selected === order.id}
                       disabled={!ok || saving}
+                      aria-describedby={ok ? undefined : `${uid}-${order.id}-why`}
                       onChange={() => setPicked(order.id)}
                     />
                     <span className="font-mono font-semibold">{order.orderNumber}</span>
@@ -150,7 +168,11 @@ function LinkForm({
                   </span>
                   <span className="flex flex-col items-end gap-0.5">
                     <OrderStatusPill status={order.status} />
-                    {ok ? null : <span className="text-[11px] text-ink-muted">{t("slips.link.notPayable")}</span>}
+                    {ok ? null : (
+                      <span id={`${uid}-${order.id}-why`} className="text-[11px] text-ink-muted">
+                        {t("slips.link.notPayable")}
+                      </span>
+                    )}
                   </span>
                 </label>
               );

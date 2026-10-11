@@ -8,6 +8,7 @@ import { useId, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { CustomerPicker } from "@/components/orders/customer-picker";
 import { errorMessage } from "@/lib/errors";
+import { useCanOpenOrder } from "@/lib/use-can-open-order";
 import { useT } from "@/lib/i18n/language-provider";
 import { useAssignees, useUpdateConversation } from "@/lib/queries";
 import type { ConversationDto } from "@/lib/types";
@@ -37,9 +38,7 @@ function SidePanelInner({ conversation, canWrite, showTitle = true }: SidePanelP
   // CustomerPicker ຄົ້ນລູກຄ້າຜ່ານ GET /customers ທີ່ຕ້ອງ orders:read; ລາຍການບິນຂອງເຄສ (GET /orders) ກໍ່ຕ້ອງ orders:read
   const canLinkExisting = useCan("orders:read");
   // ເປີດບິນ = POST /orders ຜູກເຄສ: ຕ້ອງ inbox:write (canWrite) + orders:write + inventory:read (ຄືຂອງໜ້າ /orders/new)
-  const canWriteOrders = useCan("orders:write");
-  const canReadInventory = useCan("inventory:read");
-  const canOpenOrder = canWrite && canWriteOrders && canReadInventory;
+  const canOpenOrder = useCanOpenOrder() && canWrite;
   const update = useUpdateConversation();
   const assignees = useAssignees();
   const [createOpen, setCreateOpen] = useState(false);
