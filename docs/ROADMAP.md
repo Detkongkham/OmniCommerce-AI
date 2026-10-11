@@ -23,7 +23,7 @@
 * 7. E-Commerce Storefront (ໜ້າຮ້ານສາທາລະນະ) — **3b ສຳເລັດ**: API ສາທາລະນະ `/store/*`, ໜ້າຫຼັກ/ລາຍການ/ລາຍລະອຽດສິນຄ້າ (SEO, sitemap), ກະຕ່າ, checkout ແບບ guest, ໜ້າບິນດ້ວຍລິ້ງລັບ (ບັນຊີໂອນ, ນັບຖອຍຫຼັງ, ອັບໂຫຼດສະລິບ, tracking), ປ້າຍ/courier ຂອງບິນເວັບໃນ admin. ເຫຼືອ: ບັນຊີສະມາຊິກ (3d), ໂຄດສ່ວນຫຼຸດ/Flash Sale (3c), ພາສາ/ສະກຸນອື່ນ, COD
 * 2. Social Multi-Posting & Scheduler — **2a ສຳເລັດ**: ອັບໂຫຼດຮູບ (disk), ໂພສ/ຕັ້ງເວລາລົງ Facebook Page, ເຊື່ອມ Post CF (start session ເອງ), ໜ້າ admin `/posts` (ລາຍການ + ປະຕິທິນເດືອນ, ຟອມພ້ອມຕົວຢ່າງ, ຮູບຈາກສິນຄ້າ/URL). ເຫຼືອ: ແພລັດຟອມອື່ນ, ວິດີໂອ, ປັບຂະໜາດຮູບ, AI ຂຽນແຄັບຊັນ, ປະຕິທິນ drag & drop, ລຶບໄຟລ໌ທີ່ບໍ່ໃຊ້
 * 3. AI Image Studio
-* 5. Promotion & Marketing Engine
+* 5. Promotion & Marketing Engine — **3c ສຳເລັດ**: ໂຄດສ່ວນຫຼຸດ (ເວັບ + ຟອມເປີດບິນ), Flash Sale ຕາມເວລາທຸກຊ່ອງທາງ, ເຕືອນບິນຄ້າງຈ່າຍທາງ Messenger, ໜ້າ admin `/promotions`. ເຫຼືອ: Bundle / 1 ແຖມ 1, ໂຄດສະເພາະສິນຄ້າ, ໂຄຕ້າຈຳນວນຂອງ Flash Sale, ເຕືອນບິນເວັບ (ລໍ SMS)
 * 11. CRM & Customer Loyalty
 * ເພີ່ມຊ່ອງທາງ Instagram, LINE ໃສ່ Inbox (TikTok ປິດໄວ້ກ່ອນ)
 
@@ -32,7 +32,7 @@
 | ລຳດັບ | Sub-project | ຂອບເຂດ |
 |---|---|---|
 | 3b ✅ | 7. Storefront | ລາຍການ/ລາຍລະອຽດສິນຄ້າ (SSR, SEO, ມືຖື), ກະຕ່າ, checkout, ຈອງສະຕ໋ອກ atomic, ໂອນ + ອັບໂຫຼດສະລິບ, ຕິດຕາມບິນ |
-| 3c | 5. Promotion | ສ່ວນຫຼຸດໃນບິນ, Flash Sale, Bundle, ເຕືອນກະຕ່າຄ້າງ (ຕ້ອງມີກະຕ່າຈາກ 3b) |
+| 3c ✅ | 5. Promotion | ສ່ວນຫຼຸດໃນບິນ, Flash Sale, Bundle, ເຕືອນກະຕ່າຄ້າງ (ຕ້ອງມີກະຕ່າຈາກ 3b) |
 | 3d | 11. CRM & Loyalty | Customer 360, RFM, ລະດັບສະມາຊິກ, ແຕ້ມ (ແລກແຕ້ມໃຊ້ສ່ວນຫຼຸດຈາກ 3c) |
 | 3e | ຊ່ອງທາງ Inbox | Instagram → LINE (ລໍບັນຊີ ແລະ ການອະນຸມັດຈາກແພລັດຟອມ); ລວມ Social Posting ແພລັດຟອມອື່ນ |
 | 3f | 3. Image Studio | Canvas, ລາຍນ້ຳເປັນຊຸດ, ຕັດພື້ນຫຼັງ + ສ້າງສາກດ້ວຍ Gemini API |
