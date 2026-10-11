@@ -13,6 +13,8 @@ export interface ConfirmDialogProps {
   busy?: boolean;
   /** ປິດປຸ່ມຢືນຢັນ (ເຊັ່ນ ຂໍ້ມູນຍັງບໍ່ຄົບ) ໂດຍບໍ່ກະທົບປຸ່ມຍົກເລີກ */
   confirmDisabled?: boolean;
+  /** destructive (ເລີ່ມຕົ້ນ, ສີແດງ) ຫຼື primary (ການຢືນຢັນທົ່ວໄປ ບໍ່ແມ່ນການທຳລາຍ) */
+  tone?: "destructive" | "primary";
   onConfirm: () => void | Promise<void>;
 }
 
@@ -27,6 +29,7 @@ export function ConfirmDialog({
   closeLabel,
   busy = false,
   confirmDisabled = false,
+  tone = "destructive",
   onConfirm,
 }: ConfirmDialogProps) {
   return (
@@ -38,8 +41,8 @@ export function ConfirmDialog({
     >
       <DialogContent className="max-w-[400px] p-6" closeLabel={closeLabel} showClose={!busy}>
         <div className="flex items-start gap-3">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-danger-soft">
-            <AlertTriangle className="size-5 text-danger" aria-hidden="true" />
+          <div className={`flex size-11 shrink-0 items-center justify-center rounded-full ${tone === "primary" ? "bg-brand-soft" : "bg-danger-soft"}`}>
+            <AlertTriangle className={`size-5 ${tone === "primary" ? "text-brand" : "text-danger"}`} aria-hidden="true" />
           </div>
           <div className="min-w-0 pr-6">
             <DialogTitle>{title}</DialogTitle>
@@ -51,7 +54,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <Button
-            variant="destructive"
+            variant={tone === "primary" ? "default" : "destructive"}
             className="h-10 rounded-xl px-6 font-bold"
             loading={busy}
             disabled={confirmDisabled}

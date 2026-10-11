@@ -1,13 +1,18 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
 import { LanguageProvider } from "@/lib/i18n/language-provider";
 import type { SlipDto } from "@/lib/types";
+import { toast } from "@oca/ui";
 import { renderWithProviders } from "@/test/render";
 import { SlipCard } from "./slip-card";
 
 vi.mock("@/lib/api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/api")>()), apiFetch: vi.fn() }));
+vi.mock("@oca/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@oca/ui")>();
+  return { ...actual, toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }) };
+});
 vi.mock("./slip-image", () => ({ SlipImage: ({ slipId }: { slipId: string }) => <div data-testid={`image-${slipId}`} /> }));
 
 const order = { id: "o1", orderNumber: "SO-000001", total: "100000.00", currency: "LAK" };
@@ -25,10 +30,14 @@ const wrap = (queryClient: Parameters<typeof QueryClientProvider>[0]["client"], 
     <LanguageProvider initialLanguage="en">{ui}</LanguageProvider>
   </QueryClientProvider>
 );
+const confirmed = (patch: Partial<SlipDto["confirmed"]>) => ({ ...base.confirmed, ...patch });
 const calls = (method: string) => vi.mocked(apiFetch).mock.calls.filter((c) => (c[1] as { method?: string } | undefined)?.method === method);
 
 beforeEach(() => {
   vi.mocked(apiFetch).mockReset();
+  vi.mocked(toast.success).mockReset();
+  vi.mocked(toast.error).mockReset();
+  vi.mocked(toast.info).mockReset();
   vi.mocked(apiFetch).mockResolvedValue({});
 });
 
@@ -87,7 +96,7 @@ describe("SlipCard: ສະແດງ", () => {
 
 describe("SlipCard: ແກ້ຄ່າ", () => {
   it("ຟອມເລີ່ມຈາກຄ່າສຸດທ້າຍ; ບັນທຶກສົ່ງສະເພາະ field ທີ່ປ່ຽນ (ຍອດ normalize ຝັ່ງ API)", async () => {
-    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    const { user } = renderWithProviders(<SlipCard slip={slip({ confirmed: confirmed({ refNo: "R2" }) })} order={order} canReview />);
     expect(screen.getByLabelText("Amount")).toHaveValue("100000.00");
     expect(screen.getByLabelText("Currency")).toHaveValue("LAK");
     await user.clear(screen.getByLabelText("Amount"));
@@ -115,7 +124,49 @@ describe("SlipCard: ແກ້ຄ່າ", () => {
     await user.type(screen.getByLabelText("Destination account"), "9");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(calls("PATCH")).toHaveLength(1));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("This slip was already confirmed or rejected"));
     expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    expect(screen.getByLabelText("Destination account")).toHaveValue("010-129");
+  });
+
+  it("ບັນທຶກສຳເລັດ → toast success", async () => {
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.type(screen.getByLabelText("Destination account"), "9");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Changes saved"));
+  });
+
+  it("ບໍ່ມີການປ່ຽນ → toast.info (ບໍ່ຍິງ API)", async () => {
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(toast.info).toHaveBeenCalledWith("No changes");
+  });
+
+  it("ປ່ຽນສະກຸນຢ່າງດຽວ → ສົ່ງສະເພາະ confirmedCurrency", async () => {
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.selectOptions(screen.getByLabelText("Currency"), "THB");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(calls("PATCH")).toHaveLength(1));
+    expect(calls("PATCH")[0]).toEqual(["/slips/s1", { method: "PATCH", body: { confirmedCurrency: "THB" } }]);
+  });
+
+  it("ລ້າງຄ່າທີ່ເຄື່ອງອ່ານໃສ່ເອງ (ບໍ່ມີຄ່າຢືນຢັນ) = ບໍ່ມີການປ່ຽນ; ຖ້າມີການປ່ຽນ field ອື່ນ ກໍບໍ່ສົ່ງ null ຂອງ field ນັ້ນ", async () => {
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.clear(screen.getByLabelText("Reference no."));
+    await user.clear(screen.getByLabelText("Destination account"));
+    await user.selectOptions(screen.getByLabelText("Currency"), "");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(calls("PATCH")).toHaveLength(0);
+    expect(toast.info).toHaveBeenCalledWith("No changes");
+    await user.type(screen.getByLabelText("Reference no."), "N1");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(calls("PATCH")).toHaveLength(1));
+    expect(calls("PATCH")[0]).toEqual(["/slips/s1", { method: "PATCH", body: { confirmedRefNo: "N1" } }]);
+  });
+
+  it("ສະກຸນທີ່ບໍ່ຢູ່ໃນລາຍການ ຖືກເພີ່ມເປັນຕົວເລືອກ ເພື່ອໃຫ້ select ສະທ້ອນຄ່າຈິງ", () => {
+    renderWithProviders(<SlipCard slip={slip({ read: { ...base.read, currency: "EUR" } })} order={order} canReview />);
+    expect(screen.getByLabelText("Currency")).toHaveValue("EUR");
   });
 });
 
@@ -139,12 +190,66 @@ describe("SlipCard: ຢືນຢັນ / ປະຕິເສດ / ອ່ານໃ
     expect(within(dialog).getByRole("button", { name: "Confirm payment" })).toBeDisabled();
   });
 
-  it("ຢືນຢັນລົ້ມ (409) → dialog ປິດ + toast error; ບໍ່ crash", async () => {
+  it.each(["ORDER_INVALID_STATE", "RESERVATION_EXPIRED", "SLIP_ALREADY_REVIEWED", "CONFLICT"])(
+    "ຢືນຢັນລົ້ມແບບ state conflict (%s) → dialog ປິດ + toast error ຂໍ້ຄວາມຖືກຕ້ອງ",
+    async (code) => {
+      vi.mocked(apiFetch).mockRejectedValue(new ApiError(409, "x", [], code));
+      const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+      await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(toast.error).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(toast.error).mock.calls[0]?.[0]).toBeTruthy();
+    },
+  );
+
+  it("ຢືນຢັນລົ້ມ ORDER_INVALID_STATE → toast ເປັນຂໍ້ຄວາມຂອງ error code", async () => {
     vi.mocked(apiFetch).mockRejectedValue(new ApiError(409, "x", [], "ORDER_INVALID_STATE"));
     const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
     await user.click(screen.getByRole("button", { name: "Confirm payment" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("The order status does not allow this step"));
+  });
+
+  it("ຢືນຢັນລົ້ມຊົ່ວຄາວ (500) → dialog ຍັງເປີດ ໃຫ້ລອງໃໝ່ + toast error", async () => {
+    vi.mocked(apiFetch).mockRejectedValue(new ApiError(500, "x", [], "INTERNAL_ERROR"));
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Something went wrong. Please try again"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" })).toBeEnabled();
+  });
+
+  it("ຢືນຢັນລົ້ມເພາະເຄືອຂ່າຍ (TypeError) → dialog ຍັງເປີດ", async () => {
+    vi.mocked(apiFetch).mockRejectedValue(new TypeError("Failed to fetch"));
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("ຢືນຢັນສຳເລັດ → dialog ປິດ, toast success, focus ໄປທີ່ card (ປຸ່ມ Confirm ຫາຍ)", async () => {
+    const { user, rerender, queryClient } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(toast.success).toHaveBeenCalledWith("Payment confirmed; the order is now paid");
+    rerender(wrap(queryClient, <SlipCard slip={slip({ status: "CONFIRMED" })} order={order} canReview />));
+    await waitFor(() => expect(screen.getByTestId("slip-s1")).toHaveFocus());
+  });
+
+  it("ຢືນຢັນລົ້ມຊົ່ວຄາວ ບໍ່ລ້າງຄ່າທີ່ກຳລັງພິມໃນຟອມ", async () => {
+    vi.mocked(apiFetch).mockRejectedValue(new ApiError(500, "x", [], "INTERNAL_ERROR"));
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.type(screen.getByLabelText("Reference no."), "ZZ");
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByLabelText("Reference no.")).toHaveValue("R1ZZ");
   });
 
   it("ປະຕິເສດ: ເປີດ dialog ເຫດຜົນ ແລ້ວ POST reject", async () => {
@@ -190,8 +295,8 @@ describe("SlipCard: ເພີ່ມເຕີມ", () => {
     expect(screen.queryByLabelText("Paid at")).toBeNull();
   });
 
-  it("ແກ້ສະກຸນ ແລະ ລ້າງບັນຊີປາຍທາງ → ສົ່ງ currency ແລະ null; ເລືອກ — = null", async () => {
-    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+  it("ລ້າງຄ່າທີ່ຢືນຢັນໄວ້ແລ້ວ (ສະກຸນ — ແລະ ບັນຊີປາຍທາງ) → ສົ່ງ null", async () => {
+    const { user } = renderWithProviders(<SlipCard slip={slip({ confirmed: confirmed({ currency: "THB", destAccount: "X-1" })})} order={order} canReview />);
     await user.selectOptions(screen.getByLabelText("Currency"), "");
     await user.clear(screen.getByLabelText("Destination account"));
     await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -199,10 +304,11 @@ describe("SlipCard: ເພີ່ມເຕີມ", () => {
     expect(calls("PATCH")[0]).toEqual(["/slips/s1", { method: "PATCH", body: { confirmedCurrency: null, confirmedDestAccount: null } }]);
   });
 
-  it("ລ້າງຍອດຢ່າງດຽວ → ຖືວ່າບໍ່ມີການປ່ຽນ ບໍ່ຍິງ API", async () => {
+  it("ລ້າງຍອດ → ສະແດງ error ໃນຊ່ອງ (ບໍ່ ignore ແບບງຽບ) ແລະ ບໍ່ຍິງ API", async () => {
     const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
     await user.clear(screen.getByLabelText("Amount"));
     await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(screen.getByText("Invalid amount")).toBeInTheDocument();
     expect(calls("PATCH")).toHaveLength(0);
   });
 
@@ -219,7 +325,15 @@ describe("SlipCard: ເພີ່ມເຕີມ", () => {
     const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
     await user.click(screen.getByRole("button", { name: "Confirm payment" }));
     const button = within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" });
-    await user.dblClick(button);
+    let resolve!: (value: unknown) => void;
+    vi.mocked(apiFetch).mockReturnValue(new Promise((r) => (resolve = r)));
+    // ສອງຄລິກແບບ synchronous (ກ່ອນ React ອັບເດດ disabled) ຕ້ອງຜ່ານໄດ້ແຕ່ຄັ້ງດຽວ
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(calls("POST")).toHaveLength(1));
+    await act(async () => {});
+    expect(calls("POST")).toHaveLength(1);
+    resolve({});
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(calls("POST")).toHaveLength(1);
   });
@@ -252,3 +366,28 @@ describe("SlipCard: ເພີ່ມເຕີມ", () => {
   });
 });
 
+
+describe("SlipCard: ຂໍ້ຄວາມຍາວ/ບໍ່ໄວ້ໃຈ ແລະ a11y", () => {
+  it("ຄ່າຍາວ 300 ໂຕ (refNo) ຕ້ອງຫໍ່ຂໍ້ຄວາມ (break) ແລະ ຢູ່ໃນ <bdi>", () => {
+    const long = "A".repeat(300);
+    renderWithProviders(<SlipCard slip={slip({ read: { ...base.read, refNo: long } })} order={order} canReview />);
+    const cell = within(screen.getByRole("table", { name: "Read by the reader" })).getByText(long);
+    expect(cell.tagName).toBe("BDI");
+    expect(cell.parentElement?.className).toMatch(/break-all|\[overflow-wrap:anywhere\]/);
+  });
+
+  it("ໝາຍເຫດ/ສະຖານະຢູ່ໃນ role=status ທີ່ມີຕັ້ງແຕ່ mount ແລະ ຄົງຕົວເມື່ອ PENDING_READ → READ", () => {
+    const { rerender, queryClient } = renderWithProviders(<SlipCard slip={slip({ status: "PENDING_READ" })} order={order} canReview />);
+    const region = screen.getByRole("status");
+    expect(region).toHaveTextContent("Reading");
+    expect(region).toHaveTextContent(/Reading the slip/);
+    rerender(wrap(queryClient, <SlipCard slip={slip({ status: "READ" })} order={order} canReview />));
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent("To review");
+  });
+
+  it("ຕາຕະລາງມີຊື່ຈາກ caption (ບໍ່ມີ aria-label ຊ້ຳ)", () => {
+    renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    expect(screen.getByRole("table", { name: "Read by the reader" })).not.toHaveAttribute("aria-label");
+  });
+});

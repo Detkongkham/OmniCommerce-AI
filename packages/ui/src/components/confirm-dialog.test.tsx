@@ -50,4 +50,19 @@ describe("ConfirmDialog", () => {
     expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
   });
+
+  it("tone ເລີ່ມຕົ້ນ = destructive; tone=primary ໃຊ້ປຸ່ມ/ໄອຄອນສີແບຣນ ບໍ່ແດງ", () => {
+    const { unmount } = render(
+      <ConfirmDialog open onOpenChange={vi.fn()} title="T" description="D" confirmLabel="Go" cancelLabel="Cancel" onConfirm={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Go" }).className).toContain("bg-danger");
+    unmount();
+    render(
+      <ConfirmDialog open onOpenChange={vi.fn()} title="T" description="D" confirmLabel="Go" cancelLabel="Cancel" tone="primary" onConfirm={vi.fn()} />,
+    );
+    const go = screen.getByRole("button", { name: "Go" });
+    expect(go.className).toContain("bg-brand");
+    expect(go.className).not.toContain("bg-danger");
+    expect(screen.getByRole("dialog").innerHTML).not.toContain("bg-danger-soft");
+  });
 });

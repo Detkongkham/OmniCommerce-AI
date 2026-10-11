@@ -3,7 +3,8 @@
 import { SLIP_CURRENCIES, normalizeSlipAmount } from "@oca/shared";
 import { Button, Card, ConfirmDialog, Field, Input, Select, StatusPill, toast } from "@oca/ui";
 import { AlertTriangle } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
@@ -19,6 +20,12 @@ export interface SlipOrderInfo {
   orderNumber: string;
   total: string;
   currency: string;
+}
+
+/** error ທີ່ແປວ່າ state ຂອງບິນ/ສະລິບປ່ຽນໄປແລ້ວ: refetch ຈະສະແດງຄວາມຈິງ ຈຶ່ງປິດ dialog ຢືນຢັນ; ຢ່າງອື່ນ (ເຄືອຂ່າຍ/5xx) ໃຫ້ລອງໃໝ່ໃນ dialog ເດີມ */
+const STATE_CONFLICT_CODES: ReadonlySet<string> = new Set(["ORDER_INVALID_STATE", "RESERVATION_EXPIRED", "SLIP_ALREADY_REVIEWED", "CONFLICT"]);
+function isStateConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.code !== undefined && STATE_CONFLICT_CODES.has(error.code);
 }
 
 const FIELDS = ["amount", "currency", "paidAt", "destAccount", "refNo"] as const;
@@ -44,7 +51,7 @@ function ValuesTable({ title, values }: { title: string; values: SlipValuesDto }
     return value;
   };
   return (
-    <table aria-label={title} className="w-full text-xs">
+    <table className="w-full min-w-0 text-xs">
       <caption className="mb-1 text-left text-xs font-semibold text-ink-secondary">{title}</caption>
       <tbody>
         {FIELDS.map((field) => (
@@ -52,7 +59,10 @@ function ValuesTable({ title, values }: { title: string; values: SlipValuesDto }
             <th scope="row" className="py-1 pr-2 text-left font-normal text-ink-muted">
               {t(`slips.field.${field}`)}
             </th>
-            <td className="py-1 text-right tabular-nums text-ink">{display(field)}</td>
+            {/* ຄ່າຈາກ OCR ບໍ່ໄວ້ໃຈ: ຍາວ/ບໍ່ມີຍະຫວ່າງຕ້ອງຫໍ່ແຖວ, bdi ກັນທິດຕົວອັກສອນປົນ */}
+            <td className="min-w-0 py-1 text-right tabular-nums text-ink [overflow-wrap:anywhere] break-all">
+              <bdi>{display(field)}</bdi>
+            </td>
           </tr>
         ))}
       </tbody>
@@ -71,6 +81,7 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
   const rejectButtonRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const confirming = useRef(false);
+  const focusCardAfterConfirm = useRef(false);
   const open = isOpenSlip(slip);
   const busy = patch.isPending || retry.isPending || confirm.isPending || reject.isPending;
   const final = effective(slip);
@@ -96,16 +107,29 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
     else rootRef.current?.focus();
   }
 
+  // ຫຼັງຢືນຢັນສຳເລັດ ປຸ່ມ Confirm ຫາຍ (ສະຖານະປ່ຽນ) → ຍ້າຍ focus ມາທີ່ card ບໍ່ໃຫ້ຕົກໄປ body
+  useEffect(() => {
+    if (!focusCardAfterConfirm.current || confirmOpen || confirmable) return;
+    focusCardAfterConfirm.current = false;
+    const timer = setTimeout(() => rootRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [confirmOpen, confirmable]);
+
   async function onConfirm() {
     // ກັນກົດຊ້ຳ (ref ທັນທີ ກ່ອນ isPending ອັບເດດ)
     if (confirming.current || final.amount === null) return;
     confirming.current = true;
     try {
-      await run(() => confirm.mutateAsync(slip.id), "slips.toast.confirmed");
+      await confirm.mutateAsync(slip.id);
+      toast.success(t("slips.toast.confirmed"));
+      focusCardAfterConfirm.current = true;
+      setConfirmOpen(false);
+    } catch (error) {
+      toast.error(errorMessage(error, t));
+      // state conflict → ປິດ (card refetch ສະແດງຄວາມຈິງ); error ຊົ່ວຄາວ → ເປີດຄ້າງໃຫ້ລອງໃໝ່
+      if (isStateConflict(error)) setConfirmOpen(false);
     } finally {
       confirming.current = false;
-      // ປິດ dialog ທັງສຳເລັດແລະລົ້ມ (error ສະແດງຜ່ານ toast)
-      setConfirmOpen(false);
     }
   }
 
@@ -114,16 +138,20 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
       <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <SlipImage slipId={slip.id} />
         <div className="min-w-0 space-y-3">
+          {/* live region ມີຕັ້ງແຕ່ mount: PENDING_READ → READ ຖືກອ່ານໃຫ້ screen reader ແບບສຸພາບ */}
+          <div role="status" className="space-y-2">
+            <div>
+              <StatusPill tone={SLIP_STATUS_TONE[slip.status]}>{t(`slips.status.${slip.status}`)}</StatusPill>
+            </div>
+            {slip.status === "PENDING_READ" ? <p className="text-sm text-ink-secondary">{t("slips.pendingNote")}</p> : null}
+            {slip.status === "READ_FAILED" ? <p className="text-sm text-warning-ink">{t("slips.failedNote")}</p> : null}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={SLIP_STATUS_TONE[slip.status]}>{t(`slips.status.${slip.status}`)}</StatusPill>
             <span className="text-xs text-ink-muted">{t(`slips.source.${slip.source}`)}</span>
             <time dateTime={slip.createdAt} className="text-xs text-ink-muted">
               {formatDateTime(slip.createdAt)}
             </time>
           </div>
-
-          {slip.status === "PENDING_READ" ? <p className="text-sm text-ink-secondary">{t("slips.pendingNote")}</p> : null}
-          {slip.status === "READ_FAILED" ? <p className="text-sm text-warning-ink">{t("slips.failedNote")}</p> : null}
 
           {slip.flags.length > 0 ? (
             <ul aria-label={t("slips.flags")} className="space-y-1">
@@ -138,7 +166,7 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
             <p className="text-xs text-success-ink">{t("slips.noFlags")}</p>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
             <ValuesTable title={t("slips.read")} values={slip.read} />
             <ValuesTable title={t("slips.confirmed")} values={slip.confirmed} />
           </div>
@@ -153,6 +181,7 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
               // ຄ່າຈາກ server ປ່ຽນ (ຫຼັງບັນທຶກ/ອ່ານໃໝ່) → ຣີເຊັດຟອມໃຫ້ກົງ
               key={JSON.stringify(final)}
               values={final}
+              confirmed={slip.confirmed}
               disabled={busy}
               saving={patch.isPending}
               onSave={(input) => run(() => patch.mutateAsync({ id: slip.id, input }), "slips.toast.saved")}
@@ -196,6 +225,7 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
           cancelLabel={t("common.cancel")}
           closeLabel={t("common.close")}
           busy={confirm.isPending}
+          tone="primary"
           confirmDisabled={final.amount === null}
           onConfirm={onConfirm}
         />
@@ -218,11 +248,14 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
 
 function SlipEditForm({
   values,
+  confirmed,
   disabled,
   saving,
   onSave,
 }: {
   values: SlipValuesDto;
+  /** ຄ່າທີ່ແອດມິນຢືນຢັນໄວ້ແລ້ວ: ມີແຕ່ຄ່ານີ້ທີ່ "ລ້າງ" (null) ໄດ້ */
+  confirmed: SlipValuesDto;
   disabled: boolean;
   saving: boolean;
   onSave: (input: Record<string, string | null>) => Promise<boolean>;
@@ -239,18 +272,27 @@ function SlipEditForm({
     event.preventDefault();
     const input: Record<string, string | null> = {};
     const trimmedAmount = amount.trim();
+    // ຍອດຫວ່າງ/ຜິດຮູບແບບ = error ໃນຊ່ອງ (API ບໍ່ຮັບ amount ວ່າງ ແລະ ລ້າງບໍ່ໄດ້); ສົ່ງ string ດິບ API normalize ເອງ
     if (trimmedAmount !== (values.amount ?? "")) {
-      if (trimmedAmount !== "" && normalizeSlipAmount(trimmedAmount) === null) {
+      if (normalizeSlipAmount(trimmedAmount) === null) {
         setAmountError(t("slips.edit.amountInvalid"));
         return;
       }
-      // ຍອດຫວ່າງສົ່ງບໍ່ໄດ້ (API ບໍ່ຮັບ amount ວ່າງ) → ຖືວ່າບໍ່ປ່ຽນ; ສົ່ງ string ດິບ API normalize ເອງ
-      if (trimmedAmount !== "") input.confirmedAmount = trimmedAmount;
+      input.confirmedAmount = trimmedAmount;
     }
     setAmountError(null);
-    if (currency !== (values.currency ?? "")) input.confirmedCurrency = currency === "" ? null : currency;
-    if (refNo.trim() !== (values.refNo ?? "")) input.confirmedRefNo = refNo.trim() === "" ? null : refNo.trim();
-    if (destAccount.trim() !== (values.destAccount ?? "")) input.confirmedDestAccount = destAccount.trim() === "" ? null : destAccount.trim();
+    // ຄ່າຫວ່າງ: ສົ່ງ null ສະເພາະເມື່ອມີຄ່າຢືນຢັນໃຫ້ລ້າງ; ຄ່າທີ່ເຄື່ອງອ່ານໃສ່ເອງລ້າງບໍ່ໄດ້ = ບໍ່ມີການປ່ຽນ
+    const textChange = (next: string, current: string | null, confirmedValue: string | null): string | null | undefined => {
+      if (next === (current ?? "")) return undefined;
+      if (next === "") return confirmedValue ? null : undefined;
+      return next;
+    };
+    const currencyChange = textChange(currency, values.currency, confirmed.currency);
+    if (currencyChange !== undefined) input.confirmedCurrency = currencyChange;
+    const refNoChange = textChange(refNo.trim(), values.refNo, confirmed.refNo);
+    if (refNoChange !== undefined) input.confirmedRefNo = refNoChange;
+    const destChange = textChange(destAccount.trim(), values.destAccount, confirmed.destAccount);
+    if (destChange !== undefined) input.confirmedDestAccount = destChange;
     if (Object.keys(input).length === 0) {
       toast.info(t("slips.edit.none"));
       return;
@@ -266,7 +308,8 @@ function SlipEditForm({
       <Field label={t("slips.field.currency")} htmlFor={`${uid}-currency`}>
         <Select id={`${uid}-currency`} value={currency} disabled={disabled} onChange={(e) => setCurrency(e.target.value)}>
           <option value="">—</option>
-          {SLIP_CURRENCIES.map((code) => (
+          {/* ສະກຸນນອກລາຍການ (ເຄື່ອງອ່ານອາດໃຫ້ມາ) ເພີ່ມເປັນຕົວເລືອກ ເພື່ອໃຫ້ select ສະທ້ອນຄ່າຈິງ */}
+          {[...(values.currency && !(SLIP_CURRENCIES as readonly string[]).includes(values.currency) ? [values.currency] : []), ...SLIP_CURRENCIES].map((code) => (
             <option key={code} value={code}>
               {code}
             </option>
