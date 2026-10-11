@@ -1,18 +1,53 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query, Req } from "@nestjs/common";
 import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Header,
+  Headers,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  Query,
+  Req,
+  UploadedFile,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import {
+  SLIP_MAX_BYTES,
   type StoreCartCheckInput,
+  type StoreCreateOrderInput,
   type StoreProductListQuery,
   storeCartCheckSchema,
+  storeCreateOrderSchema,
   storeProductListQuerySchema,
 } from "@oca/shared";
 import type { Request } from "express";
 import { Public } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ENV, type Env } from "../../config/env";
+import type { UploadedImage } from "../payments/slips.service";
 import { StoreCatalogService } from "./store-catalog.service";
+import { StoreOrdersService } from "./store-orders.service";
 import { StoreRateLimiter } from "./store-rate-limiter";
 
 const MINUTE_MS = 60_000;
+const TEN_MINUTES_MS = 10 * MINUTE_MS;
+const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,128}$/;
+
+/** ບັງຄັບ (ຕ່າງຈາກ POST /orders): ລູກຄ້າກົດຊ້ຳ/ເນັດຫຼຸດ ຕ້ອງບໍ່ໄດ້ສອງບິນ */
+function requireIdempotencyKey(value: string | undefined): string {
+  if (value === undefined || !IDEMPOTENCY_KEY_PATTERN.test(value)) {
+    throw new BadRequestException("Idempotency-Key header is required: 1-128 printable ASCII characters without spaces");
+  }
+  return value;
+}
+
+function clientOf(req: Request): string {
+  return req.ip ?? "unknown";
+}
 
 /**
  * ໜ້າຮ້ານສາທາລະນະ: ທຸກ route ບໍ່ຕ້ອງ login. GET ບໍ່ຖືກຈຳກັດຄວາມຖີ່ທີ່ນີ້ (ເວັບ render ຝັ່ງ server
@@ -23,6 +58,7 @@ const MINUTE_MS = 60_000;
 export class StorefrontController {
   constructor(
     @Inject(StoreCatalogService) private readonly catalog: StoreCatalogService,
+    @Inject(StoreOrdersService) private readonly orders: StoreOrdersService,
     @Inject(StoreRateLimiter) private readonly limiter: StoreRateLimiter,
     @Inject(ENV) private readonly env: Env,
   ) {}
@@ -53,8 +89,30 @@ export class StorefrontController {
     this.limiter.hit(`check:${clientOf(req)}`, this.env.STORE_CHECK_RATE_LIMIT, MINUTE_MS);
     return this.catalog.cartCheck(body);
   }
-}
 
-function clientOf(req: Request): string {
-  return req.ip ?? "unknown";
+  @Post("orders")
+  @Header("Cache-Control", "no-store")
+  createOrder(
+    @Body(new ZodValidationPipe(storeCreateOrderSchema)) body: StoreCreateOrderInput,
+    @Req() req: Request,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    const key = requireIdempotencyKey(idempotencyKey);
+    this.limiter.hit(`order:${clientOf(req)}`, this.env.STORE_ORDER_RATE_LIMIT, TEN_MINUTES_MS);
+    return this.orders.create(body, req.ip, key);
+  }
+
+  @Get("orders/:token")
+  @Header("Cache-Control", "no-store")
+  order(@Param("token") token: string) {
+    return this.orders.get(token);
+  }
+
+  @Post("orders/:token/slips")
+  @Header("Cache-Control", "no-store")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: SLIP_MAX_BYTES, files: 1 } }))
+  uploadSlip(@Param("token") token: string, @UploadedFile() file: UploadedImage | undefined, @Req() req: Request) {
+    this.limiter.hit(`slip:${clientOf(req)}`, this.env.STORE_SLIP_RATE_LIMIT, TEN_MINUTES_MS);
+    return this.orders.uploadSlip(token, file, req.ip);
+  }
 }
