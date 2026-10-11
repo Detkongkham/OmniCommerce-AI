@@ -57,6 +57,19 @@ enum OrderStatus {
   EXPIRED // ໝົດເວລາຈອງ ຄືນສະຕ໋ອກແລ້ວ
 }
 
+enum SlipSource {
+  CHAT
+  UPLOAD
+}
+
+enum SlipStatus {
+  PENDING_READ // ລໍ worker ອ່ານ
+  READ // ອ່ານສຳເລັດ ລໍແອດມິນກວດ
+  READ_FAILED // ອ່ານບໍ່ໄດ້ (retry ໝົດ)
+  CONFIRMED
+  REJECTED
+}
+
 enum StockMovementType {
   RECEIVE // ຮັບສິນຄ້າເຂົ້າສາງ        onHand +
   ADJUST // ປັບຍອດ (ນັບສະຕ໋ອກ/ເສຍຫາຍ)  onHand +/-
@@ -123,6 +136,7 @@ model StoreSetting {
   pricesIncludeVat    Boolean  @default(true)
   reservationMinutes  Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
   paymentInstructions String? // ຂໍ້ຄວາມຂໍ້ມູນໂອນເງິນ ໃສ່ໃນສະຫຼຸບບິນ CF
+  receivingAccounts   Json     @default("[]") // [{ bank, accountNo, accountName? }] ບັນຊີຮັບເງິນຂອງຮ້ານ; [] = ບໍ່ກວດບັນຊີປາຍທາງ
   updatedAt           DateTime @updatedAt
 }
 
@@ -336,6 +350,7 @@ model Order {
   note            String?
   conversationId  String?
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  slips           PaymentSlip[]
   liveSessionId   String?
   liveSession     LiveSession?  @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
   // ພະນັກງານທີ່ເປີດບິນ (KPI ຍອດປິດການຂາຍ); null = ລະບົບ (CF Engine)
@@ -431,6 +446,7 @@ model User {
   auditLogs             AuditLog[]
   assignedConversations Conversation[]
   sentMessages          Message[]
+  reviewedSlips         PaymentSlip[]
   liveSessions          LiveSession[]
   packedShipments       Shipment[]     @relation("ShipmentPackedBy")
   verifiedShipments     Shipment[]     @relation("ShipmentVerifiedBy")
@@ -505,6 +521,7 @@ model Conversation {
   updatedAt          DateTime           @updatedAt
 
   messages Message[]
+  slips    PaymentSlip[]
   orders   Order[]
 
   @@unique([channel, externalThreadId])
@@ -525,6 +542,7 @@ model Message {
   sentBy         User?            @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
   status         MessageStatus    @default(SENT)
   errorCode      String? // ໃຊ້ຄ່າຈາກ MESSAGE_SEND_ERRORS ຂອງ @oca/shared
+  slips          PaymentSlip[]
   createdAt      DateTime         @default(now())
 
   @@unique([conversationId, externalId])
@@ -719,4 +737,59 @@ model SocialPostMedia {
 
   @@unique([postId, position])
   @@index([mediaFileId])
+}
+
+// ຕັ້ງໃຈເກັບສະລິບ/ຮູບໄວ້ຖາວອນເປັນຂໍ້ມູນ train (ຍັງບໍ່ມີ job ລຶບ); orderId/conversationId/messageId
+// ໃຊ້ SetNull ຕັ້ງໃຈ ເພື່ອໃຫ້ສະລິບຢູ່ຕໍ່ເມື່ອລຶບບິນ/ແຊັດ/ຂໍ້ຄວາມ
+/// ສະລິບໂອນເງິນ: ຮູບ + ຜົນອ່ານ + flag + ຄ່າທີ່ແອດມິນຢືນຢັນ (ຄູ່ ຮູບ/ຄ່າທີ່ຖືກ = ຂໍ້ມູນ train ຂອງຂັ້ນ 2)
+model PaymentSlip {
+  id              String        @id @default(cuid())
+  orderId         String?
+  order           Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  conversationId  String?
+  conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  messageId       String?
+  message         Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  attachmentIndex Int? // ລຳດັບຮູບໃນ Message.attachments (ເລີ່ມ 0)
+  source          SlipSource
+
+  imageKey    String // key ໃນ StorageService
+  imageMime   String
+  imageBytes  Int
+  imageSha256 String
+
+  status        SlipStatus @default(PENDING_READ)
+  readerName    String?
+  readerVersion String?
+
+  readAmount      Decimal?  @db.Decimal(18, 2)
+  readCurrency    Currency?
+  readPaidAt      DateTime?
+  readDestAccount String?
+  readRefNo       String?
+  readRaw         Json? // ຜົນດິບຂອງ reader: ບໍ່ເຊື່ອຖື (untrusted)
+
+  flags String[] @default([])
+
+  confirmedAmount      Decimal?  @db.Decimal(18, 2)
+  confirmedCurrency    Currency?
+  confirmedPaidAt      DateTime?
+  confirmedRefNo       String?
+  confirmedDestAccount String?
+
+  reviewedByUserId String?
+  reviewedBy       User?     @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  reviewedAt       DateTime?
+  rejectReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([messageId, attachmentIndex])
+  @@index([orderId])
+  @@index([conversationId])
+  @@index([imageSha256])
+  @@index([readRefNo])
+  @@index([confirmedRefNo])
+  @@index([status, createdAt])
 }

@@ -8,6 +8,21 @@ const base = {
 };
 
 describe("parseEnv", () => {
+  it("SLIP_STORAGE_DIR/QUEUE_PREFIX: ຄ່າວ່າງ (KEY=) ໃຊ້ຄ່າເລີ່ມຕົ້ນ", () => {
+    const env = parseEnv({ ...base, SLIP_STORAGE_DIR: "", QUEUE_PREFIX: "" });
+    expect(env.SLIP_STORAGE_DIR).toBe("../../.data/slips");
+    expect(env.QUEUE_PREFIX).toBe("oca");
+  });
+
+  it("SLIP_STORAGE_DIR ແລະ QUEUE_PREFIX ມີຄ່າເລີ່ມຕົ້ນ ແລະ ອ່ານຄ່າທີ່ຕັ້ງ", () => {
+    const defaults = parseEnv(base);
+    expect(defaults.SLIP_STORAGE_DIR).toBe("../../.data/slips");
+    expect(defaults.QUEUE_PREFIX).toBe("oca");
+    const set = parseEnv({ ...base, SLIP_STORAGE_DIR: "/data/slips", QUEUE_PREFIX: "prod" });
+    expect(set.SLIP_STORAGE_DIR).toBe("/data/slips");
+    expect(set.QUEUE_PREFIX).toBe("prod");
+  });
+
   it("FACEBOOK_*: ຄ່າວ່າງ (ຈາກ .env.example) = ບໍ່ໄດ້ຕັ້ງ", () => {
     const env = parseEnv({
       ...base,

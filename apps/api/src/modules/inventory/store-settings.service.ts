@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Prisma, type PrismaClient } from "@oca/database";
-import type { UpdateStoreSettingsInput } from "@oca/shared";
+import { type ReceivingAccount, type UpdateStoreSettingsInput, receivingAccountSchema } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { PRISMA } from "../../prisma/prisma.module";
@@ -14,6 +14,16 @@ export interface StoreSettingsDto {
   pricesIncludeVat: boolean;
   reservationMinutes: number;
   paymentInstructions: string | null;
+  receivingAccounts: ReceivingAccount[];
+}
+
+/** ອ່ານ Json ຂອງ DB ຢ່າງປອດໄພ: ຂ້າມລາຍການທີ່ຮູບແບບຜິດ (ແກ້ໃນ DB ດ້ວຍມື) ແທນທີ່ຈະເຮັດໃຫ້ GET ລົ້ມ */
+function parseReceivingAccounts(value: unknown): ReceivingAccount[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const parsed = receivingAccountSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
@@ -24,6 +34,7 @@ export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
     pricesIncludeVat: row.pricesIncludeVat,
     reservationMinutes: row.reservationMinutes,
     paymentInstructions: row.paymentInstructions,
+    receivingAccounts: parseReceivingAccounts(row.receivingAccounts),
   };
 }
 
@@ -49,6 +60,7 @@ export class StoreSettingsService {
         pricesIncludeVat: input.pricesIncludeVat,
         reservationMinutes: input.reservationMinutes,
         paymentInstructions: input.paymentInstructions,
+        receivingAccounts: input.receivingAccounts as Prisma.InputJsonValue | undefined,
       },
     });
     await this.audit.record({

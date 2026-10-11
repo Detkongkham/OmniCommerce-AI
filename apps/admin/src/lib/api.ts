@@ -41,6 +41,8 @@ export interface RequestOptions {
   body?: unknown;
   /** header ເພີ່ມເຕີມ (ເຊັ່ນ `Idempotency-Key`); Content-Type/Authorization ຂອງລະບົບຊະນະເມື່ອຊ້ຳ */
   headers?: Record<string, string>;
+  /** "blob" ສຳລັບຮູບ/ໄຟລ໌; ຄ່າເລີ່ມຕົ້ນ json */
+  responseType?: "json" | "blob";
 }
 
 /** Endpoint ທີ່ບໍ່ຄວນ refresh ເມື່ອໄດ້ 401 (ຜິດ credentials ຫຼື refresh ເອງລົ້ມ). */
@@ -89,9 +91,10 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, message, issues, code, parsed);
 }
 
-async function parse<T>(response: Response): Promise<T> {
+async function parse<T>(response: Response, responseType: "json" | "blob" = "json"): Promise<T> {
   if (!response.ok) throw await toApiError(response);
   if (response.status === 204) return undefined as T;
+  if (responseType === "blob") return (await response.blob()) as T;
   return (await response.json()) as T;
 }
 
@@ -168,7 +171,7 @@ async function authorizedSend(path: string, options: RequestOptions): Promise<Re
 }
 
 export async function apiFetch<T = void>(path: string, options: RequestOptions = {}): Promise<T> {
-  return parse<T>(await authorizedSend(path, options));
+  return parse<T>(await authorizedSend(path, options), options.responseType);
 }
 
 /** ດາວໂຫຼດໄຟລ໌ (ເຊັ່ນ CSV) ດ້ວຍ token ຂອງ session; ຊື່ໄຟລ໌ຈາກ Content-Disposition (ບໍ່ມີ = fallback) */

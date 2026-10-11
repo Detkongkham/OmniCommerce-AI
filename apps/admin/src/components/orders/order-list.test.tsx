@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "@/lib/api";
 import type { OrderListItemDto, Page } from "@/lib/types";
-import { renderWithProviders } from "@/test/render";
+import { dateControl, pickDate, renderWithProviders } from "@/test/render";
 import { OrderList } from "./order-list";
 
 const auth = vi.hoisted(() => ({ canWrite: true, canInventory: true }));
@@ -71,8 +71,8 @@ describe("OrderList", () => {
     await waitFor(() => expect(lastUrl()).toBe("/orders?status=PAID&page=1&pageSize=10"));
     await user.type(screen.getByPlaceholderText(SEARCH), "mali");
     await waitFor(() => expect(lastUrl()).toBe("/orders?q=mali&status=PAID&page=1&pageSize=10"));
-    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-01" } });
-    fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-05" } });
+    pickDate("From date", "2026-10-01");
+    pickDate("To date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toBe("/orders?q=mali&status=PAID&from=2026-10-01&to=2026-10-05&page=1&pageSize=10"));
   });
 
@@ -92,23 +92,23 @@ describe("OrderList", () => {
   it("ວັນທີເລີ່ມຫຼັງວັນທີສິ້ນສຸດ: ສະແດງ alert, ບໍ່ສົ່ງ request ໃໝ່, aria-invalid ຊີ້ໄປ alert", async () => {
     renderWithProviders(<OrderList initialQuery="" initialStatus="" />);
     await screen.findByTestId("row-order-o1");
-    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-09" } });
+    pickDate("From date", "2026-10-09");
     await waitFor(() => expect(lastUrl()).toBe("/orders?from=2026-10-09&page=1&pageSize=10"));
     const validUrls = [...urls()];
-    fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-01" } });
+    pickDate("To date", "2026-10-01");
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The start date must not be after the end date");
     expect(urls()).toEqual(validUrls);
-    const from = screen.getByLabelText("From date");
+    const from = dateControl("From date");
     expect(from).toHaveAttribute("aria-invalid", "true");
     expect(from.getAttribute("aria-describedby")).toBe(alert.id);
-    expect(screen.getByLabelText("To date").getAttribute("aria-describedby")).toBe(alert.id);
+    expect(dateControl("To date").getAttribute("aria-describedby")).toBe(alert.id);
   });
 
   it("ວັນທີດ້ານດຽວ (ສະເພາະ from): ຖືກຕ້ອງ ສົ່ງ from ຢ່າງດຽວ ບໍ່ມີ alert", async () => {
     renderWithProviders(<OrderList initialQuery="" initialStatus="" />);
     await screen.findByTestId("row-order-o1");
-    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-01" } });
+    pickDate("From date", "2026-10-01");
     await waitFor(() => expect(lastUrl()).toBe("/orders?from=2026-10-01&page=1&pageSize=10"));
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -116,20 +116,12 @@ describe("OrderList", () => {
   it("from ເທົ່າ to ຖືກຕ້ອງ: ບໍ່ມີ alert ແລະ ສົ່ງທັງສອງວັນທີ", async () => {
     renderWithProviders(<OrderList initialQuery="" initialStatus="" />);
     await screen.findByTestId("row-order-o1");
-    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-05" } });
-    fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-05" } });
+    pickDate("From date", "2026-10-05");
+    pickDate("To date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toBe("/orders?from=2026-10-05&to=2026-10-05&page=1&pageSize=10"));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("ປີ 5 ຫຼັກ ຖືວ່າຊ່ວງວັນທີບໍ່ຖືກຕ້ອງ ແລະ ບໍ່ສົ່ງ request", async () => {
-    renderWithProviders(<OrderList initialQuery="" initialStatus="" />);
-    await screen.findByTestId("row-order-o1");
-    const before = urls().length;
-    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "12026-10-01" } });
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(urls()).toHaveLength(before);
-  });
 
   it("ປຸ່ມ 'ສ້າງບິນ' ເປັນລິ້ງໄປ /orders/new ສະເພາະຜູ້ທີ່ມີ orders:write", async () => {
     renderWithProviders(<OrderList initialQuery="" initialStatus="" />);

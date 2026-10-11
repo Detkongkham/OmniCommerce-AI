@@ -2,6 +2,7 @@ import { Decimal } from "decimal.js";
 import { z } from "zod";
 import { STORE_UTC_OFFSET } from "../constants";
 import { SLUG_PATTERN } from "../slug";
+import { receivingAccountsSchema } from "./slips";
 
 // ---------------------------------------------------------------------------
 // ຄ່າຄົງທີ່ (ກົງກັບ enum ໃນ Prisma schema)
@@ -475,6 +476,7 @@ export const updateStoreSettingsSchema = z
     vatRate: vatRateSchema.optional(),
     pricesIncludeVat: z.boolean().optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
+    receivingAccounts: receivingAccountsSchema.optional(),
     // transform ຢູ່ກ່ອນ nullable/optional: ໃຫ້ key ຍັງເປັນ optional ໃນ type ຂາອອກ (ວ່າງ = null)
     paymentInstructions: z
       .string()

@@ -24,6 +24,7 @@ const settings: StoreSettingsDto = {
   pricesIncludeVat: true,
   reservationMinutes: 30,
   paymentInstructions: "BCEL One 0201 1234 5678",
+  receivingAccounts: [],
 };
 
 function mockApi() {

@@ -37,8 +37,41 @@ describe("store settings (e2e)", () => {
       pricesIncludeVat: true,
       reservationMinutes: 30,
       paymentInstructions: null,
+      receivingAccounts: [],
     });
     expect(await db.storeSetting.count()).toBe(1);
+  });
+
+  it("PATCH receivingAccounts: ບັນທຶກ + ອ່ານຄືນ + audit; ລ້າງດ້ວຍ []; ຂໍ້ມູນຜິດຮູບແບບໃນ DB ບໍ່ເຮັດໃຫ້ GET ລົ້ມ", async () => {
+    const writer = await bearerFor(app, "inv-write@test.local");
+    const accounts = [{ bank: "BCEL", accountNo: "010-12-00-0123", accountName: "OCA" }];
+    const saved = await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: accounts }).expect(200);
+    expect(saved.body.receivingAccounts).toEqual(accounts);
+    const reader = await bearerFor(app, "inv-read@test.local");
+    expect((await request(server()).get("/settings/store").set(reader).expect(200)).body.receivingAccounts).toEqual(accounts);
+    expect(await db.auditLog.count({ where: { action: "settings.store.update" } })).toBe(1);
+    const audit = await db.auditLog.findFirstOrThrow({ where: { action: "settings.store.update" } });
+    expect((audit.before as { receivingAccounts: unknown }).receivingAccounts).toEqual([]);
+    expect((audit.after as { receivingAccounts: unknown }).receivingAccounts).toEqual(accounts);
+
+    await db.storeSetting.update({ where: { id: 1 }, data: { receivingAccounts: [{ bad: true }, accounts[0]] } });
+    expect((await request(server()).get("/settings/store").set(reader).expect(200)).body.receivingAccounts).toEqual(accounts);
+
+    const cleared = await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: [] }).expect(200);
+    expect(cleared.body.receivingAccounts).toEqual([]);
+    await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: [{ bank: "A", accountNo: "x" }] }).expect(400);
+    // inventory:read ແກ້ບໍ່ໄດ້
+    await request(server()).patch("/settings/store").set(reader).send({ receivingAccounts: accounts }).expect(403);
+  });
+
+  it("PATCH ສະເພາະ field ອື່ນ (ບໍ່ສົ່ງ receivingAccounts) ບໍ່ລ້າງບັນຊີຮັບເງິນ", async () => {
+    const writer = await bearerFor(app, "inv-write@test.local");
+    const accounts = [{ bank: "BCEL", accountNo: "010-12-00-0123" }];
+    await request(server()).patch("/settings/store").set(writer).send({ receivingAccounts: accounts }).expect(200);
+    const res = await request(server()).patch("/settings/store").set(writer).send({ name: "x" }).expect(200);
+    expect(res.body.receivingAccounts).toEqual(accounts);
+    const reader = await bearerFor(app, "inv-read@test.local");
+    expect((await request(server()).get("/settings/store").set(reader).expect(200)).body.receivingAccounts).toEqual(accounts);
   });
 
   it("GET ພ້ອມກັນ 10 ຄັ້ງຕອນຍັງບໍ່ມີແຖວ → 200 ທັງໝົດ ແລະ ມີແຖວດຽວ", async () => {
