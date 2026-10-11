@@ -1,6 +1,6 @@
 # Phase 3 ໂມດູນ 5: Promotion & Marketing, sub-project 3c
 
-ວັນທີ: 2026-10-11 · ສະຖານະ: ອະນຸມັດແລ້ວ, ກຳລັງລົງມື C1 · Branch: `phase3-promotion`
+ວັນທີ: 2026-10-11 · ສະຖານະ: C1 (ໂຄດສ່ວນຫຼຸດ) ສຳເລັດ; C2, C3 ຍັງບໍ່ເລີ່ມ · Branch: `phase3-promotion`
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
