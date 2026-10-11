@@ -59,6 +59,8 @@ export const queryKeys = {
   categories: ["categories"] as const,
   storeSettings: ["store-settings"] as const,
   slips: ["slips"] as const,
+  /** root ແຍກຈາກ slips ເພື່ອໃຫ້ invalidate slips ບໍ່ດຶງຮູບ (ໃຫຍ່) ໃໝ່ */
+  slipImages: ["slip-images"] as const,
   products: ["products"] as const,
   stock: ["stock"] as const,
   variants: ["variants"] as const,
@@ -569,7 +571,7 @@ export function useConversationSlips(conversationId: string, options: { enabled?
 /** ຮູບສະລິບບໍ່ເປີດ public: ໂຫຼດດ້ວຍ Bearer ເປັນ Blob (ຮູບບໍ່ປ່ຽນ ຈຶ່ງ cache ຕະຫຼອດ) */
 export function useSlipImage(id: string) {
   return useQuery({
-    queryKey: [...queryKeys.slips, "image", id],
+    queryKey: [...queryKeys.slipImages, id],
     queryFn: () => apiFetch<Blob>(`/slips/${id}/image`, { responseType: "blob" }),
     staleTime: Number.POSITIVE_INFINITY,
   });

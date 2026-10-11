@@ -56,10 +56,20 @@ describe("slip hooks", () => {
   it("useSlipImage: ໂຫຼດເປັນ blob", async () => {
     const blob = new Blob(["x"]);
     vi.mocked(apiFetch).mockResolvedValue(blob);
-    const { Wrapper } = wrapper();
+    const { client, Wrapper } = wrapper();
     const { result } = renderHook(() => useSlipImage("s1"), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.data).toBe(blob));
     expect(apiFetch).toHaveBeenCalledWith("/slips/s1/image", { responseType: "blob" });
+    expect(client.getQueryCache().find({ queryKey: ["slip-images", "s1"] })).toBeDefined();
+  });
+
+  it("invalidate slips ບໍ່ດຶງຮູບສະລິບໃໝ່ (ຮູບຢູ່ root ແຍກ)", async () => {
+    vi.mocked(apiFetch).mockResolvedValue(new Blob(["x"]));
+    const { client, Wrapper } = wrapper();
+    const { result } = renderHook(() => useSlipImage("s1"), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    await act(() => client.invalidateQueries({ queryKey: ["slips"] }));
+    expect(vi.mocked(apiFetch).mock.calls.filter(([path]) => path === "/slips/s1/image")).toHaveLength(1);
   });
 
   it("useUploadSlip: POST multipart ດ້ວຍ field 'file'; invalidate slips", async () => {
