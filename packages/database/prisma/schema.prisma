@@ -230,6 +230,7 @@ model ProductVariant {
   stockMovements   StockMovement[]
   orderItems       OrderItem[]
   liveSessionItems LiveSessionItem[]
+  flashSaleItems   FlashSaleItem[]
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
@@ -416,9 +417,13 @@ model OrderItem {
   quantity    Int
   discount    Decimal @default(0) @db.Decimal(18, 2)
   lineTotal   Decimal @db.Decimal(18, 2)
+  // ແຄມເປນ Flash Sale ທີ່ກຳນົດ unitPrice ຂອງແຖວນີ້ (null = ລາຄາປົກກະຕິ)
+  flashSaleId String?
+  flashSale   FlashSale? @relation(fields: [flashSaleId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([variantId])
+  @@index([flashSaleId])
 }
 
 // ---------------------------------------------------------------------------
@@ -835,4 +840,31 @@ model Coupon {
   orders        Order[]
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+}
+
+// ແຄມເປນ Flash Sale: ລາຄາພິເສດຕໍ່ variant ໃນຊ່ວງ startsAt <= now < endsAt (ທຸກຊ່ອງທາງຂາຍ)
+model FlashSale {
+  id         String          @id @default(cuid())
+  name       String
+  startsAt   DateTime
+  endsAt     DateTime
+  isActive   Boolean         @default(true)
+  items      FlashSaleItem[]
+  orderItems OrderItem[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([isActive, startsAt, endsAt])
+}
+
+model FlashSaleItem {
+  id          String         @id @default(cuid())
+  flashSaleId String
+  flashSale   FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  salePrice   Decimal        @db.Decimal(18, 2) // baseCurrency
+
+  @@unique([flashSaleId, variantId])
+  @@index([variantId])
 }
