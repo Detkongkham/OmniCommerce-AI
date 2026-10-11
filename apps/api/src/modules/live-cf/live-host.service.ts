@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { Prisma, type PrismaClient } from "@oca/database";
+import { Prisma, type PrismaClient, activeFlashPrices, effectivePrice } from "@oca/database";
 import type { CfOutcome, LiveSessionKind, LiveSessionStatus, OrderStatus } from "@oca/shared";
 import { apiError } from "../../common/api-error";
 import { money } from "../../common/money";
@@ -123,6 +123,10 @@ export class LiveHostService {
       : [];
     const availableByVariant = new Map(levels.map((level) => [level.variantId, level.onHand - level.reserved]));
 
+    const flashPrices = await activeFlashPrices(
+      this.prisma,
+      session.items.map((item) => item.variantId),
+    );
     const items = session.items.map((item): HostItemDto => {
       const stockAvailable = warehouse ? (availableByVariant.get(item.variantId) ?? 0) : null;
       const candidates = [item.limit === null ? null : item.limit - item.claimed, stockAvailable].filter(
@@ -135,7 +139,7 @@ export class LiveHostService {
         productName: item.variant.product.name,
         variantName: item.variant.name,
         sku: item.variant.sku,
-        price: money(item.variant.price),
+        price: money(effectivePrice(item.variant.price, flashPrices.get(item.variantId)).price),
         imageUrl: item.variant.images[0]?.url ?? item.variant.product.images[0]?.url ?? null,
         limit: item.limit,
         claimed: item.claimed,

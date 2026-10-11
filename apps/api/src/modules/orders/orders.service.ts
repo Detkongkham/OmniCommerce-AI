@@ -5,6 +5,8 @@ import {
   type OrderSource,
   Prisma,
   type PrismaClient,
+  activeFlashPrices,
+  effectivePrice,
   evaluateCoupon,
   lockCoupon,
   releaseCfClaims,
@@ -282,6 +284,7 @@ export class OrdersService {
         include: { product: { select: { name: true, status: true } } },
       });
       const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+      const flashPrices = await activeFlashPrices(tx, variantIds);
 
       // 3) ລູກຄ້າ
       let customerId: string | null = null;
@@ -308,11 +311,11 @@ export class OrdersService {
         if (!variant.isActive || variant.product.status !== "ACTIVE") {
           throw apiError("VARIANT_NOT_AVAILABLE", `Variant ${variant.sku} is not available for sale`, { sku: variant.sku });
         }
-        return { item, variant };
+        return { item, variant, sale: effectivePrice(variant.price, flashPrices.get(variant.id)) };
       });
       const totalsInput = {
-        lines: lines.map(({ item, variant }) => ({
-          unitPrice: variant.price.toFixed(2),
+        lines: lines.map(({ item, sale }) => ({
+          unitPrice: sale.price.toFixed(2),
           quantity: item.quantity,
           discount: item.discount,
         })),
@@ -375,13 +378,14 @@ export class OrdersService {
           idempotencyHash,
           reservedUntil: new Date(Date.now() + minutes * 60_000),
           items: {
-            create: lines.map(({ item, variant }, index) => ({
+            create: lines.map(({ item, variant, sale }, index) => ({
               variantId: variant.id,
               warehouseId: item.warehouseId,
               productName: variant.product.name,
               variantName: variant.name,
               sku: variant.sku,
-              unitPrice: variant.price,
+              unitPrice: sale.price,
+              flashSaleId: sale.flashSaleId,
               unitCost: variant.costPrice,
               quantity: item.quantity,
               discount: item.discount,
@@ -444,9 +448,10 @@ export class OrdersService {
       include: { product: { select: { name: true, status: true } } },
     });
     const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+    const flashPrices = await activeFlashPrices(tx, variantIds);
 
     const merged = new Map<string, number>(order.items.map((item) => [item.id, item.quantity]));
-    const added: { variant: (typeof variants)[number]; quantity: number }[] = [];
+    const added: { variant: (typeof variants)[number]; quantity: number; sale: ReturnType<typeof effectivePrice> }[] = [];
     for (const addition of additions) {
       const variant = variantById.get(addition.variantId);
       if (!variant) throw apiError("VARIANT_NOT_FOUND", `Variant ${addition.variantId} not found`);
@@ -456,7 +461,7 @@ export class OrdersService {
       // ສົມມຸດຖານ: ບິນ CF ໃຊ້ສາງ default ສະເໝີ; ແຖວເດີມທີ່ຢູ່ສາງອື່ນຈະບໍ່ຖືກລວມ ແຕ່ໄດ້ແຖວແຍກຕ່າງຫາກ
       const existing = order.items.find((item) => item.variantId === variant.id && item.warehouseId === warehouse.id);
       if (existing) merged.set(existing.id, (merged.get(existing.id) ?? existing.quantity) + addition.quantity);
-      else added.push({ variant, quantity: addition.quantity });
+      else added.push({ variant, quantity: addition.quantity, sale: effectivePrice(variant.price, flashPrices.get(variant.id)) });
     }
 
     let totals: ReturnType<typeof calculateOrderTotals>;
@@ -468,7 +473,7 @@ export class OrdersService {
             quantity: merged.get(item.id) ?? item.quantity,
             discount: item.discount.toFixed(2),
           })),
-          ...added.map(({ variant, quantity }) => ({ unitPrice: variant.price.toFixed(2), quantity, discount: "0" })),
+          ...added.map(({ quantity, sale }) => ({ unitPrice: sale.price.toFixed(2), quantity, discount: "0" })),
         ],
         shippingFee: order.shippingFee.toFixed(2),
         // ສ່ວນຫຼຸດຂອງໂຄດຄົງເດີມ (ບໍ່ຄິດໃໝ່ຈາກຍອດທີ່ເພີ່ມ)
@@ -490,14 +495,15 @@ export class OrdersService {
     }
     if (added.length > 0) {
       await tx.orderItem.createMany({
-        data: added.map(({ variant, quantity }, index) => ({
+        data: added.map(({ variant, quantity, sale }, index) => ({
           orderId,
           variantId: variant.id,
           warehouseId: warehouse.id,
           productName: variant.product.name,
           variantName: variant.name,
           sku: variant.sku,
-          unitPrice: variant.price,
+          unitPrice: sale.price,
+          flashSaleId: sale.flashSaleId,
           unitCost: variant.costPrice,
           quantity,
           discount: 0,

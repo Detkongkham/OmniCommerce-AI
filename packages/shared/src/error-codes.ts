@@ -72,6 +72,9 @@ export const ERROR_CODES = [
   "COUPON_NOT_FOUND",
   "COUPON_INVALID",
   "COUPON_IN_USE",
+  "FLASH_SALE_NOT_FOUND",
+  "FLASH_SALE_OVERLAP",
+  "FLASH_SALE_PRICE_INVALID",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

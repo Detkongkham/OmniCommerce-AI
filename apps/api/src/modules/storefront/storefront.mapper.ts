@@ -1,4 +1,4 @@
-import { Prisma } from "@oca/database";
+import { type ActiveFlashPrice, type EffectivePrice, Prisma, effectivePrice } from "@oca/database";
 import {
   type OrderStatus,
   type StoreSlipStatus,
@@ -37,7 +37,7 @@ export function storeProductListInclude(warehouseId: string | null) {
     images: { orderBy: { position: "asc" }, take: 1 },
     variants: {
       where: { isActive: true },
-      select: { price: true, compareAtPrice: true, stockLevels: stockLevelsOf(warehouseId) },
+      select: { id: true, price: true, compareAtPrice: true, stockLevels: stockLevelsOf(warehouseId) },
     },
   } satisfies Prisma.ProductInclude;
 }
@@ -52,28 +52,37 @@ export interface StoreProductListItemDto {
   priceMax: string;
   /** ລາຄາກ່ອນຫຼຸດຂອງ variant ທີ່ຖືກສຸດ (ຖ້າສູງກວ່າລາຄາຂາຍ) */
   compareAtPrice: string | null;
+  /** end of the running flash sale (earliest among this product's variants); null = no flash sale */
+  saleEndsAt: Date | null;
   stock: StoreStockStatus;
 }
 
-export function toStoreProductListItem(row: StoreProductListRow): StoreProductListItemDto {
-  const cheapest = row.variants.reduce<(typeof row.variants)[number] | undefined>(
-    (best, variant) => (!best || variant.price.lessThan(best.price) ? variant : best),
+export function toStoreProductListItem(row: StoreProductListRow, flashPrices: FlashPrices): StoreProductListItemDto {
+  const variants = row.variants.map((variant) => ({ variant, sale: effectivePrice(variant.price, flashPrices.get(variant.id)) }));
+  const cheapest = variants.reduce<(typeof variants)[number] | undefined>(
+    (best, entry) => (!best || entry.sale.price.lessThan(best.sale.price) ? entry : best),
     undefined,
   );
-  const prices = row.variants.map((variant) => variant.price);
+  const prices = variants.map((entry) => entry.sale.price);
+  const saleEnds = variants.flatMap((entry) => (entry.sale.saleEndsAt ? [entry.sale.saleEndsAt.getTime()] : []));
   return {
     slug: row.slug,
     name: row.name,
     imageUrl: row.images[0]?.url ?? null,
     priceMin: prices.length > 0 ? money(Prisma.Decimal.min(...prices)) : "0.00",
     priceMax: prices.length > 0 ? money(Prisma.Decimal.max(...prices)) : "0.00",
-    compareAtPrice: compareAtOf(cheapest),
+    compareAtPrice: cheapest ? compareAtOf(cheapest.variant, cheapest.sale) : null,
+    saleEndsAt: saleEnds.length > 0 ? new Date(Math.min(...saleEnds)) : null,
     stock: storeStock(row.variants.reduce((sum, variant) => sum + Math.max(availableOf(variant.stockLevels), 0), 0)).status,
   };
 }
 
-function compareAtOf(variant: { price: Prisma.Decimal; compareAtPrice: Prisma.Decimal | null } | undefined): string | null {
-  if (!variant?.compareAtPrice || !variant.compareAtPrice.greaterThan(variant.price)) return null;
+export type FlashPrices = ReadonlyMap<string, ActiveFlashPrice>;
+
+/** crossed-out price: the regular price during a flash sale, otherwise the variant's own compareAtPrice (if higher) */
+function compareAtOf(variant: { compareAtPrice: Prisma.Decimal | null }, sale: EffectivePrice): string | null {
+  if (sale.flashSaleId) return money(sale.regularPrice);
+  if (!variant.compareAtPrice || !variant.compareAtPrice.greaterThan(sale.price)) return null;
   return money(variant.compareAtPrice);
 }
 
@@ -105,6 +114,8 @@ export interface StoreVariantDto {
   compareAtPrice: string | null;
   /** ຊື່ຕົວເລືອກ → ຄ່າ ເຊັ່ນ { ສີ: "ດຳ" } */
   optionValues: Record<string, string>;
+  /** end of the running flash sale for this variant; null = regular price */
+  saleEndsAt: Date | null;
   stock: StoreStock;
 }
 
@@ -118,7 +129,7 @@ export interface StoreProductDetailDto {
   images: { url: string; alt: string | null; variantId: string | null }[];
 }
 
-export function toStoreProductDetail(row: StoreProductDetailRow): StoreProductDetailDto {
+export function toStoreProductDetail(row: StoreProductDetailRow, flashPrices: FlashPrices): StoreProductDetailDto {
   const activeIds = new Set(row.variants.map((variant) => variant.id));
   return {
     slug: row.slug,
@@ -126,14 +137,18 @@ export function toStoreProductDetail(row: StoreProductDetailRow): StoreProductDe
     description: row.description,
     category: row.category,
     options: row.options.map((option) => ({ name: option.name, values: option.values.map((value) => value.value) })),
-    variants: row.variants.map((variant) => ({
-      id: variant.id,
-      name: variant.name,
-      price: money(variant.price),
-      compareAtPrice: compareAtOf(variant),
-      optionValues: Object.fromEntries(variant.optionValues.map((value) => [value.option.name, value.value])),
-      stock: storeStock(availableOf(variant.stockLevels)),
-    })),
+    variants: row.variants.map((variant) => {
+      const sale = effectivePrice(variant.price, flashPrices.get(variant.id));
+      return {
+        id: variant.id,
+        name: variant.name,
+        price: money(sale.price),
+        compareAtPrice: compareAtOf(variant, sale),
+        optionValues: Object.fromEntries(variant.optionValues.map((value) => [value.option.name, value.value])),
+        saleEndsAt: sale.saleEndsAt,
+        stock: storeStock(availableOf(variant.stockLevels)),
+      };
+    }),
     images: row.images.map((image) => ({
       url: image.url,
       alt: image.alt,

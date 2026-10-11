@@ -1,5 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { CouponRejectedError, type Prisma, type PrismaClient, evaluateCoupon } from "@oca/database";
+import {
+  CouponRejectedError,
+  type Prisma,
+  type PrismaClient,
+  activeFlashPrices,
+  effectivePrice,
+  evaluateCoupon,
+} from "@oca/database";
 import {
   COUPON_CODE_PATTERN,
   type CouponRejectReason,
@@ -127,7 +134,16 @@ export class StoreCatalogService {
       }),
       this.prisma.product.count({ where }),
     ]);
-    return toPage(rows.map(toStoreProductListItem), total, query.page, STORE_PAGE_SIZE);
+    const flashPrices = await activeFlashPrices(
+      this.prisma,
+      rows.flatMap((row) => row.variants.map((variant) => variant.id)),
+    );
+    return toPage(
+      rows.map((row) => toStoreProductListItem(row, flashPrices)),
+      total,
+      query.page,
+      STORE_PAGE_SIZE,
+    );
   }
 
   async product(slug: string): Promise<StoreProductDetailDto> {
@@ -137,7 +153,11 @@ export class StoreCatalogService {
       include: storeProductDetailInclude(warehouseId),
     });
     if (!row) throw apiError("PRODUCT_NOT_FOUND", "Product not found");
-    return toStoreProductDetail(row);
+    const flashPrices = await activeFlashPrices(
+      this.prisma,
+      row.variants.map((variant) => variant.id),
+    );
+    return toStoreProductDetail(row, flashPrices);
   }
 
   /** ລາຄາ ແລະ ສະຕ໋ອກປັດຈຸບັນຂອງກະຕ່າ. ຍອດໃຊ້ສູດດຽວກັບການສ້າງບິນ (ບໍ່ມີສ່ວນຫຼຸດ, ຄ່າສົ່ງ 0) */
@@ -159,6 +179,10 @@ export class StoreCatalogService {
       },
     });
     const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+    const flashPrices = await activeFlashPrices(
+      this.prisma,
+      variants.map((variant) => variant.id),
+    );
 
     const items = input.items.map((item): StoreCartLineDto => {
       const variant = variantById.get(item.variantId);
@@ -166,6 +190,7 @@ export class StoreCatalogService {
         return { variantId: item.variantId, quantity: item.quantity, unavailable: true };
       }
       const available = availableOf(variant.stockLevels);
+      const { price } = effectivePrice(variant.price, flashPrices.get(variant.id));
       return {
         variantId: variant.id,
         quantity: item.quantity,
@@ -174,8 +199,8 @@ export class StoreCatalogService {
         productSlug: variant.product.slug,
         variantName: variant.name,
         imageUrl: variant.product.images[0]?.url ?? null,
-        unitPrice: money(variant.price),
-        lineTotal: money(variant.price.mul(item.quantity)),
+        unitPrice: money(price),
+        lineTotal: money(price.mul(item.quantity)),
         stock: storeStock(available),
         insufficient: available < item.quantity,
       };

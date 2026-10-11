@@ -43,6 +43,8 @@ describe("lookups: variant search, customers, date filters (e2e)", () => {
         productStatus: "ACTIVE",
         imageUrl: null,
         price: "100.00",
+        regularPrice: "100.00",
+        saleEndsAt: null,
         costPrice: "60.00",
         isActive: true,
         availableTotal: 0,

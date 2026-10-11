@@ -1,4 +1,4 @@
-import { Prisma, type ProductVariant } from "@oca/database";
+import { type ActiveFlashPrice, Prisma, type ProductVariant, effectivePrice } from "@oca/database";
 import type { ProductStatus } from "@oca/shared";
 import { money, moneyOrNull } from "../../common/money";
 
@@ -164,14 +164,18 @@ export interface VariantSearchItemDto {
   productName: string;
   productStatus: ProductStatus;
   imageUrl: string | null;
+  /** price = what an order created now would charge (flash sale applied); regularPrice = the variant price */
   price: string;
+  regularPrice: string;
+  saleEndsAt: Date | null;
   costPrice: string;
   isActive: boolean;
   availableTotal: number;
   stock: { warehouseId: string; onHand: number; reserved: number; available: number }[];
 }
 
-export function toVariantSearchItem(row: VariantSearchRow): VariantSearchItemDto {
+export function toVariantSearchItem(row: VariantSearchRow, flash?: ActiveFlashPrice): VariantSearchItemDto {
+  const sale = effectivePrice(row.price, flash);
   const stock = row.stockLevels.map((level) => ({
     warehouseId: level.warehouseId,
     onHand: level.onHand,
@@ -187,7 +191,9 @@ export function toVariantSearchItem(row: VariantSearchRow): VariantSearchItemDto
     productName: row.product.name,
     productStatus: row.product.status,
     imageUrl: row.product.images[0]?.url ?? null,
-    price: money(row.price),
+    price: money(sale.price),
+    regularPrice: money(sale.regularPrice),
+    saleEndsAt: sale.saleEndsAt,
     costPrice: money(row.costPrice),
     isActive: row.isActive,
     availableTotal: stock.reduce((sum, level) => sum + level.available, 0),

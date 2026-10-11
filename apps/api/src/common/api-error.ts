@@ -66,6 +66,9 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   COUPON_NOT_FOUND: HttpStatus.NOT_FOUND,
   COUPON_INVALID: HttpStatus.CONFLICT,
   COUPON_IN_USE: HttpStatus.CONFLICT,
+  FLASH_SALE_NOT_FOUND: HttpStatus.NOT_FOUND,
+  FLASH_SALE_OVERLAP: HttpStatus.CONFLICT,
+  FLASH_SALE_PRICE_INVALID: HttpStatus.CONFLICT,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

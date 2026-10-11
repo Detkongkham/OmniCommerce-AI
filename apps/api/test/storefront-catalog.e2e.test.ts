@@ -68,6 +68,7 @@ describe("storefront catalog (e2e)", () => {
           priceMin: "100.00",
           priceMax: "150.00",
           compareAtPrice: "120.00",
+          saleEndsAt: null,
           stock: "IN_STOCK",
         },
       ]);
@@ -176,6 +177,7 @@ describe("storefront catalog (e2e)", () => {
             name: "ດຳ",
             price: "80.00",
             compareAtPrice: null,
+            saleEndsAt: null,
             optionValues: { ສີ: "ດຳ" },
             stock: { status: "LOW", remaining: 3 },
           },

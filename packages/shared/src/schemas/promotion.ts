@@ -119,3 +119,45 @@ export function computeCouponDiscount(
   if (coupon.type === "PERCENT" && coupon.maxDiscount !== null) discount = Decimal.min(discount, coupon.maxDiscount);
   return Decimal.min(discount, subtotal).toFixed(2);
 }
+
+// ---------------------------------------------------------------------------
+// Flash Sale
+// ---------------------------------------------------------------------------
+export const FLASH_SALE_MAX_ITEMS = 200;
+
+const flashSaleItemSchema = z.strictObject({
+  variantId: z.string().min(1).max(64),
+  salePrice: positiveMoney,
+});
+
+const flashSaleItemsSchema = z
+  .array(flashSaleItemSchema)
+  .min(1)
+  .max(FLASH_SALE_MAX_ITEMS)
+  .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "ມີສິນຄ້າຊ້ຳກັນ");
+
+const flashSaleNameSchema = z.string().trim().min(1).max(100);
+
+export const createFlashSaleSchema = z
+  .strictObject({
+    name: flashSaleNameSchema,
+    startsAt: z.coerce.date(),
+    endsAt: z.coerce.date(),
+    isActive: z.boolean().default(true),
+    items: flashSaleItemsSchema,
+  })
+  .refine((value) => value.endsAt.getTime() > value.startsAt.getTime(), { path: ["endsAt"], message: "endsAt must be after startsAt" });
+
+/** `items` (ຖ້າສົ່ງ) ແທນລາຍການທັງໝົດ; ເວລາກວດໃນ API ຫຼັງລວມກັບຄ່າເດີມ */
+export const updateFlashSaleSchema = z
+  .strictObject({
+    name: flashSaleNameSchema.optional(),
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().optional(),
+    isActive: z.boolean().optional(),
+    items: flashSaleItemsSchema.optional(),
+  })
+  .refine(requireNonEmpty, NON_EMPTY_MESSAGE);
+
+export type CreateFlashSaleInput = z.infer<typeof createFlashSaleSchema>;
+export type UpdateFlashSaleInput = z.infer<typeof updateFlashSaleSchema>;

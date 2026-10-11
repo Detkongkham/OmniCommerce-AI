@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable } from "@nestjs/common";
-import { Prisma, type PrismaClient } from "@oca/database";
+import { Prisma, type PrismaClient, activeFlashPrices } from "@oca/database";
 import {
   type CreateProductInput,
   type ProductListQuery,
@@ -95,7 +95,16 @@ export class ProductsService {
       }),
       this.prisma.productVariant.count({ where }),
     ]);
-    return toPage(rows.map(toVariantSearchItem), total, query.page, query.pageSize);
+    const flashPrices = await activeFlashPrices(
+      this.prisma,
+      rows.map((row) => row.id),
+    );
+    return toPage(
+      rows.map((row) => toVariantSearchItem(row, flashPrices.get(row.id))),
+      total,
+      query.page,
+      query.pageSize,
+    );
   }
 
   async get(id: string): Promise<ProductDetailDto> {
