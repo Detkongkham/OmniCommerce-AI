@@ -51,6 +51,10 @@ const envSchema = z
     MEDIA_DIR: z.preprocess(emptyToUndefined, z.string().min(1).default("./.data/media")),
     // ໄລຍະກວດໂພສທີ່ຮອດເວລາ; 0 = ປິດ
     POSTING_TICK_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).default(30_000)),
+    // ໜ້າຮ້ານສາທາລະນະ: ຈຳນວນຄຳຂໍຕໍ່ IP (ສັ່ງ/ສະລິບ ຕໍ່ 10 ນາທີ, ກວດກະຕ່າ ຕໍ່ນາທີ)
+    STORE_ORDER_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(5)),
+    STORE_SLIP_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(10)),
+    STORE_CHECK_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(60)),
   })
   .superRefine((env, ctx) => {
     if (
