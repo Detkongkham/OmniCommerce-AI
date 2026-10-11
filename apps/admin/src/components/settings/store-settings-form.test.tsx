@@ -28,6 +28,7 @@ const settings: StoreSettingsDto = {
   vatRate: "10.00",
   pricesIncludeVat: true,
   reservationMinutes: 30,
+  paymentReminderMinutes: null,
   paymentInstructions: "BCEL One 0201 1234 5678",
   receivingAccounts: [],
 };
@@ -87,6 +88,7 @@ describe("StoreSettingsForm", () => {
           pricesIncludeVat: false,
           reservationMinutes: 45,
           paymentInstructions: "BCEL One 0201 1234 5678",
+          paymentReminderMinutes: null,
           receivingAccounts: [],
         },
       }),
@@ -94,6 +96,23 @@ describe("StoreSettingsForm", () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith("Settings saved"),
     );
+  });
+
+  it("ເຕືອນບິນຄ້າງຈ່າຍ: ວ່າງ = null (ປິດ); ໃສ່ນາທີ → ຕົວເລກ; ຄ່າຜິດ → error ບໍ່ສົ່ງ", async () => {
+    const { user } = renderWithProviders(<StoreSettingsForm />);
+    await screen.findByDisplayValue("OCA Store");
+    const field = screen.getByLabelText(/^Unpaid order chat reminder/);
+    expect(field).toHaveValue("");
+    await user.type(field, "0");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Must be a whole number from 1 to 1,440, or empty")).toBeInTheDocument();
+    expect(apiFetch).not.toHaveBeenCalledWith("/settings/store", expect.objectContaining({ method: "PATCH" }));
+    await user.clear(field);
+    await user.type(field, "10");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/settings/store", expect.objectContaining({ method: "PATCH" })));
+    const call = vi.mocked(apiFetch).mock.calls.find(([, options]) => (options as { method?: string } | undefined)?.method === "PATCH");
+    expect((call?.[1] as { body: Record<string, unknown> }).body).toMatchObject({ paymentReminderMinutes: 10 });
   });
 
   it("VAT ເກີນ 100 ຫຼື ນາທີ 0: ສະແດງ error ແລະ ບໍ່ສົ່ງ", async () => {
@@ -346,6 +365,7 @@ describe("StoreSettingsForm", () => {
         pricesIncludeVat: true,
         reservationMinutes: 30,
         paymentInstructions: "BCEL One 0201 1234 5678",
+        paymentReminderMinutes: null,
         receivingAccounts: [
           { bank: "BCEL", accountNo: "010-12-00-0123", accountName: "OCA" },
         ],

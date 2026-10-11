@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  MAX_PAYMENT_REMINDER_MINUTES,
   MAX_RESERVATION_MINUTES,
   receivingAccountsSchema,
   vatRateSchema,
@@ -45,6 +46,11 @@ const formSchema = z.object({
     .min(1)
     .max(MAX_RESERVATION_MINUTES),
   paymentInstructions: z.string().max(PAYMENT_MAX),
+  // "" = reminders off; otherwise whole minutes 1..MAX_PAYMENT_REMINDER_MINUTES
+  paymentReminderMinutes: z
+    .string()
+    .trim()
+    .refine((value) => value === "" || (/^\d{1,4}$/.test(value) && Number(value) >= 1 && Number(value) <= MAX_PAYMENT_REMINDER_MINUTES)),
   // ກວດຂັ້ນຕົ້ນພຽງຄວາມຍາວແຖວ; ກົດຈິງ (ບໍ່ວ່າງ, ເລກບັນຊີມີຕົວເລກ) ກວດດ້ວຍ receivingAccountsSchema ຕອນ submit
   receivingAccounts: z
     .array(
@@ -143,6 +149,7 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       pricesIncludeVat: settings.pricesIncludeVat,
       reservationMinutes: settings.reservationMinutes,
       paymentInstructions: settings.paymentInstructions ?? "",
+      paymentReminderMinutes: settings.paymentReminderMinutes?.toString() ?? "",
       receivingAccounts: toAccountValues(settings.receivingAccounts),
     },
   });
@@ -163,6 +170,7 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       pricesIncludeVat: settings.pricesIncludeVat,
       reservationMinutes: settings.reservationMinutes,
       paymentInstructions: settings.paymentInstructions ?? "",
+      paymentReminderMinutes: settings.paymentReminderMinutes?.toString() ?? "",
       receivingAccounts: toAccountValues(settings.receivingAccounts),
     });
     setAccountsError(null);
@@ -198,6 +206,7 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
         ...values,
         paymentInstructions:
           paymentInstructions === "" ? null : paymentInstructions,
+        paymentReminderMinutes: values.paymentReminderMinutes === "" ? null : Number(values.paymentReminderMinutes),
         receivingAccounts: accounts.data,
       });
       toast.success(t("settings.toast.saved"));
@@ -294,6 +303,23 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
           />
           <p id="settings-minutes-hint" className="mt-1 text-xs text-ink-muted">
             {t("settings.reservationHint")}
+          </p>
+        </Field>
+        <Field
+          label={t("settings.paymentReminderMinutes")}
+          htmlFor="settings-reminder"
+          error={errors.paymentReminderMinutes ? t("settings.validation.reminderMinutes") : undefined}
+        >
+          <Input
+            id="settings-reminder"
+            inputMode="numeric"
+            disabled={!canWrite}
+            invalid={!!errors.paymentReminderMinutes}
+            aria-describedby="settings-reminder-hint"
+            {...register("paymentReminderMinutes")}
+          />
+          <p id="settings-reminder-hint" className="mt-1 text-xs text-ink-muted">
+            {t("settings.paymentReminderHint")}
           </p>
         </Field>
       </div>

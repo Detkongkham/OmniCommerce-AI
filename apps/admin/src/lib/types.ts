@@ -70,6 +70,8 @@ export interface StoreSettingsDto {
   vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
+  /** minutes before the reservation expires to send the Messenger reminder; null = off */
+  paymentReminderMinutes: number | null;
   /** ບັນຊີຮັບເງິນຂອງຮ້ານ (ໃຊ້ກວດບັນຊີປາຍທາງຂອງສະລິບ) */
   receivingAccounts: ReceivingAccount[];
   /** ຂໍ້ມູນໂອນທີ່ແນບທ້າຍສະຫຼຸບບິນ CF (null = ບໍ່ມີ) */
@@ -259,6 +261,8 @@ export interface OrderDetailDto {
   shippingBranch: string | null;
   note: string | null;
   reservedUntil: string | null;
+  paymentReminderStatus: "NONE" | "SENT" | "FAILED";
+  paymentReminderAt: string | null;
   secondsUntilExpiry: number | null;
   paidAt: string | null;
   shippedAt: string | null;

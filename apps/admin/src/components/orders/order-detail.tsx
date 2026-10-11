@@ -10,6 +10,7 @@ import { ActionBusyError, errorMessage } from "@/lib/errors";
 import { useT } from "@/lib/i18n/language-provider";
 import { type OrderAction, useOrder, useOrderAction, useOrderSnapshot } from "@/lib/queries";
 import type { OrderDetailDto } from "@/lib/types";
+import { formatDateTime } from "@/lib/format";
 import { formatCountdown, useCountdown } from "@/lib/use-countdown";
 import { CancelOrderDialog } from "./cancel-order-dialog";
 import { OrderItemsCard } from "./order-items-card";
@@ -302,6 +303,11 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
             <p role="timer" aria-label={t("orders.detail.countdownLabel")} className="text-sm font-medium tabular-nums text-warning-ink">
               {t("orders.detail.expiresIn", { time: formatCountdown(remaining) })}
             </p>
+          ) : null}
+          {order.paymentReminderStatus === "SENT" ? (
+            <p className="text-sm text-ink-secondary">{t("orders.detail.reminder.SENT", { time: formatDateTime(order.paymentReminderAt) })}</p>
+          ) : order.paymentReminderStatus === "FAILED" ? (
+            <p className="text-sm text-warning-ink">{t("orders.detail.reminder.FAILED")}</p>
           ) : null}
           {expired ? (
             <div id={EXPIRED_NOTE_ID} role="status" className="text-sm">
