@@ -42,4 +42,12 @@ describe("ConfirmDialog", () => {
     await userEvent.keyboard("{Escape}");
     expect(onOpenChange).not.toHaveBeenCalled();
   });
+
+  it("confirmDisabled ປິດສະເພາະປຸ່ມຢືນຢັນ ປຸ່ມຍົກເລີກຍັງກົດໄດ້", () => {
+    render(
+      <ConfirmDialog open onOpenChange={vi.fn()} title="T" description="D" confirmLabel="Delete" cancelLabel="Cancel" confirmDisabled onConfirm={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
 });

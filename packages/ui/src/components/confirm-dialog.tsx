@@ -11,6 +11,8 @@ export interface ConfirmDialogProps {
   cancelLabel: string;
   closeLabel?: string;
   busy?: boolean;
+  /** ປິດປຸ່ມຢືນຢັນ (ເຊັ່ນ ຂໍ້ມູນຍັງບໍ່ຄົບ) ໂດຍບໍ່ກະທົບປຸ່ມຍົກເລີກ */
+  confirmDisabled?: boolean;
   onConfirm: () => void | Promise<void>;
 }
 
@@ -24,6 +26,7 @@ export function ConfirmDialog({
   cancelLabel,
   closeLabel,
   busy = false,
+  confirmDisabled = false,
   onConfirm,
 }: ConfirmDialogProps) {
   return (
@@ -51,6 +54,7 @@ export function ConfirmDialog({
             variant="destructive"
             className="h-10 rounded-xl px-6 font-bold"
             loading={busy}
+            disabled={confirmDisabled}
             onClick={() => void onConfirm()}
           >
             {confirmLabel}
