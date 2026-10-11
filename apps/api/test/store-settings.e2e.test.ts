@@ -36,6 +36,7 @@ describe("store settings (e2e)", () => {
       vatRate: "10.00",
       pricesIncludeVat: true,
       reservationMinutes: 30,
+      paymentReminderMinutes: null,
       paymentInstructions: null,
       receivingAccounts: [],
     });

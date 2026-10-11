@@ -137,6 +137,8 @@ model StoreSetting {
   pricesIncludeVat    Boolean  @default(true)
   reservationMinutes  Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
   paymentInstructions String? // ຂໍ້ຄວາມຂໍ້ມູນໂອນເງິນ ໃສ່ໃນສະຫຼຸບບິນ CF
+  // minutes before reservedUntil to send the payment reminder; null = off
+  paymentReminderMinutes Int?
   receivingAccounts   Json     @default("[]") // [{ bank, accountNo, accountName? }] ບັນຊີຮັບເງິນຂອງຮ້ານ; [] = ບໍ່ກວດບັນຊີປາຍທາງ
   updatedAt           DateTime @updatedAt
 }
@@ -373,6 +375,10 @@ model Order {
   // Idempotency-Key ຂອງ POST /orders: key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ. hash = sha256 ຂອງ payload
   idempotencyKey  String? @unique
   idempotencyHash String?
+
+  // payment reminder sent once before the reservation expires (orders reachable by Messenger)
+  paymentReminderStatus PaymentReminderStatus @default(NONE)
+  paymentReminderAt     DateTime?
 
   reservedUntil DateTime? // ໝົດເວລາຈອງສະຕ໋ອກ (ໂມງນັບຖອຍຫຼັງໃນໃບບິນ)
   paidAt        DateTime?
@@ -817,6 +823,12 @@ model PaymentSlip {
 // ---------------------------------------------------------------------------
 // Promotion (ໂມດູນ 5)
 // ---------------------------------------------------------------------------
+
+enum PaymentReminderStatus {
+  NONE
+  SENT
+  FAILED
+}
 
 enum CouponType {
   PERCENT

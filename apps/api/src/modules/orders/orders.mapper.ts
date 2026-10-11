@@ -81,6 +81,9 @@ export interface OrderDetailDto {
   shippingBranch: string | null;
   note: string | null;
   reservedUntil: Date | null;
+  /** Messenger payment reminder: NONE (not sent / not applicable), SENT, FAILED */
+  paymentReminderStatus: string;
+  paymentReminderAt: Date | null;
   secondsUntilExpiry: number | null;
   paidAt: Date | null;
   shippedAt: Date | null;
@@ -149,6 +152,8 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
     shippingBranch: row.shippingBranch,
     note: row.note,
     reservedUntil: row.reservedUntil,
+    paymentReminderStatus: row.paymentReminderStatus,
+    paymentReminderAt: row.paymentReminderAt,
     secondsUntilExpiry:
       pendingWithDeadline && row.reservedUntil
         ? Math.max(0, Math.floor((row.reservedUntil.getTime() - now.getTime()) / 1000))

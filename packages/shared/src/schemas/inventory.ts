@@ -2,6 +2,7 @@ import { Decimal } from "decimal.js";
 import { z } from "zod";
 import { STORE_UTC_OFFSET } from "../constants";
 import { SLUG_PATTERN } from "../slug";
+import { MAX_PAYMENT_REMINDER_MINUTES } from "../payment-reminder";
 import { receivingAccountsSchema } from "./slips";
 
 // ---------------------------------------------------------------------------
@@ -485,6 +486,8 @@ export const updateStoreSettingsSchema = z
     vatRate: vatRateSchema.optional(),
     pricesIncludeVat: z.boolean().optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
+    /** minutes before the reservation expires to send the Messenger payment reminder; null = off */
+    paymentReminderMinutes: z.number().int().min(1).max(MAX_PAYMENT_REMINDER_MINUTES).nullable().optional(),
     receivingAccounts: receivingAccountsSchema.optional(),
     // transform ຢູ່ກ່ອນ nullable/optional: ໃຫ້ key ຍັງເປັນ optional ໃນ type ຂາອອກ (ວ່າງ = null)
     paymentInstructions: z

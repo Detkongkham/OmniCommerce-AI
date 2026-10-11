@@ -22,3 +22,4 @@ for (const key of [
 ]) {
   delete process.env[key];
 }
+process.env.PAYMENT_REMINDER_TICK_MS = "0";

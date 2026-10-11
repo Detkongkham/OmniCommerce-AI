@@ -101,11 +101,11 @@ export class ConversationsService {
    * ການສົ່ງລົ້ມເຫຼວ = ຕອບ 201 ພ້ອມ status FAILED + errorCode (ບໍ່ແມ່ນ error ຂອງ HTTP).
    * ຖ້າ process ຕາຍກາງທາງ ແຖວຈະຄ້າງ PENDING (ຍັງບໍ່ມີ job ກວາດ; ບັນທຶກໃນ DEPLOYMENT-NOTES).
    */
-  async sendMessage(id: string, input: SendMessageInput, actor: AuthUser): Promise<MessageDto> {
+  async sendMessage(id: string, input: SendMessageInput, actor: AuthUser | null): Promise<MessageDto> {
     const conversation = await this.require(id);
     const lastMessageAtBeforeSend = conversation.lastMessageAt;
     const pending = await this.prisma.message.create({
-      data: { conversationId: id, direction: "OUT", text: input.text, status: "PENDING", sentByUserId: actor.id },
+      data: { conversationId: id, direction: "OUT", text: input.text, status: "PENDING", sentByUserId: actor?.id ?? null },
     });
 
     const adapter = this.channels.adapterFor(conversation.channel);
@@ -142,7 +142,7 @@ export class ConversationsService {
     return toMessageDto(message);
   }
 
-  private async settle(pendingId: string, conversationId: string, actor: AuthUser, result: SendResult): Promise<MessageRow> {
+  private async settle(pendingId: string, conversationId: string, actor: AuthUser | null, result: SendResult): Promise<MessageRow> {
     if (!result.ok) {
       return this.prisma.message.update({
         where: { id: pendingId },
@@ -163,7 +163,7 @@ export class ConversationsService {
       return this.prisma.$transaction(async (tx) => {
         const echo = await tx.message.findFirstOrThrow({ where: { conversationId, externalId: result.externalId } });
         await tx.message.delete({ where: { id: pendingId } });
-        return tx.message.update({ where: { id: echo.id }, data: { sentByUserId: actor.id }, include: MESSAGE_INCLUDE });
+        return tx.message.update({ where: { id: echo.id }, data: { sentByUserId: actor?.id ?? null }, include: MESSAGE_INCLUDE });
       });
     }
   }

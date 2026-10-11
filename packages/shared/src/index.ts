@@ -17,3 +17,4 @@ export * from "./schemas/posting";
 export * from "./schemas/reports";
 export * from "./schemas/storefront";
 export * from "./schemas/promotion";
+export * from "./payment-reminder";
