@@ -1,6 +1,7 @@
 import { type ErrorCode, isErrorCode } from "@oca/shared";
 import type { Translate, TranslationKey } from "@/lib/i18n/dictionary";
 import { ApiError } from "./api";
+import { formatMoney } from "./format";
 import type { Shortage } from "./types";
 
 /** code ທີ່ message ຂອງ API ເປັນຂໍ້ຄວາມໃຫ້ຜູ້ໃຊ້ (ເຊັ່ນ "Cannot remove the last active OWNER") ຈຶ່ງໃຊ້ message ກ່ອນ */
@@ -22,6 +23,9 @@ export function errorMessage(error: unknown, t: Translate): string {
   if (error instanceof ActionBusyError) return t("common.busy");
   if (error instanceof ApiError) {
     const known = isErrorCode(error.code);
+    // ໂຄດໃຊ້ບໍ່ໄດ້: ບອກເຫດຜົນສະເພາະ (reason ຢູ່ໃນ body)
+    const reason = error.code === "COUPON_INVALID" ? couponReasonMessage(error.body, t) : null;
+    if (reason) return reason;
     if (error.status >= 500) return known ? t(`error.${error.code as ErrorCode}` as TranslationKey) : t("common.error.generic");
     if (known) {
       const code = error.code as ErrorCode;
@@ -48,4 +52,15 @@ export function shortageLines(error: unknown, t: Translate): string[] {
       available: shortage.available,
     }),
   );
+}
+
+const COUPON_REASONS = ["NOT_FOUND", "INACTIVE", "NOT_STARTED", "EXPIRED", "MIN_SUBTOTAL", "USAGE_LIMIT", "PHONE_LIMIT", "PHONE_REQUIRED"] as const;
+
+/** ຂໍ້ຄວາມຕາມ `reason` ຂອງ 409 COUPON_INVALID; null ຖ້າ body ບໍ່ມີ reason ທີ່ຮູ້ຈັກ */
+export function couponReasonMessage(body: Record<string, unknown> | undefined, t: Translate): string | null {
+  const reason = COUPON_REASONS.find((known) => known === body?.reason);
+  if (!reason) return null;
+  return t(`coupon.reason.${reason}` as TranslationKey, {
+    minSubtotal: typeof body?.minSubtotal === "string" ? formatMoney(body.minSubtotal) : "",
+  });
 }

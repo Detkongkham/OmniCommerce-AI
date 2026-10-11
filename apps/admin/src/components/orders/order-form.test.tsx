@@ -450,3 +450,44 @@ describe("OrderForm", () => {
     expect(fireEvent.keyDown(note, { key: "Enter" })).toBe(false);
   });
 });
+
+describe("OrderForm: ໂຄດສ່ວນຫຼຸດ", () => {
+  const previewCalls = () => vi.mocked(apiFetch).mock.calls.filter((call) => call[0] === "/coupons/preview");
+
+  it("ກວດໂຄດ: ສົ່ງລະຫັດ (ຕົວພິມໃຫຍ່) + ຍອດຄ່າສິນຄ້າ ແລ້ວສະແດງສ່ວນຫຼຸດ; ສ້າງບິນສົ່ງ couponCode", async () => {
+    mockApi({ "/coupons/preview": { code: "NEW10", discount: "10.00" } });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    expect(screen.getByRole("button", { name: "Check code" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Discount code"), "new10");
+    await user.click(screen.getByRole("button", { name: "Check code" }));
+    expect(await screen.findByText(/Valid: 10.00 off/)).toBeInTheDocument();
+    expect(previewCalls()[0]?.[1]).toEqual({ method: "POST", body: { code: "NEW10", subtotal: "100.00" } });
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(1));
+    expect((orderCalls()[0]?.[1] as { body: Record<string, unknown> }).body).toMatchObject({ couponCode: "NEW10" });
+  });
+
+  it("ໂຄດໃຊ້ບໍ່ໄດ້ → ບອກເຫດຜົນ; ແກ້ລະຫັດແລ້ວຂໍ້ຄວາມຫາຍ; ຮູບແບບຜິດບໍ່ຖາມ API", async () => {
+    mockApi({ "/coupons/preview": new ApiError(409, "x", [], "COUPON_INVALID", { reason: "EXPIRED" }) });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await user.type(screen.getByLabelText("Discount code"), "OLD10");
+    await user.click(screen.getByRole("button", { name: "Check code" }));
+    expect(await screen.findByText("This code has expired")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Discount code"), "!");
+    expect(screen.queryByText("This code has expired")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Check code" }));
+    expect(await screen.findByText("Invalid discount code")).toBeInTheDocument();
+    expect(previewCalls()).toHaveLength(1);
+  });
+
+  it("API ປະຕິເສດໂຄດຕອນສ້າງບິນ → ຂໍ້ຄວາມເຫດຜົນໃນ alert", async () => {
+    mockApi({ "/orders": new ApiError(409, "x", [], "COUPON_INVALID", { reason: "USAGE_LIMIT" }) });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await user.type(screen.getByLabelText("Discount code"), "FULL");
+    await user.click(submitButton());
+    expect(await screen.findByRole("alert")).toHaveTextContent("This code has been fully used");
+  });
+});

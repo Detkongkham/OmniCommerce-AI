@@ -1,5 +1,6 @@
 "use client";
 
+import { COUPON_CODE_PATTERN } from "@oca/shared";
 import { Button, Card, Field, Input, PageHeader, Select, toast } from "@oca/ui";
 import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -22,7 +23,7 @@ import {
   shortageKeys,
   validateOrderForm,
 } from "@/lib/order-form";
-import { useCreateOrder, useStoreSettings, useWarehouses } from "@/lib/queries";
+import { useCreateOrder, usePreviewCoupon, useStoreSettings, useWarehouses } from "@/lib/queries";
 import type { ConversationDto, OrderDetailDto, Shortage, VariantSearchItemDto } from "@/lib/types";
 import { CustomerPicker } from "./customer-picker";
 
@@ -537,6 +538,12 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
             </div>
           </dl>
           <p className="mt-3 text-xs text-ink-muted">{t("orders.summary.estimate")}</p>
+          <CouponField
+            code={form.couponCode}
+            subtotal={totals?.subtotal ?? null}
+            phone={form.customerMode === "existing" ? (form.customer?.phone ?? undefined) : form.customerMode === "new" ? form.newCustomer.phone.trim() || undefined : undefined}
+            onChange={(couponCode) => patch({ couponCode })}
+          />
         </Card>
 
         {chat ? (
@@ -554,5 +561,68 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
         ) : null}
       </fieldset>
     </form>
+  );
+}
+
+/**
+ * ຊ່ອງໂຄດສ່ວນຫຼຸດຂອງຟອມເປີດບິນ. "ກວດໂຄດ" ຖາມ API ວ່າໃຊ້ໄດ້ ຫຼື ບໍ່ ກັບຍອດປັດຈຸບັນ (ບໍ່ໃຊ້ສິດ);
+ * ສ່ວນຫຼຸດຈິງຖືກຄິດຕອນສ້າງບິນ ແລະ ຍອດໃນສະຫຼຸບຂ້າງເທິງຍັງບໍ່ລວມໂຄດ.
+ */
+function CouponField({
+  code,
+  subtotal,
+  phone,
+  onChange,
+}: {
+  code: string;
+  subtotal: string | null;
+  phone: string | undefined;
+  onChange: (code: string) => void;
+}) {
+  const { t } = useT();
+  const preview = usePreviewCoupon();
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const normalized = code.trim().toUpperCase();
+
+  async function check() {
+    if (!normalized || subtotal === null || preview.isPending) return;
+    if (!COUPON_CODE_PATTERN.test(normalized)) {
+      setResult({ ok: false, message: t("orders.coupon.invalid") });
+      return;
+    }
+    try {
+      const found = await preview.mutateAsync({ code: normalized, subtotal, ...(phone && /^\+?[0-9]{6,15}$/.test(phone) ? { phone } : {}) });
+      setResult({ ok: true, message: t("orders.coupon.valid", { discount: formatMoney(found.discount) }) });
+    } catch (error) {
+      setResult({ ok: false, message: errorMessage(error, t) });
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <Field label={t("orders.coupon.label")} htmlFor="order-coupon">
+        <div className="flex gap-2">
+          <Input
+            id="order-coupon"
+            className="font-mono uppercase"
+            maxLength={30}
+            autoComplete="off"
+            value={code}
+            onChange={(event) => {
+              setResult(null);
+              onChange(event.target.value);
+            }}
+          />
+          <Button type="button" variant="outlinePrimary" className="shrink-0 rounded-xl" disabled={!normalized || subtotal === null} loading={preview.isPending} onClick={() => void check()}>
+            {t("orders.coupon.check")}
+          </Button>
+        </div>
+      </Field>
+      {result ? (
+        <p role="status" className={`mt-2 text-xs font-semibold ${result.ok ? "text-success-ink" : "text-danger-ink"}`}>
+          {result.message}
+        </p>
+      ) : null}
+    </div>
   );
 }

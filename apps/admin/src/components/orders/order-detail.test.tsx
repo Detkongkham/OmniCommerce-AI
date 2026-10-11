@@ -18,7 +18,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 const base: OrderDetailDto = {
   id: "o1", orderNumber: "SO-000001", status: "PENDING_PAYMENT", channel: "OFFLINE", source: "MANUAL",
   customer: { id: "c1", name: "Mali", phone: "02055550001", email: null },
-  currency: "LAK", exchangeRate: "1.000000", subtotal: "190.00", discountTotal: "10.00", shippingFee: "5.00",
+  currency: "LAK", exchangeRate: "1.000000", subtotal: "190.00", discountTotal: "10.00", couponCode: null, couponDiscount: "0.00", shippingFee: "5.00",
   vatRate: "10.00", vatAmount: "17.73", total: "195.00", shippingName: "Mali", shippingPhone: "02055550001",
   shippingAddress: "Vientiane", preferredCourier: null, shippingBranch: null, note: "gift", reservedUntil: "2026-10-05T06:00:00.000Z", secondsUntilExpiry: 120,
   paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-05T05:30:00.000Z", shipment: null,
@@ -105,6 +105,14 @@ describe("OrderDetail: ສະແດງຂໍ້ມູນ", () => {
     await heading();
     expect(screen.queryByText("Unit cost")).toBeNull();
     expect(document.body.textContent).not.toContain("NaN");
+  });
+
+  it("ບິນທີ່ໃຊ້ໂຄດ: ສະແດງລະຫັດ ແລະ ຍອດທີ່ໂຄດຫຼຸດ", async () => {
+    mockOrder({ ...base, couponCode: "NEW10", couponDiscount: "7.00" });
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByText("Code NEW10")).toBeInTheDocument();
+    expect(screen.getByText("7.00")).toBeInTheDocument();
   });
 
   it("ບິນຈາກເວັບ: ສະແດງ courier ແລະ ສາຂາປາຍທາງທີ່ລູກຄ້າເລືອກ", async () => {

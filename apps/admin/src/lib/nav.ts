@@ -14,6 +14,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  TicketPercent,
   Truck,
   Users,
   Warehouse,
@@ -60,7 +61,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "marketing",
     labelKey: "nav.group.marketing",
-    items: [{ href: "/posts", labelKey: "nav.posts", icon: Megaphone, permission: "posting:read" }],
+    items: [
+      { href: "/posts", labelKey: "nav.posts", icon: Megaphone, permission: "posting:read" },
+      { href: "/promotions", labelKey: "nav.promotions", icon: TicketPercent, permission: "promotion:read" },
+    ],
   },
   {
     id: "settings",

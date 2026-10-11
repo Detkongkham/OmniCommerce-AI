@@ -155,6 +155,15 @@ describe("lineAvailable", () => {
   });
 });
 
+describe("toCreateOrderInput: ໂຄດສ່ວນຫຼຸດ", () => {
+  it("ໂຄດຖືກ trim + ເປັນຕົວພິມໃຫຍ່; ວ່າງ = ບໍ່ສົ່ງ", () => {
+    const withCode = toCreateOrderInput(form({ couponCode: "  new10 " }));
+    expect(withCode).toMatchObject({ couponCode: "NEW10" });
+    expect(createOrderSchema.safeParse(withCode).success).toBe(true);
+    expect(toCreateOrderInput(form({ couponCode: "   " }))).not.toHaveProperty("couponCode");
+  });
+});
+
 describe("toCreateOrderInput", () => {
   it("ລູກຄ້າໜ້າຮ້ານ: ຂ້າມ field ເປົ່າ ແລະ ບໍ່ສົ່ງ warehouseId ເມື່ອໃຊ້ສາງຫຼັກ", () => {
     const input = toCreateOrderInput(form());

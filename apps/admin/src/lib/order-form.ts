@@ -30,6 +30,8 @@ export interface OrderFormState {
   shippingAddress: string;
   note: string;
   reservationMinutes: string;
+  /** ໂຄດສ່ວນຫຼຸດ (server ກວດ ແລະ ຄິດສ່ວນຫຼຸດຕອນສ້າງບິນ) */
+  couponCode: string;
 }
 
 export function emptyOrderForm(): OrderFormState {
@@ -44,6 +46,7 @@ export function emptyOrderForm(): OrderFormState {
     shippingAddress: "",
     note: "",
     reservationMinutes: "",
+    couponCode: "",
   };
 }
 
@@ -146,6 +149,7 @@ export function toCreateOrderInput(state: OrderFormState): unknown {
     ...(state.note.trim() ? { note: state.note.trim() } : {}),
     // ຜິດ → 0 ເພື່ອໃຫ້ schema ປະຕິເສດ
     ...(minutes ? { reservationMinutes: lineQuantity(minutes) ?? 0 } : {}),
+    ...(state.couponCode.trim() ? { couponCode: state.couponCode.trim().toUpperCase() } : {}),
   };
 }
 

@@ -35,7 +35,7 @@ const settings = { name: "OCA", baseCurrency: "LAK", vatRate: "10.00", pricesInc
 const createdOrder: OrderDetailDto = {
   id: "o9", orderNumber: "SO-000009", status: "PENDING_PAYMENT", channel: "FACEBOOK", source: "CHAT", conversationId: "conv1",
   customer: { id: "c1", name: "Mali", phone: "02055550001", email: null },
-  currency: "LAK", exchangeRate: "1.000000", subtotal: "200.00", discountTotal: "0.00", shippingFee: "0.00",
+  currency: "LAK", exchangeRate: "1.000000", subtotal: "200.00", discountTotal: "0.00", couponCode: null, couponDiscount: "0.00", shippingFee: "0.00",
   vatRate: "10.00", vatAmount: "18.18", total: "200.00", shippingName: "Mali", shippingPhone: "02055550001",
   shippingAddress: null, preferredCourier: null, shippingBranch: null, note: null, reservedUntil: "2026-10-07T06:00:00.000Z", secondsUntilExpiry: 1800,
   paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-07T05:30:00.000Z", shipment: null,

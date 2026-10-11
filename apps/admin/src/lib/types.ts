@@ -240,6 +240,9 @@ export interface OrderDetailDto {
   exchangeRate: string;
   subtotal: string;
   discountTotal: string;
+  /** ໂຄດສ່ວນຫຼຸດຂອງບິນ ແລະ ຍອດທີ່ຫຼຸດ ("0.00" ຖ້າບໍ່ມີ); ລວມຢູ່ໃນ discountTotal ແລ້ວ */
+  couponCode: string | null;
+  couponDiscount: string;
   shippingFee: string;
   vatRate: string;
   vatAmount: string;
@@ -522,4 +525,24 @@ export interface FulfillmentDetailDto {
   shipment: ShipmentDto | null;
   notifyText: string | null;
   storeName: string;
+}
+
+// ---------------------------------------------------------------------------
+// Promotion
+// ---------------------------------------------------------------------------
+export interface CouponDto {
+  id: string;
+  code: string;
+  type: "PERCENT" | "FIXED";
+  value: string;
+  maxDiscount: string | null;
+  minSubtotal: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  usageLimit: number | null;
+  perPhoneLimit: number | null;
+  isActive: boolean;
+  note: string | null;
+  usedCount: number;
+  createdAt: string;
 }

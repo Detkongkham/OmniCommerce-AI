@@ -1,7 +1,7 @@
 import { ERROR_CODES } from "@oca/shared";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
-import { ActionBusyError, errorMessage, extractShortages, shortageLines } from "./errors";
+import { ActionBusyError, couponReasonMessage, errorMessage, extractShortages, shortageLines } from "./errors";
 import { type TranslationKey, dictionaries, translate } from "./i18n/dictionary";
 
 const t = (key: TranslationKey, params?: Record<string, string | number>) => translate("en", key, params);
@@ -84,5 +84,23 @@ describe("shortages", () => {
       "TEE-R: needs 5 but only 2 available",
       "v9: needs 5 but only 2 available",
     ]);
+  });
+});
+
+describe("COUPON_INVALID", () => {
+  it("errorMessage ບອກເຫດຜົນຕາມ reason (ພ້ອມຍອດຂັ້ນຕ່ຳ); reason ບໍ່ຮູ້ຈັກ → ຂໍ້ຄວາມທົ່ວໄປຂອງ code", () => {
+    const withReason = (body: Record<string, unknown>) => new ApiError(409, "x", [], "COUPON_INVALID", body);
+    expect(errorMessage(withReason({ reason: "EXPIRED" }), t)).toBe("This code has expired");
+    expect(errorMessage(withReason({ reason: "MIN_SUBTOTAL", minSubtotal: "100000.00" }), t)).toBe("This code needs a minimum spend of 100,000.00");
+    expect(errorMessage(withReason({ reason: "???" }), t)).toBe("This coupon cannot be used");
+    expect(couponReasonMessage(undefined, t)).toBeNull();
+  });
+
+  it("ທຸກ reason ມີຂໍ້ຄວາມໃນທັງ lo ແລະ en", () => {
+    for (const reason of ["NOT_FOUND", "INACTIVE", "NOT_STARTED", "EXPIRED", "MIN_SUBTOTAL", "USAGE_LIMIT", "PHONE_LIMIT", "PHONE_REQUIRED"]) {
+      const key = `coupon.reason.${reason}` as TranslationKey;
+      expect(dictionaries.lo[key], key).toBeTruthy();
+      expect(dictionaries.en[key], key).toBeTruthy();
+    }
   });
 });

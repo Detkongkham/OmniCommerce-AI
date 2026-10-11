@@ -1,5 +1,6 @@
 import type {
   AdjustStockInput,
+  CreateCouponInput,
   CreateCourierInput,
   FulfillmentStatus,
   OverridePackInput,
@@ -54,6 +55,7 @@ import type {
   AssigneeDto,
   CategoryDto,
   CfCommentDto,
+  CouponDto,
   CourierDto,
   FulfillmentDetailDto,
   FulfillmentListItemDto,
@@ -99,6 +101,7 @@ export const queryKeys = {
   assignees: ["inbox-assignees"] as const,
   liveSessions: ["live-sessions"] as const,
   couriers: ["couriers"] as const,
+  coupons: ["coupons"] as const,
   fulfillment: ["fulfillment"] as const,
 };
 
@@ -839,6 +842,40 @@ export function useSaveCourier() {
         ? apiFetch<CourierDto>(`/couriers/${encodeURIComponent(args.id)}`, { method: "PATCH", body: args.input })
         : apiFetch<CourierDto>("/couriers", { method: "POST", body: args.input }),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Promotion: ໂຄດສ່ວນຫຼຸດ
+// ---------------------------------------------------------------------------
+/** body ຂອງ POST/PATCH /coupons: ວັນເວລາເປັນ ISO string (schema ຂອງ API ແປງເປັນ Date ເອງ) */
+export type CouponBody = Omit<CreateCouponInput, "startsAt" | "endsAt" | "minSubtotal" | "isActive"> & {
+  minSubtotal: string;
+  isActive: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+};
+
+export function useCoupons() {
+  return useQuery({ queryKey: queryKeys.coupons, queryFn: () => apiFetch<CouponDto[]>("/coupons") });
+}
+
+export function useSaveCoupon() {
+  const invalidate = useInvalidate(queryKeys.coupons);
+  return useMutation({
+    mutationFn: (args: { id?: string; input: CouponBody }) =>
+      args.id
+        ? apiFetch<CouponDto>(`/coupons/${encodeURIComponent(args.id)}`, { method: "PATCH", body: args.input })
+        : apiFetch<CouponDto>("/coupons", { method: "POST", body: args.input }),
+    onSuccess: invalidate,
+  });
+}
+
+/** ລອງໂຄດກັບຍອດຄ່າສິນຄ້າ ໂດຍບໍ່ໃຊ້ສິດ (ຟອມເປີດບິນ) */
+export function usePreviewCoupon() {
+  return useMutation({
+    mutationFn: (input: { code: string; subtotal: string; phone?: string }) =>
+      apiFetch<{ code: string; discount: string }>("/coupons/preview", { method: "POST", body: input }),
   });
 }
 

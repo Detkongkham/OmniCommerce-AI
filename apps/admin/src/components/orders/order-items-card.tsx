@@ -50,6 +50,12 @@ export function OrderItemsCard({ order, showCost }: { order: OrderDetailDto; sho
           <dt className="text-ink-secondary">{t("orders.summary.discount")}</dt>
           <dd className="tabular-nums">{formatMoney(order.discountTotal)}</dd>
         </div>
+        {order.couponCode ? (
+          <div className="flex justify-between text-xs text-ink-secondary">
+            <dt>{t("orders.summary.coupon", { code: order.couponCode })}</dt>
+            <dd className="tabular-nums">{formatMoney(order.couponDiscount)}</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between">
           <dt className="text-ink-secondary">{t("orders.summary.shipping")}</dt>
           <dd className="tabular-nums">{formatMoney(order.shippingFee)}</dd>
