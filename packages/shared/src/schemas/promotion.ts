@@ -24,12 +24,10 @@ export type CouponRejectReason = (typeof COUPON_REJECT_REASONS)[number];
 const requireNonEmpty = (value: Record<string, unknown>) => Object.values(value).some((field) => field !== undefined);
 const NON_EMPTY_MESSAGE = "ຕ້ອງມີຢ່າງໜ້ອຍ 1 field";
 
+export const COUPON_CODE_PATTERN = /^[A-Z0-9_-]{3,30}$/;
+
 /** ລະຫັດໂຄດ: trim + ຕົວພິມໃຫຍ່ (ລູກຄ້າພິມ new10 = NEW10) */
-export const couponCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^[A-Z0-9_-]{3,30}$/, "ລະຫັດຕ້ອງເປັນ A-Z 0-9 _ - ຍາວ 3–30 ຕົວ");
+export const couponCodeSchema = z.string().trim().toUpperCase().regex(COUPON_CODE_PATTERN, "ລະຫັດຕ້ອງເປັນ A-Z 0-9 _ - ຍາວ 3–30 ຕົວ");
 
 const positiveMoney = moneySchema.refine((value) => new Decimal(value).greaterThan(0), "ຕ້ອງຫຼາຍກວ່າ 0");
 const limitSchema = z.number().int().min(1).max(1_000_000);

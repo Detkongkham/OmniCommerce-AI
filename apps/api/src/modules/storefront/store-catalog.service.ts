@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { Prisma, PrismaClient } from "@oca/database";
+import { CouponRejectedError, type Prisma, type PrismaClient, evaluateCoupon } from "@oca/database";
 import {
+  COUPON_CODE_PATTERN,
+  type CouponRejectReason,
   type ReceivingAccount,
   STORE_PAGE_SIZE,
   type StoreCartCheckInput,
@@ -61,6 +63,10 @@ export type StoreCartLineDto =
 
 export interface StoreCartDto {
   items: StoreCartLineDto[];
+  /** ໂຄດທີ່ໃຊ້ໄດ້ ແລະ ຍອດທີ່ຫຼຸດ (ຫັກອອກຈາກ subtotal/total ແລ້ວ); null = ບໍ່ໄດ້ໃສ່ ຫຼື ໃຊ້ບໍ່ໄດ້ */
+  coupon: { code: string; discount: string } | null;
+  /** ເຫດຜົນທີ່ໂຄດທີ່ໃສ່ມາໃຊ້ບໍ່ໄດ້ (ຍອດບໍ່ຖືກຫຼຸດ) */
+  couponError: { reason: CouponRejectReason; minSubtotal?: string } | null;
   subtotal: string;
   vatAmount: string;
   /** ຍອດທີ່ເວັບຕ້ອງສົ່ງຄືນເປັນ expectedTotal ຕອນສັ່ງ (ຄິດສະເພາະລາຍການທີ່ຂາຍໄດ້) */
@@ -175,16 +181,33 @@ export class StoreCatalogService {
       };
     });
 
-    const totals = calculateOrderTotals({
+    const totalsInput = {
       lines: items.flatMap((line) =>
         line.unavailable ? [] : [{ unitPrice: line.unitPrice, quantity: line.quantity, discount: "0" }],
       ),
       shippingFee: "0",
       vatRate: settings.vatRate.toString(),
       pricesIncludeVat: settings.pricesIncludeVat,
-    });
+    };
+    let totals = calculateOrderTotals(totalsInput);
+    let coupon: StoreCartDto["coupon"] = null;
+    let couponError: StoreCartDto["couponError"] = null;
+    if (input.couponCode !== undefined) {
+      try {
+        // ຍັງບໍ່ຮູ້ເບີລູກຄ້າ: limit ຕໍ່ເບີຖືກກວດຕອນສັ່ງ
+        if (!COUPON_CODE_PATTERN.test(input.couponCode)) throw new CouponRejectedError("NOT_FOUND");
+        const result = await evaluateCoupon(this.prisma, { code: input.couponCode, merchandiseSubtotal: totals.subtotal });
+        coupon = { code: result.code, discount: result.discount };
+        totals = calculateOrderTotals({ ...totalsInput, orderDiscount: result.discount });
+      } catch (error) {
+        if (!(error instanceof CouponRejectedError)) throw error;
+        couponError = { reason: error.reason, ...error.detail };
+      }
+    }
     return {
       items,
+      coupon,
+      couponError,
       subtotal: totals.subtotal,
       vatAmount: totals.vatAmount,
       total: totals.total,

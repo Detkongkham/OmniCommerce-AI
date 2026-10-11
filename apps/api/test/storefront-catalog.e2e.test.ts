@@ -245,6 +245,8 @@ describe("storefront catalog (e2e)", () => {
             insufficient: false,
           },
         ],
+        coupon: null,
+        couponError: null,
         subtotal: "300.00",
         vatAmount: "27.27",
         total: "300.00",

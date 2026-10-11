@@ -165,9 +165,11 @@ export interface StoreOrderDto {
   reservedUntil: Date | null;
   paidAt: Date | null;
   currency: string;
+  /** subtotal ແລະ total ຫັກສ່ວນຫຼຸດຂອງໂຄດແລ້ວ */
   subtotal: string;
   vatAmount: string;
   total: string;
+  coupon: { code: string; discount: string } | null;
   /** variantId: ໃຫ້ເວັບເຕີມກະຕ່າຄືນໄດ້ ("ສັ່ງໃໝ່" ຂອງບິນທີ່ໝົດອາຍຸ) */
   items: { variantId: string; productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
   shipping: {
@@ -202,6 +204,7 @@ export function toStoreOrder(row: StoreOrderRow, now: Date = new Date()): StoreO
     subtotal: money(row.subtotal),
     vatAmount: money(row.vatAmount),
     total: money(row.total),
+    coupon: row.couponCode ? { code: row.couponCode, discount: money(row.couponDiscount) } : null,
     items: row.items.map((item) => ({
       variantId: item.variantId,
       productName: item.productName,

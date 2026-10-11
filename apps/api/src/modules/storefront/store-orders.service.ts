@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { InsufficientStockError, type Prisma, type PrismaClient } from "@oca/database";
 import {
+  COUPON_CODE_PATTERN,
   STORE_MAX_OPEN_ORDERS,
   STORE_MAX_SLIPS,
   STORE_TOKEN_PATTERN,
@@ -35,6 +36,11 @@ export class StoreOrdersService {
     if (!courier) throw apiError("COURIER_NOT_FOUND", "Courier not found");
     if (!courier.isActive) throw apiError("COURIER_INACTIVE", "Courier is inactive");
 
+    // ໂຄດຜິດຮູບແບບ = "ບໍ່ພົບໂຄດ" (schema ຂອງບິນລຸ່ມນີ້ຈະ throw ຖ້າປ່ອຍຜ່ານ)
+    if (body.couponCode !== undefined && !COUPON_CODE_PATTERN.test(body.couponCode)) {
+      throw apiError("COUPON_INVALID", "Coupon cannot be used: NOT_FOUND", { reason: "NOT_FOUND" });
+    }
+
     // ຜ່ານ schema ຂອງບິນ ເພື່ອໄດ້ຄ່າເລີ່ມຕົ້ນ (discount 0, shippingFee 0) ຮູບດຽວກັບ POST /orders
     const input = createOrderSchema.parse({
       customer: { name: body.name, phone: body.phone },
@@ -43,6 +49,7 @@ export class StoreOrdersService {
       shippingPhone: body.phone,
       shippingAddress: body.address,
       ...(body.note ? { note: body.note } : {}),
+      ...(body.couponCode !== undefined ? { couponCode: body.couponCode } : {}),
     });
 
     let orderId: string;
