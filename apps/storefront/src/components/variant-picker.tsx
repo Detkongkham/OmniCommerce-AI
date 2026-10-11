@@ -5,11 +5,12 @@ import { useMemo, useState } from "react";
 import { formatLak } from "@/lib/format";
 import type { StoreProductDetail } from "@/lib/types";
 import { findVariant, initialSelection, isValueSelectable, selectValue, variantChoices } from "@/lib/variants";
+import { AddToCart } from "./add-to-cart";
 import { Price } from "./price";
 import { StockBadge } from "./stock-badge";
 
-/** ເລືອກ variant ຂອງສິນຄ້າ: ປຸ່ມຕໍ່ຕົວເລືອກ, ລາຄາ ແລະ ສະຖານະສະຕ໋ອກຂອງ variant ທີ່ເລືອກ */
-export function VariantPicker({ product }: { product: Pick<StoreProductDetail, "options" | "variants"> }) {
+/** ເລືອກ variant ຂອງສິນຄ້າ: ປຸ່ມຕໍ່ຕົວເລືອກ, ລາຄາ, ສະຖານະສະຕ໋ອກ ແລະ ປຸ່ມໃສ່ກະຕ່າ ຂອງ variant ທີ່ເລືອກ */
+export function VariantPicker({ product }: { product: Pick<StoreProductDetail, "name" | "options" | "variants"> }) {
   const { groups, variants } = useMemo(() => variantChoices(product), [product]);
   const [selection, setSelection] = useState(() => initialSelection(variants));
   const selected = findVariant(variants, selection);
@@ -59,6 +60,8 @@ export function VariantPicker({ product }: { product: Pick<StoreProductDetail, "
           </div>
         </fieldset>
       ))}
+
+      <AddToCart variant={selected} productName={product.name} />
     </div>
   );
 }

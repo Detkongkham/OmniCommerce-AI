@@ -14,7 +14,8 @@ const variant = (id: string, optionValues: Record<string, string>, patch: Partia
   ...patch,
 });
 
-const tee: Pick<StoreProductDetail, "options" | "variants"> = {
+const tee: Pick<StoreProductDetail, "name" | "options" | "variants"> = {
+  name: "ເສື້ອ",
   options: [
     { name: "ສີ", values: ["ດຳ", "ຂາວ"] },
     { name: "ໄຊສ໌", values: ["M", "L"] },
@@ -45,7 +46,7 @@ describe("VariantPicker", () => {
     render(<VariantPicker product={tee} />);
     await user.click(option("ໄຊສ໌", "M"));
     expect(screen.getByText("100,000 ກີບ")).toBeInTheDocument();
-    expect(screen.getByText("ສິນຄ້າໝົດ")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ສິນຄ້າໝົດ" })).toBeDisabled();
     await user.click(option("ສີ", "ຂາວ"));
     expect(screen.getByText("ເຫຼືອ 3 ອັນ")).toBeInTheDocument();
   });
@@ -67,7 +68,7 @@ describe("VariantPicker", () => {
   });
 
   it("ສິນຄ້າບໍ່ມີຕົວເລືອກ: ສະແດງລາຄາ ແລະ ສະຖານະເລີຍ ບໍ່ມີກຸ່ມປຸ່ມ", () => {
-    render(<VariantPicker product={{ options: [], variants: [variant("only", {})] }} />);
+    render(<VariantPicker product={{ name: "ຈອກ", options: [], variants: [variant("only", {})] }} />);
     expect(screen.getByText("100,000 ກີບ")).toBeInTheDocument();
     expect(screen.queryByRole("group")).not.toBeInTheDocument();
   });
@@ -77,6 +78,7 @@ describe("VariantPicker", () => {
     render(
       <VariantPicker
         product={{
+          name: "ກ່ອງ",
           options: [],
           variants: [
             { ...variant("a", {}), name: "ກ່ອງນ້ອຍ" },
@@ -87,5 +89,18 @@ describe("VariantPicker", () => {
     );
     await user.click(option("ແບບ", "ກ່ອງໃຫຍ່"));
     expect(screen.getByText("200,000 ກີບ")).toBeInTheDocument();
+  });
+});
+
+describe("VariantPicker + ກະຕ່າ", () => {
+  it("ໃສ່ກະຕ່າ variant ທີ່ເລືອກຢູ່", async () => {
+    const { getCart, resetCartForTests } = await import("@/lib/cart");
+    resetCartForTests();
+    const user = userEvent.setup();
+    render(<VariantPicker product={tee} />);
+    await user.click(option("ສີ", "ຂາວ"));
+    await user.click(screen.getByRole("button", { name: "ໃສ່ກະຕ່າ" }));
+    expect(getCart()).toEqual([{ variantId: "wm", quantity: 1 }]);
+    resetCartForTests();
   });
 });

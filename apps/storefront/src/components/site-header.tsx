@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { CartLink } from "./cart-link";
 
 /** ຫົວເວັບ: ຊື່ຮ້ານ + ຄົ້ນຫາ (ຟອມ GET ໄປ /products ໃຊ້ໄດ້ໂດຍບໍ່ຕ້ອງມີ JavaScript) */
 export function SiteHeader({ storeName, query }: { storeName: string; query?: string }) {
@@ -28,6 +29,7 @@ export function SiteHeader({ storeName, query }: { storeName: string; query?: st
             />
           </div>
         </form>
+        <CartLink />
       </div>
     </header>
   );
