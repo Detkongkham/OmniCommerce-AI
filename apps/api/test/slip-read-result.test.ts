@@ -156,13 +156,74 @@ describe("storeSlipReadResult / markSlipReadFailed (Postgres ຈິງ)", () => 
     expect(row.readRaw).toEqual({ value: { text: "ab ສະບາຍດີ 😀", key: ["x"] } });
   });
 
-  it("READ_FAILED → retry (PENDING_READ) → ບັນທຶກໄດ້", async () => {
+  it("READ_FAILED → retry (PENDING_READ) → ບັນທຶກໄດ້ ແລະ ຄ່າ read* ເກົ່າ/flag ເກົ່າຖືກຂຽນທັບ", async () => {
     const slip = await makeSlip();
-    expect(await markSlipReadFailed(db, slip.id)).toBe(true);
+    expect(await storeSlipReadResult(db, slip.id, reader, { amount: "10", refNo: "OLD", raw: { a: 1 } }, { now })).toBe(true);
+    expect(await markSlipReadFailed(db, slip.id)).toBe(false); // READ ແລ້ວ ບໍ່ແຕະ
+    await db.paymentSlip.update({ where: { id: slip.id }, data: { status: "READ_FAILED" } });
     expect(await storeSlipReadResult(db, slip.id, reader, { amount: "10", raw: {} }, { now })).toBe(false);
     await db.paymentSlip.update({ where: { id: slip.id }, data: { status: "PENDING_READ" } });
-    expect(await storeSlipReadResult(db, slip.id, reader, { amount: "10", raw: {} }, { now })).toBe(true);
+    expect(await storeSlipReadResult(db, slip.id, reader, { raw: {} }, { now })).toBe(true);
+    const row = await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } });
+    expect(row.status).toBe("READ");
+    expect([row.readAmount, row.readRefNo]).toEqual([null, null]);
+    expect(row.readRaw).toEqual({ value: {} });
+    expect(row.flags).toEqual(["UNREADABLE_FIELDS"]);
+  });
+
+  it("evaluateSlip ລົ້ມ → rollback ທັງ update (ຍັງ PENDING_READ) ແລ້ວເອີ້ນຊ້ຳສຳເລັດ", async () => {
+    const slip = await makeSlip();
+    const failing = {
+      $transaction: <T,>(fn: (tx: unknown) => Promise<T>) =>
+        db.$transaction((tx) =>
+          fn(
+            new Proxy(tx, {
+              get: (target, prop, receiver) =>
+                prop === "storeSetting"
+                  ? { findUnique: () => Promise.reject(new Error("boom")) }
+                  : Reflect.get(target, prop, receiver),
+            }),
+          ),
+        ),
+    } as unknown as PrismaClient;
+    await expect(storeSlipReadResult(failing, slip.id, reader, { amount: "10", refNo: "R", raw: {} }, { now })).rejects.toThrow("boom");
+    const mid = await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } });
+    expect(mid.status).toBe("PENDING_READ");
+    expect(mid.readRefNo).toBeNull();
+    expect(await storeSlipReadResult(db, slip.id, reader, { amount: "10", refNo: "R", raw: {} }, { now })).toBe(true);
     expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("READ");
+  });
+
+  it("raw ເປັນສັດຕູ: ຊ້อนເລິກ/cyclic/BigInt → { truncated: true }", async () => {
+    const deep = JSON.parse(`${"[".repeat(5000)}${"]".repeat(5000)}`) as unknown;
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    for (const raw of [deep, cyclic, { n: 10n }]) {
+      const slip = await makeSlip();
+      expect(await storeSlipReadResult(db, slip.id, reader, { raw }, { now })).toBe(true);
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).readRaw).toEqual({ truncated: true });
+    }
+  });
+
+  it("lone surrogate ຖືກແທນເປັນ U+FFFD (Postgres jsonb/text ຮັບໄດ້); emoji + ລາວຄົບ", async () => {
+    const slip = await makeSlip();
+    expect(
+      await storeSlipReadResult(db, slip.id, reader, { refNo: "R\ud800X😀", destAccount: "\udc00ສ", raw: { t: "a\ud800b 😀 ສະບາຍດີ", list: [{ k: "x\u0000y" }] } }, { now }),
+    ).toBe(true);
+    const row = await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } });
+    expect(row.readRefNo).toBe("R\ufffdX😀");
+    expect(row.readDestAccount).toBe("\ufffdສ");
+    expect(row.readRaw).toEqual({ value: { t: "a\ufffdb 😀 ສະບາຍດີ", list: [{ k: "xy" }] } });
+  });
+
+  it("key ຊື່ __proto__ ຖືກຖິ້ມຢ່າງຊັດເຈນ (ບໍ່ປ່ຽນ prototype, key ອື່ນຢູ່ຄົບ)", async () => {
+    const slip = await makeSlip();
+    const raw = JSON.parse('{"__proto__":{"x":1},"ok":true}') as unknown;
+    expect(await storeSlipReadResult(db, slip.id, reader, { raw }, { now })).toBe(true);
+    const stored = (await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).readRaw as { value: Record<string, unknown> };
+    expect(Object.keys(stored.value).sort()).toEqual(["ok"]);
+    expect(Object.getPrototypeOf(stored.value)).toBe(Object.prototype);
+    expect(stored.value.x).toBeUndefined();
   });
 
   it("markSlipReadFailed: PENDING_READ → READ_FAILED; ສະຖານະອື່ນບໍ່ແຕະ", async () => {

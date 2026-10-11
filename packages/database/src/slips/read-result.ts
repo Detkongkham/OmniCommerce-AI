@@ -24,14 +24,28 @@ const TEXT_MAX = 100;
 const RAW_MAX_CHARS = 20_000;
 
 // Postgres (text/JSONB) ປະຕິເສດ NUL (\u0000): ຕັດອອກຈາກທຸກຂໍ້ຄວາມທີ່ມາຈາກ reader
-const stripNul = (text: string): string => text.split("\u0000").join("");
+// Postgres ປະຕິເສດ NUL (\u0000) ແລະ lone surrogate (\udXXX) ໃນ text/jsonb: ຕັດ NUL ອອກ ແລະ ແທນ surrogate ເດີ່ຍວດ້ວຍ U+FFFD
+const sanitizeText = (text: string): string => (text.split("\u0000").join("") as string & { toWellFormed(): string }).toWellFormed();
 
-function stripNulDeep(value: unknown): unknown {
-  if (typeof value === "string") return stripNul(value);
-  if (Array.isArray(value)) return value.map(stripNulDeep);
+/** ຊັ້ນຊ້ອນສູງສຸດຂອງ raw (ເກີນ → ຖືວ່າເປັນສັດຕູ ແລະ ເກັບແຕ່ { truncated: true }) */
+const RAW_MAX_DEPTH = 64;
+
+function sanitizeDeep(value: unknown, depth = 0): unknown {
+  if (depth > RAW_MAX_DEPTH) throw new Error("raw too deep");
+  if (typeof value === "string") return sanitizeText(value);
+  if (Array.isArray(value)) return value.map((inner) => sanitizeDeep(inner, depth + 1));
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value)) out[stripNul(key)] = stripNulDeep(inner);
+    for (const [key, inner] of Object.entries(value)) {
+      // key ຊື່ __proto__ ຖືກຖິ້ມຢ່າງຊັດເຈນ (Prisma ກໍຕັດມັນຢູ່ແລ້ວ; ຖິ້ມເອງເພື່ອບໍ່ໃຫ້ prototype ຖືກແຕະ ແລະ ພຶດຕິກຳແນ່ນອນ)
+      if (key === "__proto__") continue;
+      Object.defineProperty(out, sanitizeText(key), {
+        value: sanitizeDeep(inner, depth + 1),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
     return out;
   }
   return value;
@@ -39,7 +53,7 @@ function stripNulDeep(value: unknown): unknown {
 
 function cleanText(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = stripNul(value).trim();
+  const trimmed = sanitizeText(value).trim();
   return trimmed === "" ? null : trimmed.slice(0, TEXT_MAX);
 }
 
@@ -57,14 +71,13 @@ function cleanDate(value: unknown): Date | null {
 
 /** ຜົນດິບຂອງ reader ບໍ່ເຊື່ອຖື: ຫໍ່ເປັນ { value } (ກັນ JSON null) ແລະ ຈຳກັດຂະໜາດ */
 function boundedRaw(raw: unknown): { value: unknown } | { truncated: true } {
-  let text: string;
   try {
-    text = JSON.stringify(raw ?? null) ?? "null";
+    const text = JSON.stringify(raw ?? null) ?? "null"; // cyclic/BigInt → throw
+    if (text.length > RAW_MAX_CHARS) return { truncated: true };
+    return { value: sanitizeDeep(JSON.parse(text)) };
   } catch {
     return { truncated: true };
   }
-  if (text.length > RAW_MAX_CHARS) return { truncated: true };
-  return { value: stripNulDeep(JSON.parse(text)) };
 }
 
 /**
@@ -78,23 +91,26 @@ export async function storeSlipReadResult(
   result: SlipReadOutput,
   options: StoreSlipReadOptions = {},
 ): Promise<boolean> {
-  const { count } = await db.paymentSlip.updateMany({
-    where: { id: slipId, status: "PENDING_READ" },
-    data: {
-      status: "READ",
-      readerName: reader.name,
-      readerVersion: reader.version,
-      readAmount: normalizeSlipAmount(result.amount),
-      readCurrency: cleanCurrency(result.currency),
-      readPaidAt: cleanDate(result.paidAt),
-      readDestAccount: cleanText(result.destAccount),
-      readRefNo: cleanText(result.refNo),
-      readRaw: boundedRaw(result.raw) as object,
-    },
+  // update ແລະ ຄິດ flag ໃນ transaction ດຽວ: ຖ້າຄິດ flag ລົ້ມ ຈະ rollback ແລ້ວ BullMQ retry ຍັງເຫັນ PENDING_READ
+  return db.$transaction(async (tx) => {
+    const { count } = await tx.paymentSlip.updateMany({
+      where: { id: slipId, status: "PENDING_READ" },
+      data: {
+        status: "READ",
+        readerName: reader.name,
+        readerVersion: reader.version,
+        readAmount: normalizeSlipAmount(result.amount),
+        readCurrency: cleanCurrency(result.currency),
+        readPaidAt: cleanDate(result.paidAt),
+        readDestAccount: cleanText(result.destAccount),
+        readRefNo: cleanText(result.refNo),
+        readRaw: boundedRaw(result.raw) as object,
+      },
+    });
+    if (count === 0) return false;
+    await evaluateSlip(tx, slipId, options);
+    return true;
   });
-  if (count === 0) return false;
-  await evaluateSlip(db, slipId, options);
-  return true;
 }
 
 /** job ລົ້ມຄົບຈຳນວນຄັ້ງ: PENDING_READ → READ_FAILED (ແອດມິນ retry ຫຼື ຕື່ມມືໄດ້). ຄືນ false ເມື່ອບໍ່ແຕະ. */

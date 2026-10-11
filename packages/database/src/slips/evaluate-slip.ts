@@ -1,6 +1,9 @@
 import { type SlipFlag, computeSlipFlags, receivingAccountSchema, sameAccount } from "@oca/shared";
 import type { PrismaClient } from "../generated/client";
 
+/** ຮັບທັງ PrismaClient ແລະ transaction client (ໃຊ້ໃນ transaction ດຽວກັບການບັນທຶກຜົນອ່ານ) */
+export type SlipEvaluatorDb = Pick<PrismaClient, "paymentSlip" | "storeSetting">;
+
 export interface EvaluateSlipOptions {
   /** ສຳລັບ test */
   now?: Date;
@@ -16,7 +19,7 @@ function effective<T>(confirmed: T | null, read: T | null): T | null {
  * duplicate ເປັນ advisory ແລະ ບໍ່ເປັນ transaction (ປະເມີນພ້ອມກັນອາດພາດກັນ; ປະເມີນຄືນຕອນແກ້/ຢືນຢັນຈະແກ້ເອງ).
  * duplicate = ສະລິບອື່ນ (ບໍ່ແມ່ນ REJECTED, ບໍ່ແມ່ນຕົວເອງ) ທີ່ມີ refNo+ບັນຊີ ຫຼື sha256 ດຽວກັນ.
  */
-export async function evaluateSlip(db: PrismaClient, slipId: string, options: EvaluateSlipOptions = {}): Promise<SlipFlag[]> {
+export async function evaluateSlip(db: SlipEvaluatorDb, slipId: string, options: EvaluateSlipOptions = {}): Promise<SlipFlag[]> {
   const slip = await db.paymentSlip.findUnique({
     where: { id: slipId },
     include: { order: { select: { total: true, currency: true, exchangeRate: true, createdAt: true, status: true, reservedUntil: true } } },
