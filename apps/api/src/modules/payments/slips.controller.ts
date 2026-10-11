@@ -1,10 +1,12 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Req, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
+  type ConfirmSlipInput,
   type LinkChatSlipInput,
   type PatchSlipInput,
   type RejectSlipInput,
   SLIP_MAX_BYTES,
+  confirmSlipSchema,
   linkChatSlipSchema,
   patchSlipSchema,
   rejectSlipSchema,
@@ -124,7 +126,12 @@ export class SlipsController {
   @Post("slips/:id/confirm")
   @HttpCode(200)
   @RequirePermissions("payments:write")
-  confirm(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
-    return this.review.confirm(id, actor, req.ip);
+  confirm(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(confirmSlipSchema.optional())) body: ConfirmSlipInput | undefined,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.review.confirm(id, actor, req.ip, body ?? {});
   }
 }

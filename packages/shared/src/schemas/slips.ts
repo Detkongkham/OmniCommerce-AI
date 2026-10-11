@@ -102,3 +102,16 @@ export const linkChatSlipSchema = z.strictObject({
   attachmentIndex: z.number().int().min(0).max(50),
 });
 export type LinkChatSlipInput = z.infer<typeof linkChatSlipSchema>;
+
+/**
+ * ຢືນຢັນສະລິບ: body ເປັນທາງເລືອກ. ຄ່າ expected* ແມ່ນຄ່າທີ່ແອດມິນເຫັນຕອນກົດ;
+ * ຖ້າຄ່າສົດຕ່າງ (ມີຄົນແກ້ລະຫວ່າງນັ້ນ) → 409 ແທນການຢືນຢັນຄ່າທີ່ຕ່າງຈາກທີ່ເຫັນ.
+ */
+export const confirmSlipSchema = z
+  .strictObject({
+    expectedAmount: amountField,
+    expectedCurrency: trimmed(10).nullable(),
+    expectedOrderId: z.string().min(1),
+  })
+  .partial();
+export type ConfirmSlipInput = z.infer<typeof confirmSlipSchema>;

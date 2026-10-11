@@ -1,11 +1,13 @@
 import request from "supertest";
 import { Logger } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
+import { LiveEventsService } from "../src/modules/live-cf/live-events.service";
 import { setupSlipTest } from "./slip-fixtures";
+import { seedLiveSession } from "./helpers";
 
 describe("slip review (e2e)", () => {
   const fx = setupSlipTest();
-  const { db, server, as, enqueueRead, makeOrder, seedSlip } = fx;
+  const { db, server, as, enqueueRead, makeOrder, seedSlip, app } = fx;
 
   describe("ແກ້ຄ່າ / retry / ປະຕິເສດ", () => {
     const patchSlip = (id: string, body: object, headers: { Authorization: string }) =>
@@ -359,6 +361,98 @@ describe("slip review (e2e)", () => {
       const { slip } = await seedSlip({ readRefNo: "RR", readDestAccount: "D1", confirmedRefNo: "EDITED" });
       const res = await confirm(slip.id, await as("OWNER")).expect(200);
       expect(res.body.confirmed).toMatchObject({ refNo: "EDITED", destAccount: "D1", currency: "LAK" });
+    });
+  });
+  describe("ຢືນຢັນ: live session / expected / flag ສົດ", () => {
+    const confirmWith = (id: string, headers: { Authorization: string }, body?: object) => {
+      const req = request(server()).post(`/slips/${id}/confirm`).set(headers);
+      return body === undefined ? req : req.send(body);
+    };
+
+    it("ບິນ CF (liveSessionId): ແຈ້ງ live session ຄັ້ງດຽວຫຼັງ commit; ບິນບໍ່ມີ session ບໍ່ແຈ້ງ", async () => {
+      const events = app().get(LiveEventsService);
+      const spy = vi.spyOn(events, "sessionUpdated").mockResolvedValue(undefined);
+      try {
+        const session = await seedLiveSession(db);
+        const { slip } = await seedSlip({}, { liveSessionId: session.id });
+        await confirmWith(slip.id, await as("OWNER"), {}).expect(200);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy).toHaveBeenCalledWith(session.id);
+        spy.mockClear();
+        const plain = await seedSlip();
+        await confirmWith(plain.slip.id, await as("OWNER"), {}).expect(200);
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("ແຈ້ງ live session ລົ້ມ (reject) → confirm ຍັງ 200 ແລະ ບິນ PAID", async () => {
+      const spy = vi.spyOn(app().get(LiveEventsService), "sessionUpdated").mockRejectedValue(new Error("redis down"));
+      const logSpy = vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
+      try {
+        const session = await seedLiveSession(db);
+        const { order, slip } = await seedSlip({}, { liveSessionId: session.id });
+        await confirmWith(slip.id, await as("OWNER"), {}).expect(200);
+        expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PAID");
+        expect(logSpy).toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+        logSpy.mockRestore();
+      }
+    });
+
+    it("expectedAmount ເກົ່າ → 409 CONFLICT, ສະລິບຍັງ READ, ບິນບໍ່ PAID", async () => {
+      const { order, slip } = await seedSlip();
+      const res = await confirmWith(slip.id, await as("OWNER"), { expectedAmount: "5" }).expect(409);
+      expect(res.body.code).toBe("CONFLICT");
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: slip.id } })).status).toBe("READ");
+      expect((await db.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe("PENDING_PAYMENT");
+    });
+
+    it("expected ຕົງ (ຍອດຮູບແບບຕ່າງ, currency ຕ່າງຕົວພິມ, orderId) → 200", async () => {
+      const { order, slip } = await seedSlip();
+      await confirmWith(slip.id, await as("OWNER"), {
+        expectedAmount: "100,000",
+        expectedCurrency: "lak",
+        expectedOrderId: order.id,
+      }).expect(200);
+    });
+
+    it("expectedCurrency ຕ່າງ / null ເມື່ອມີສະກຸນ → 409; expectedOrderId ຜິດ → 409", async () => {
+      const owner = await as("OWNER");
+      const a = await seedSlip();
+      await confirmWith(a.slip.id, owner, { expectedCurrency: "THB" }).expect(409);
+      await confirmWith(a.slip.id, owner, { expectedCurrency: null }).expect(409);
+      const other = await makeOrder();
+      const res = await confirmWith(a.slip.id, owner, { expectedOrderId: other.id }).expect(409);
+      expect(res.body.code).toBe("CONFLICT");
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: a.slip.id } })).status).toBe("READ");
+    });
+
+    it("body ມີ key ແປກ → 400; ຍອດບໍ່ຖືກ → 400; ບໍ່ມີ body → 200 ຄືເກົ່າ", async () => {
+      const owner = await as("OWNER");
+      const a = await seedSlip();
+      await confirmWith(a.slip.id, owner, { bogus: 1 }).expect(400);
+      await confirmWith(a.slip.id, owner, { expectedAmount: "abc" }).expect(400);
+      await confirmWith(a.slip.id, owner).expect(200);
+    });
+
+    it("flag ສົດຕອນ confirm: ຍອດບໍ່ຕົງບິນ → AMOUNT_MISMATCH; ຮູບຊ້ຳ → DUPLICATE_IMAGE; ສະລິບສະອາດ → []", async () => {
+      const owner = await as("OWNER");
+      const mismatch = await seedSlip({ readAmount: "5" });
+      const res = await confirmWith(mismatch.slip.id, owner, {}).expect(200);
+      expect(res.body.flags).toEqual(["AMOUNT_MISMATCH"]);
+      expect((await db.paymentSlip.findUniqueOrThrow({ where: { id: mismatch.slip.id } })).flags).toEqual(["AMOUNT_MISMATCH"]);
+
+      const sha = "d".repeat(64);
+      await seedSlip({ imageSha256: sha });
+      const dup = await seedSlip({ imageSha256: sha, readRefNo: "R2" });
+      const dupRes = await confirmWith(dup.slip.id, owner, {}).expect(200);
+      expect(dupRes.body.flags).toEqual(["DUPLICATE_IMAGE"]);
+
+      const clean = await seedSlip({ readRefNo: "R3" });
+      expect((await confirmWith(clean.slip.id, owner, {}).expect(200)).body.flags).toEqual([]);
     });
   });
 });

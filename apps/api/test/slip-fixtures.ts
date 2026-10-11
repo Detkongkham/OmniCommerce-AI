@@ -105,6 +105,8 @@ export function setupSlipTest() {
     /** db ຖືກສ້າງໃນ beforeAll: proxy ໃຫ້ destructure ໄດ້ກ່ອນ app ເລີ່ມ */
     db: new Proxy({} as PrismaClient, { get: (_t, prop) => (db as never)[prop] }),
     server,
+    /** Nest app (ສຳລັບ spy ບໍລິການ) */
+    app: () => app,
     as,
     enqueueRead,
     fetchImpl,

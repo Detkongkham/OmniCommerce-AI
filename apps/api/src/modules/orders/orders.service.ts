@@ -565,6 +565,15 @@ export class OrdersService {
     return toOrderDetail(row);
   }
 
+  /**
+   * ແຈ້ງ live session ຂອງບິນ CF ວ່າປ່ຽນ (ເອີ້ນຫຼັງ commit ຂອງ payWithin ທີ່ບໍ່ຜ່ານ transition()).
+   * ບິນບໍ່ມີ liveSessionId = ບໍ່ເຮັດຫຍັງ. ຜູ້ເອີ້ນຕ້ອງຈັບ error ເອງ (best-effort)
+   */
+  async notifyPaid(id: string): Promise<void> {
+    const row = await this.prisma.order.findUnique({ where: { id }, select: { liveSessionId: true } });
+    if (row?.liveSessionId) await this.liveEvents.sessionUpdated(row.liveSessionId);
+  }
+
   /** `reader` ເປັນ tx ເມື່ອເອີ້ນຈາກ payWithin (ອ່ານໃນ snapshot ດຽວກັນ); ຄ່າເລີ່ມຕົ້ນ = prisma */
   private async failTransition(
     id: string,

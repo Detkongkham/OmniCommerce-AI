@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { type Prisma, type PrismaClient, evaluateSlip } from "@oca/database";
-import type { PatchSlipInput, RejectSlipInput } from "@oca/shared";
+import type { ConfirmSlipInput, PatchSlipInput, RejectSlipInput } from "@oca/shared";
 import { OrdersService } from "../orders/orders.service";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
@@ -85,7 +85,7 @@ export class SlipReviewService {
    * ຢືນຢັນ: claim ສະລິບ (conditional UPDATE ກັນແຂ່ງ) + OrdersService.payWithin ໃນ transaction ດຽວ.
    * payWithin ລົ້ມ (ບິນບໍ່ຢູ່ PENDING_PAYMENT / ໝົດເວລາຈອງ) → throw → rollback ທັງ claim ສະລິບ ແລະ ບິນ.
    */
-  async confirm(id: string, actor: AuthUser, ip: string | undefined): Promise<SlipDto> {
+  async confirm(id: string, actor: AuthUser, ip: string | undefined, expected: ConfirmSlipInput = {}): Promise<SlipDto> {
     const slip = await requireRow(this.prisma, id);
     if (slip.status === "CONFIRMED" || slip.status === "REJECTED") {
       throw apiError("SLIP_ALREADY_REVIEWED", "The slip was already confirmed or rejected");
@@ -119,6 +119,12 @@ export class SlipReviewService {
       const finalAmount = fresh.confirmedAmount ?? fresh.readAmount;
       // (c) ບໍ່ມີຍອດ → throw ເພື່ອ rollback claim
       if (finalAmount === null) throw apiError("SLIP_AMOUNT_REQUIRED", "Enter the slip amount before confirming");
+      // (c2) ຖ້າ client ສົ່ງຄ່າທີ່ເຫັນມາ ແລະ ຄ່າສົດຕ່າງ (ຖືກແກ້ລະຫວ່າງນັ້ນ) → 409 ແລະ rollback claim
+      this.assertExpected(expected, {
+        amount: finalAmount.toFixed(2),
+        currency: fresh.confirmedCurrency ?? fresh.readCurrency,
+        orderId: fresh.orderId,
+      });
       // (d) ຄ່າສຸດທ້າຍ = ທີ່ແອດມິນແກ້ ກ່ອນ ບໍ່ດັ່ງນັ້ນທີ່ເຄື່ອງອ່ານ; ເກັບໃສ່ confirmed* ໃຫ້ຄົບ
       await tx.paymentSlip.update({
         where: { id },
@@ -130,11 +136,20 @@ export class SlipReviewService {
           confirmedDestAccount: fresh.confirmedDestAccount ?? fresh.readDestAccount,
         },
       });
+      // (d2) ຄິດ flag ໃໝ່ດ້ວຍຄ່າທີ່ເກັບແລ້ວ (ບິນຍັງ PENDING_PAYMENT ຈຶ່ງບໍ່ໃສ່ ORDER_NOT_PAYABLE ຜິດ).
+      // flag ເປັນຄຳແນະນຳ: ບໍ່ບລັອກການຢືນຢັນ (ຕັດສິນໃນ spec)
+      await evaluateSlip(tx, id);
       // (e) pay ໃນ transaction ດຽວກັນ: ລົ້ມ → rollback ທັງ claim
       await this.orders.payWithin(tx, orderId, actor);
       return finalAmount;
     });
 
+    // ຫຼັງ commit: ແຈ້ງ Host screen ຂອງ live session (ບິນ CF) ແບບ best-effort ຄືກັບ transition()
+    try {
+      await this.orders.notifyPaid(orderId);
+    } catch (error) {
+      this.logger.error(`Failed to notify live session for paid order ${orderId} (${error instanceof Error ? error.name : "UnknownError"})`);
+    }
     // ຫຼັງ commit ເງິນ/ບິນປ່ຽນແລ້ວ: audit ລົ້ມຕ້ອງບໍ່ເຮັດໃຫ້ endpoint ຕອບ 500 (best-effort, ບັນທຶກ log)
     await this.auditBestEffort({
       userId: actor.id,
@@ -153,6 +168,18 @@ export class SlipReviewService {
       ip,
     });
     return toSlipDto(await requireRow(this.prisma, id));
+  }
+
+  /** ຄ່າທີ່ client ເຫັນ ຕ້ອງຕົງກັບຄ່າສົດ (ຍອດປຽບທຽບແບບ normalised, ສະກຸນບໍ່ແຍກຕົວພິມ) */
+  private assertExpected(
+    expected: ConfirmSlipInput,
+    live: { amount: string; currency: string | null; orderId: string | null },
+  ): void {
+    const stale =
+      (expected.expectedAmount !== undefined && expected.expectedAmount !== live.amount) ||
+      (expected.expectedCurrency !== undefined && (expected.expectedCurrency?.toUpperCase() ?? null) !== (live.currency?.toUpperCase() ?? null)) ||
+      (expected.expectedOrderId !== undefined && expected.expectedOrderId !== live.orderId);
+    if (stale) throw apiError("CONFLICT", "The slip was changed; reload and confirm again");
   }
 
   private async auditBestEffort(entry: Parameters<AuditService["record"]>[0]): Promise<void> {
