@@ -13,6 +13,7 @@ import type { OrderDetailDto } from "@/lib/types";
 import { formatCountdown, useCountdown } from "@/lib/use-countdown";
 import { CancelOrderDialog } from "./cancel-order-dialog";
 import { OrderItemsCard } from "./order-items-card";
+import { OrderSlipsCard } from "@/components/slips/order-slips-card";
 import { OrderMovementsCard } from "./order-movements-card";
 import { OrderStatusPill } from "./order-status";
 import { OrderTimeline } from "./order-timeline";
@@ -311,6 +312,9 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
         </div>
 
         <OrderItemsCard order={order} showCost={showCost} />
+
+        {/* panel ສະລິບ: ບໍ່ມີ orders:read ຈະບໍ່ render ເອງ */}
+        <OrderSlipsCard order={{ id: order.id, orderNumber: order.orderNumber, total: order.total, currency: order.currency }} />
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card className="rounded-[20px] p-6">
