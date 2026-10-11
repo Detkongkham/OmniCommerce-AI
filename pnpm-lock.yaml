@@ -233,9 +233,15 @@ importers:
       '@nestjs/core':
         specifier: ^11.2.7
         version: 11.2.7(@nestjs/common@11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/platform-express@11.2.7)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@oca/ai-engine':
+        specifier: workspace:*
+        version: link:../../packages/ai-engine
       '@oca/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@oca/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       bullmq:
         specifier: ^5.81.5
         version: 5.81.5(supports-color@7.2.0)

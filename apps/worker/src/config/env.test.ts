@@ -20,4 +20,27 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ REDIS_URL: "redis://x" })).toThrow(/DATABASE_URL/);
     expect(() => parseEnv({ ...base, WORKER_CONCURRENCY: "0" })).toThrow();
   });
+
+  it("SLIP_*: ຄ່າເລີ່ມຕົ້ນ ແລະ ອ່ານຄ່າທີ່ຕັ້ງ; SLIP_FAKE_RESULT ວ່າງ = ບໍ່ຕັ້ງ", () => {
+    const defaults = parseEnv(base);
+    expect(defaults.SLIP_STORAGE_DIR).toBe("../../.data/slips");
+    expect(defaults.SLIP_READER).toBe("fake");
+    expect(defaults.SLIP_FAKE_RESULT).toBeUndefined();
+    const set = parseEnv({ ...base, SLIP_STORAGE_DIR: "/d", SLIP_READER: "x", SLIP_FAKE_RESULT: "" });
+    expect(set.SLIP_STORAGE_DIR).toBe("/d");
+    expect(set.SLIP_READER).toBe("x");
+    expect(set.SLIP_FAKE_RESULT).toBeUndefined();
+  });
+
+  it("ຄ່າວ່າງ (KEY=) ຖືວ່າບໍ່ໄດ້ຕັ້ງ ສຳລັບ QUEUE_PREFIX/SLIP_STORAGE_DIR/SLIP_READER → ໃຊ້ default", () => {
+    const env = parseEnv({ ...base, QUEUE_PREFIX: "", SLIP_STORAGE_DIR: "", SLIP_READER: "", SLIP_FAKE_RESULT: "" });
+    expect(env.QUEUE_PREFIX).toBe("oca");
+    expect(env.SLIP_STORAGE_DIR).toBe("../../.data/slips");
+    expect(env.SLIP_READER).toBe("fake");
+    expect(env.SLIP_FAKE_RESULT).toBeUndefined();
+  });
+
+  it("SLIP_FAKE_RESULT ທີ່ຕັ້ງຄ່າ ຖືກສົ່ງຕໍ່", () => {
+    expect(parseEnv({ ...base, SLIP_FAKE_RESULT: '{"amount":"1"}' }).SLIP_FAKE_RESULT).toBe('{"amount":"1"}');
+  });
 });
