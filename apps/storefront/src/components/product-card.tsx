@@ -1,5 +1,5 @@
 import { StatusPill } from "@oca/ui";
-import { ImageOff } from "lucide-react";
+import { ImageOff, Zap } from "lucide-react";
 import Link from "next/link";
 import { priceRange } from "@/lib/format";
 import type { StoreProductListItem } from "@/lib/types";
@@ -33,6 +33,11 @@ export function ProductCard({ product }: { product: StoreProductListItem }) {
         ) : product.stock === "LOW" ? (
           <StatusPill tone="warning" className="absolute left-2 top-2">
             ໃກ້ໝົດ
+          </StatusPill>
+        ) : null}
+        {product.saleEndsAt && product.stock !== "OUT" ? (
+          <StatusPill tone="brand" icon={Zap} className="absolute right-2 top-2">
+            Flash Sale
           </StatusPill>
         ) : null}
       </div>

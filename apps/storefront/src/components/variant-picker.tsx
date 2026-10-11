@@ -1,19 +1,25 @@
 "use client";
 
-import { cn } from "@oca/ui";
+import { StatusPill, cn } from "@oca/ui";
+import { Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { formatLak } from "@/lib/format";
 import type { StoreProductDetail } from "@/lib/types";
 import { findVariant, initialSelection, isValueSelectable, selectValue, variantChoices } from "@/lib/variants";
 import { AddToCart } from "./add-to-cart";
+import { Countdown } from "./countdown";
 import { Price } from "./price";
 import { StockBadge } from "./stock-badge";
+
+const FLASH_ENDS_IN = "ຈົບໃນ";
 
 /** ເລືອກ variant ຂອງສິນຄ້າ: ປຸ່ມຕໍ່ຕົວເລືອກ, ລາຄາ, ສະຖານະສະຕ໋ອກ ແລະ ປຸ່ມໃສ່ກະຕ່າ ຂອງ variant ທີ່ເລືອກ */
 export function VariantPicker({ product }: { product: Pick<StoreProductDetail, "name" | "options" | "variants"> }) {
   const { groups, variants } = useMemo(() => variantChoices(product), [product]);
   const [selection, setSelection] = useState(() => initialSelection(variants));
   const selected = findVariant(variants, selection);
+  const router = useRouter();
 
   return (
     <div className="flex flex-col gap-4">
@@ -21,6 +27,17 @@ export function VariantPicker({ product }: { product: Pick<StoreProductDetail, "
         {selected ? (
           <>
             <Price label={formatLak(selected.price)} compareAtPrice={selected.compareAtPrice} size="lg" />
+            {selected.saleEndsAt ? (
+              <p className="flex flex-wrap items-center gap-2 text-sm text-brand-ink">
+                <StatusPill tone="brand" icon={Zap}>
+                  Flash Sale
+                </StatusPill>
+                <span>
+                  {FLASH_ENDS_IN}{" "}
+                  <Countdown until={selected.saleEndsAt} onExpire={() => router.refresh()} className="font-bold tabular-nums" />
+                </span>
+              </p>
+            ) : null}
             <div>
               <StockBadge stock={selected.stock} />
             </div>

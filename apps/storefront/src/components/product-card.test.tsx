@@ -10,6 +10,7 @@ const product = (patch: Partial<StoreProductListItem> = {}): StoreProductListIte
   priceMin: "80000.00",
   priceMax: "80000.00",
   compareAtPrice: null,
+  saleEndsAt: null,
   stock: "IN_STOCK",
   ...patch,
 });
@@ -45,5 +46,12 @@ describe("ProductCard", () => {
     render(<ProductCard product={product({ imageUrl: null })} />);
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /ເສື້ອຍືດ/ })).toBeInTheDocument();
+  });
+
+  it("Flash Sale badge: shown while a sale is running, hidden when sold out", () => {
+    const { rerender } = render(<ProductCard product={product({ saleEndsAt: "2030-01-01T00:00:00.000Z", compareAtPrice: "100000.00" })} />);
+    expect(screen.getByText("Flash Sale")).toBeInTheDocument();
+    rerender(<ProductCard product={product({ saleEndsAt: "2030-01-01T00:00:00.000Z", stock: "OUT" })} />);
+    expect(screen.queryByText("Flash Sale")).not.toBeInTheDocument();
   });
 });

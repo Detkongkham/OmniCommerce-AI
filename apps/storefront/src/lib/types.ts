@@ -24,6 +24,8 @@ export interface StoreProductListItem {
   priceMin: string;
   priceMax: string;
   compareAtPrice: string | null;
+  /** ISO end time of the running flash sale; null = none */
+  saleEndsAt: string | null;
   stock: StoreStockStatus;
 }
 
@@ -40,6 +42,7 @@ export interface StoreVariant {
   price: string;
   compareAtPrice: string | null;
   optionValues: Record<string, string>;
+  saleEndsAt: string | null;
   stock: StoreStock;
 }
 

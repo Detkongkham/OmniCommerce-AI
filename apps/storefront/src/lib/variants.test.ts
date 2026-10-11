@@ -8,6 +8,7 @@ const variant = (id: string, optionValues: Record<string, string>, status: "IN_S
   price: "100.00",
   compareAtPrice: null,
   optionValues,
+  saleEndsAt: null,
   stock: { status, remaining: status === "LOW" ? 2 : null },
 });
 

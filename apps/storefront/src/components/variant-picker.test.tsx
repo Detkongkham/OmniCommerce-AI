@@ -1,8 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { StoreProductDetail, StoreVariant } from "@/lib/types";
 import { VariantPicker } from "./variant-picker";
+
+const refresh = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 const variant = (id: string, optionValues: Record<string, string>, patch: Partial<StoreVariant> = {}): StoreVariant => ({
   id,
@@ -10,6 +13,7 @@ const variant = (id: string, optionValues: Record<string, string>, patch: Partia
   price: "100000.00",
   compareAtPrice: null,
   optionValues,
+  saleEndsAt: null,
   stock: { status: "IN_STOCK", remaining: null },
   ...patch,
 });
@@ -102,5 +106,34 @@ describe("VariantPicker + ກະຕ່າ", () => {
     await user.click(screen.getByRole("button", { name: "ໃສ່ກະຕ່າ" }));
     expect(getCart()).toEqual([{ variantId: "wm", quantity: 1 }]);
     resetCartForTests();
+  });
+});
+
+describe("VariantPicker + Flash Sale", () => {
+  it("shows the badge and a countdown for a variant on sale; refreshes the page when it ends", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-11T10:00:00Z"));
+    refresh.mockReset();
+    render(
+      <VariantPicker
+        product={{
+          name: "Cup",
+          options: [],
+          variants: [variant("only", {}, { price: "80000.00", compareAtPrice: "100000.00", saleEndsAt: "2026-10-11T10:00:02Z" })],
+        }}
+      />,
+    );
+    expect(screen.getByText("Flash Sale")).toBeInTheDocument();
+    expect(screen.getByRole("timer")).toHaveTextContent("00:02");
+    expect(screen.getByText("100,000 ກີບ").tagName).toBe("S");
+    act(() => vi.advanceTimersByTime(2000));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("no badge or timer for a regular-price variant", () => {
+    render(<VariantPicker product={{ name: "Cup", options: [], variants: [variant("only", {})] }} />);
+    expect(screen.queryByText("Flash Sale")).not.toBeInTheDocument();
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
   });
 });

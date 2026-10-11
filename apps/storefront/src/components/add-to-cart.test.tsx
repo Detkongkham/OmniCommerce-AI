@@ -11,6 +11,7 @@ const variant = (patch: Partial<StoreVariant> = {}): StoreVariant => ({
   price: "100.00",
   compareAtPrice: null,
   optionValues: {},
+  saleEndsAt: null,
   stock: { status: "IN_STOCK", remaining: null },
   ...patch,
 });
