@@ -124,3 +124,15 @@
 - `receivingAccounts` (ບັນຊີຮັບໂອນຂອງຮ້ານ ໃຊ້ກວດບັນຊີປາຍທາງໃນສະລິບ) ຖືກສົ່ງອອກທາງ `GET /settings/store` ໃຫ້ຜູ້ໃຊ້ທີ່ມີ `inventory:read`; ເປັນບັນຊີສາທາລະນະທີ່ຮ້ານສະແດງໃຫ້ລູກຄ້າໂອນຢູ່ແລ້ວ. ແກ້ໄດ້ດ້ວຍ `PATCH /settings/store` (`inventory:write`); PATCH ທີ່ບໍ່ສົ່ງ `receivingAccounts` ຈະບໍ່ແຕະຄ່າເດີມ.
 - ຮູບສະລິບ `GET /slips/:id/image` ຕ້ອງ login + `orders:read` (ບໍ່ມີ URL ສາທາລະນະ), ຕອບ `Cache-Control: private, no-store`, `nosniff` ແລະ CSP `default-src 'none'; sandbox`. ຢ່າໃຫ້ CDN/proxy cache ເສັ້ນທາງນີ້.
 - Retention: ສະລິບ/ຮູບ **ຖືກເກັບໄວ້ຢ່າງຕັ້ງໃຈ** (ເປັນຫຼັກຖານການເງິນ ແລະ ຂໍ້ມູນ train) ຈຶ່ງບໍ່ມີ job ລຶບ/ກວາດ; ໂຟເດີ `SLIP_STORAGE_DIR` ຈະໃຫຍ່ຂຶ້ນເລື້ອຍໆ ຕ້ອງຕິດຕາມພື້ນທີ່ດິສກ໌ ແລະ ກຳນົດນະໂຍບາຍຂອງຮ້ານເອງ.
+
+## 16. ໜ້າຮ້ານສາທາລະນະ (Storefront 3b): API `/store/*`
+
+- ຕ້ອງ `pnpm --filter @oca/database db:deploy` ເພື່ອໃຫ້ migration `20261011000000_storefront` ຖືກໃຊ້ (ເພີ່ມ `Order.publicToken`, `shippingCourierId`, `shippingBranch` ແລະ ຄ່າ `STOREFRONT` ຂອງ `SlipSource`; ເພີ່ມຢ່າງດຽວ).
+- `/store/*` **ບໍ່ຕ້ອງ login** ແລະ ຖືກອອກແບບໃຫ້ເວັບ (`apps/storefront`) ເອີ້ນຜ່ານ rewrite ຂອງຕົນ. CORS ບໍ່ຕ້ອງເປີດເພີ່ມ.
+- ຈຳກັດຄວາມຖີ່ຂອງ `POST` ຕໍ່ IP: `STORE_ORDER_RATE_LIMIT` (ຄ່າເລີ່ມຕົ້ນ 5 ຕໍ່ 10 ນາທີ), `STORE_SLIP_RATE_LIMIT` (10 ຕໍ່ 10 ນາທີ), `STORE_CHECK_RATE_LIMIT` (60 ຕໍ່ນາທີ). ຕົວນັບຢູ່ໃນ memory ຂອງ API process ດຽວ: restart ລ້າງຕົວນັບ ແລະ ຫຼາຍ instance ນັບແຍກກັນ. `GET` ບໍ່ຖືກຈຳກັດ (ເວັບ render ຝັ່ງ server ຈຶ່ງມາຈາກ IP ດຽວ); ຖ້າເປີດ API ອອກອິນເຕີເນັດໂດຍກົງ ໃຫ້ຈຳກັດທີ່ reverse proxy.
+- **`TRUST_PROXY` ຕ້ອງຖືກ** (ຂໍ້ 1): ຖ້າ API ເຫັນທຸກຄຳຂໍເປັນ IP ຂອງ proxy/ເວັບ ລູກຄ້າທັງໝົດຈະແບ່ງໂຄຕ້າດຽວກັນ ແລະ ຖືກ 429 ໄວ. ເວັບຕ້ອງສົ່ງ `X-Forwarded-For` ຂອງລູກຄ້າຕໍ່ມາໃຫ້ API.
+- ເວັບຂາຍສະເພາະສະຕ໋ອກຂອງ **ສາງ default** (ສາງດຽວກັບທີ່ການສ້າງບິນຈອງ). ບໍ່ມີສາງ default ທີ່ເປີດໃຊ້ = ທຸກສິນຄ້າຂຶ້ນ "ໝົດ" ແລະ ສັ່ງບໍ່ໄດ້.
+- ເພດານ (ຄ່າຄົງທີ່ໃນ `@oca/shared`, ບໍ່ແມ່ນ env): 20 ລາຍການ ແລະ 20 ອັນຕໍ່ລາຍການຕໍ່ບິນ, 2 ບິນຄ້າງຈ່າຍຕໍ່ເບີໂທ, 3 ສະລິບຕໍ່ບິນ, ປ້າຍ "ເຫຼືອ N" ເມື່ອ ≤ 5.
+- ໃຜມີລິ້ງບິນ (`publicToken`, 256 bit) ເບິ່ງຊື່/ເບີ/ທີ່ຢູ່/ລາຍການຂອງບິນນັ້ນ ແລະ ອັບໂຫຼດສະລິບໄດ້. ຢ່າ log URL ເຕັມຂອງ `/store/orders/:token` ທີ່ proxy (ຫຼື ຕັດ path ອອກ). API ຕອບ `Cache-Control: no-store` ສຳລັບເສັ້ນທາງບິນ.
+- reverse proxy ຕ້ອງອະນຸຍາດ body ≥ 8MB ໃຫ້ `POST /store/orders/:token/slips` ຄືກັບຂໍ້ 15.
+- ບິນຈາກເວັບບໍ່ມີພະນັກງານ: `Order.createdById` ເປັນ null ແລະ audit `order.create` / `slip.create` ມີ `userId` null ພ້ອມ IP.

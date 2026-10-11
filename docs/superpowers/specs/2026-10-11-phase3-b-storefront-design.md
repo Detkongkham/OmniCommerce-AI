@@ -1,6 +1,6 @@
 # Phase 3 ໂມດູນ 7: E-Commerce Storefront, sub-project 3b (ໜ້າຮ້ານສາທາລະນະ)
 
-ວັນທີ: 2026-10-11 · ສະຖານະ: draft ລໍ review · Branch: ຕໍ່ຈາກ `main`
+ວັນທີ: 2026-10-11 · ສະຖານະ: B1 (API) ສຳເລັດ; B2–B4 ຍັງບໍ່ເລີ່ມ · Branch: `phase3-storefront`
 
 ## 1. ເປົ້າໝາຍ ແລະ ຂອບເຂດ
 
@@ -41,7 +41,7 @@ Migration ໃໝ່ແບບເພີ່ມຢ່າງດຽວ:
 
 ## 3. API ສາທາລະນະ (ໂມດູນ `storefront`)
 
-ທຸກເສັ້ນທາງ `@Public()` + `ThrottlerGuard`. DTO ແຍກຈາກ admin: **ຫ້າມມີ** `costPrice`, `unitCost`, ສະຕ໋ອກລາຍສາງ, `createdBy`, id ພາຍໃນຂອງລູກຄ້າ, `readRaw` ຂອງສະລິບ.
+ທຸກເສັ້ນທາງ `@Public()`; `POST` ຖືກຈຳກັດຄວາມຖີ່ຕໍ່ IP (§6). DTO ແຍກຈາກ admin: **ຫ້າມມີ** `costPrice`, `unitCost`, SKU/ບາໂຄດ, ສະຕ໋ອກດິບ/ລາຍສາງ, `createdBy`, id ພາຍໃນຂອງລູກຄ້າ, `readRaw` ຂອງສະລິບ.
 
 | Route | ໜ້າທີ່ |
 |---|---|
@@ -51,12 +51,12 @@ Migration ໃໝ່ແບບເພີ່ມຢ່າງດຽວ:
 | `GET /store/products/:slug` | ລາຍລະອຽດ, options, variants (id, ຊື່, ລາຄາ, `compareAtPrice`, ສະຖານະສະຕ໋ອກ), ຮູບ; 404 ຖ້າບໍ່ ACTIVE |
 | `POST /store/cart/check` | `{ items: [{ variantId, quantity }] }` → ລາຄາ, ຊື່, ຮູບ, ສະຖານະສະຕ໋ອກປັດຈຸບັນຕໍ່ລາຍການ + ຍອດລວມ; ລາຍການທີ່ຂາຍບໍ່ໄດ້ແລ້ວມີ `unavailable: true` |
 | `POST /store/orders` | header `Idempotency-Key` (ບັງຄັບ); body ລຸ່ມນີ້ → `{ orderNumber, token }` |
-| `GET /store/orders/:token` | ເລກບິນ, ສະຖານະ, ລາຍການ, ຍອດ, `reservedUntil`, ຂໍ້ມູນຈັດສົ່ງ, ສະລິບ (id ສາທາລະນະ, ສະຖານະ, ເວລາ), tracking (ຊື່ courier, ເລກ, URL) |
-| `POST /store/orders/:token/slips` | multipart ຮູບ 1 ໄຟລ໌; ກວດ MIME/ຂະໜາດ/magic bytes ດ້ວຍ code ເດີມ; ສ້າງ `PaymentSlip` (`source=STOREFRONT`) ເຂົ້າຄິວ `slips` |
+| `GET /store/orders/:token` | ເລກບິນ, ສະຖານະ (`EXPIRED` ທັນທີເມື່ອເກີນເວລາຈອງ), ລາຍການ, ຍອດ, `reservedUntil`, ຂໍ້ມູນຈັດສົ່ງ, ສະລິບ (ສະຖານະ `REVIEWING`/`CONFIRMED`/`REJECTED` + ເວລາ; ບໍ່ມີ id), tracking (ຊື່ courier, ເລກ, URL) |
+| `POST /store/orders/:token/slips` | multipart ຮູບ 1 ໄຟລ໌; ກວດ MIME/ຂະໜາດ/magic bytes ດ້ວຍ code ເດີມ; ສ້າງ `PaymentSlip` (`source=STOREFRONT`) ເຂົ້າຄິວ `slips`; ຕອບ `{ status: "REVIEWING" }` |
 
 **Body ຂອງ `POST /store/orders`:** `items[]` (`variantId`, `quantity`), `name`, `phone`, `address`, `courierId`, `branch`, `note?`, `expectedTotal`. Server ຄິດລາຄາເອງ; ຖ້າຍອດບໍ່ຕົງ `expectedTotal` → `409 PRICE_CHANGED` ພ້ອມຍອດໃໝ່ (ບໍ່ສ້າງບິນ).
 
-**ການສ້າງບິນ:** `StorefrontOrdersService` ເອີ້ນເສັ້ນທາງສ້າງບິນຂອງ `OrdersService` ໂດຍ `createdById = null`, `channel=STOREFRONT`, `source=WEB_CHECKOUT`, `currency=LAK`, `shippingFee=0`, `discount=0`. ການປ່ຽນໃນ `OrdersService`: ແຍກສ່ວນ "ສ້າງໃນ transaction" ໃຫ້ຮັບ actor ທີ່ເປັນ null ໄດ້ (audit `userId = null`, action `order.create`, ບັນທຶກ ip). ບໍ່ປ່ຽນພຶດຕິກຳຂອງ `POST /orders`.
+**ການສ້າງບິນ:** `StoreOrdersService` ເອີ້ນ `OrdersService.createFromStorefront` ໂດຍ `createdById = null`, `channel=STOREFRONT`, `source=WEB_CHECKOUT`, `currency=LAK`, `shippingFee=0`, `discount=0`. ການປ່ຽນໃນ `OrdersService`: ແຍກສ່ວນ "ສ້າງໃນ transaction" ໃຫ້ຮັບ actor ທີ່ເປັນ null ໄດ້ (audit `userId = null`, action `order.create`, ບັນທຶກ ip). ບໍ່ປ່ຽນພຶດຕິກຳຂອງ `POST /orders`.
 
 **ສະລິບ:** ຮັບໄດ້ເມື່ອບິນ `PENDING_PAYMENT` ເທົ່ານັ້ນ; ສູງສຸດ 3 ໃບທີ່ບໍ່ຖືກ `REJECTED` ຕໍ່ບິນ. ບໍ່ມີເສັ້ນທາງສາທາລະນະສຳລັບຮູບສະລິບ.
 
@@ -81,7 +81,7 @@ Migration ໃໝ່ແບບເພີ່ມຢ່າງດຽວ:
 
 | ເຫດການ | ພຶດຕິກຳ |
 |---|---|
-| ສະຕ໋ອກບໍ່ພໍຕອນສັ່ງ | `409 INSUFFICIENT_STOCK` ພ້ອມລາຍການ + ຈຳນວນທີ່ເຫຼືອ; ບໍ່ສ້າງບິນ; ໜ້າ checkout ໃຫ້ປັບກະຕ່າ |
+| ສະຕ໋ອກບໍ່ພໍຕອນສັ່ງ | `409 INSUFFICIENT_STOCK` ພ້ອມ `shortages: [{ variantId, requested, available }]`; ບໍ່ສ້າງບິນ; ໜ້າ checkout ໃຫ້ປັບກະຕ່າ |
 | ລາຄາປ່ຽນ | `409 PRICE_CHANGED`; ສະແດງຍອດໃໝ່ ແລ້ວລູກຄ້າຢືນຢັນອີກຄັ້ງ |
 | ສິນຄ້າຖືກປິດຂາຍ | `cart/check` ໝາຍ `unavailable`; ກົດສັ່ງບໍ່ໄດ້ຈົນກວ່າລຶບອອກ |
 | ສັ່ງຊ້ຳ / ເນັດຫຼຸດ | key ເດີມ + payload ເດີມ = ຄືນບິນເດີມ |
@@ -93,7 +93,7 @@ Migration ໃໝ່ແບບເພີ່ມຢ່າງດຽວ:
 
 ## 6. ຄວາມປອດໄພ ແລະ ຂໍ້ຈຳກັດ
 
-- Throttle ຕໍ່ IP: ສ້າງບິນ 5 ຄັ້ງ/10 ນາທີ; ອັບໂຫຼດສະລິບ 10 ຄັ້ງ/10 ນາທີ; ອ່ານ 120 ຄັ້ງ/ນາທີ. ອີງ `TRUST_PROXY` ທີ່ມີຢູ່ ເພື່ອໄດ້ IP ຈິງ.
+- ຈຳກັດຄວາມຖີ່ຕໍ່ IP (ໃນ memory, ຕັ້ງໄດ້ດ້ວຍ env `STORE_*_RATE_LIMIT`): ສ້າງບິນ 5 ຄັ້ງ/10 ນາທີ; ອັບໂຫຼດສະລິບ 10 ຄັ້ງ/10 ນາທີ; ກວດກະຕ່າ 60 ຄັ້ງ/ນາທີ. `GET` ບໍ່ຖືກຈຳກັດທີ່ API ເພາະເວັບ render ຝັ່ງ server (ທຸກຄຳຂໍອ່ານມາຈາກ IP ຂອງ Next ເຄື່ອງດຽວ) ແລະ ມີ cache. ອີງ `TRUST_PROXY` ທີ່ມີຢູ່ ເພື່ອໄດ້ IP ຈິງ.
 - ກັນຈອງສະຕ໋ອກຖິ້ມ: ສູງສຸດ 2 ບິນ `PENDING_PAYMENT` ຈາກເວັບຕໍ່ເບີໂທ (`409 TOO_MANY_OPEN_ORDERS`); ສູງສຸດ 20 ລາຍການ ແລະ 20 ອັນຕໍ່ລາຍການ.
 - `publicToken` 256 bit; ປຽບທຽບຜ່ານ unique lookup; ບໍ່ log token.
 - ຂໍ້ຄວາມຈາກລູກຄ້າ (ຊື່, ທີ່ຢູ່, ໝາຍເຫດ) ເປັນ untrusted: ຈຳກັດຄວາມຍາວ, render ເປັນ text ເທົ່ານັ້ນ ທັງໃນເວັບ ແລະ admin.
