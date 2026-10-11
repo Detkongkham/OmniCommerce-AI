@@ -12,7 +12,7 @@
 | 1 | 7. Inventory | ສິນຄ້າ, variants, ຕັດສະຕ໋ອກແບບ atomic, ຄຳສັ່ງຊື້ — **1a ສຳເລັດ**: API + worker (1a-api) ແລະ ໜ້າ admin (1a-ui: ສິນຄ້າ, ສາງ, ໝວດໝູ່, ຕັ້ງຄ່າຮ້ານ, ສະຕ໋ອກ, ຄຳສັ່ງຊື້). ເຫຼືອ: Inbox, CF Engine, Slip ເປັນ sub-project ແຍກ |
 | 2 | 1. Omnichannel Inbox | ເລີ່ມຈາກ Facebook Messenger, ເປີດບິນໃນແຊັດ — **2a ສຳເລັດ**: ຮັບ/ຕອບ Messenger, ມອບໝາຍ/ລິ້ງລູກຄ້າ, ເປີດບິນຈາກແຊັດ + ສະຫຼຸບບິນເຂົ້າແຊັດ. ເຫຼືອ: payment link, AI, ຊ່ອງທາງອື່ນ |
 | 3 | 4. Live & Post CF Engine | ດັກຄອມເມັ້ນ CF, ອອກບິນ QR ນັບຖອຍຫຼັງ — **4a ສຳເລັດ**: 4a-1 (backend: webhook ຄອມເມັ້ນ → ບິນ + Private Reply) ແລະ 4a-2 (ໜ້າ admin `/live`, `/live/:id`, ຂໍ້ມູນໂອນໃນ `/settings`). **4b ສຳເລັດ**: Host screen ເຕັມຈໍ `/live/:id/host` (ສິນຄ້ານຳສະເໜີ, ຈຳນວນຕໍ່ລະຫັດ, ຍອດລວມ, CF ລ່າສຸດ) realtime ຜ່ານ SSE + Redis. ເຫຼືອ: ຮູບ QR |
-| 4 | 9. Slip Verification | AI ອ່ານສະລິບ ແລະ ປັບສະຖານະບິນ |
+| 4 | 9. Slip Verification | **ຂັ້ນ 1 ສຳເລັດ**: ຮັບສະລິບ (ແຊັດ + ອັບໂຫຼດ), ກວດ 4 ຢ່າງ, ຄົນຢືນຢັນ → PAID, `SlipReader` interface (ມີແຕ່ fake). ເຫຼືອ **ຂັ້ນ 2**: bake-off + ເລືອກ/host model OCR ເອງ + fine-tune (ເບິ່ງ `docs/superpowers/specs/2026-10-07-phase1-slip-verification-design.md`) |
 
 ## Phase 2: ປະຕິບັດການ
 * 8. Smart Logistics Hub — **8a ສຳເລັດ**: ລາຍການລໍແພັກ, Scan-to-Pack (ເຄື່ອງຍິງ + ກ້ອງ), ໃບປະໜ້າ 100×150 mm, ສົ່ງອອກພ້ອມ tracking, ແຈ້ງລູກຄ້າທາງແຊັດ. ເຫຼືອ: API ບໍລິສັດຂົນສົ່ງ, ເລືອກສາງອັດຕະໂນມັດ, COD, ຕິດຕາມສະຖານະພັດສະດຸ
