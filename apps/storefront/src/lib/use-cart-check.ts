@@ -32,7 +32,9 @@ export function useCartCheck(): { state: CartCheckState; reload: () => void } {
   const items = useCart();
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<
-    { for: unknown; cart: StoreCart } | { for: unknown; error: string | undefined; failed: true } | null
+    | { for: unknown; attempt: number; cart: StoreCart }
+    | { for: unknown; attempt: number; error: string | undefined; failed: true }
+    | null
   >(null);
 
   useEffect(() => {
@@ -41,10 +43,10 @@ export function useCartCheck(): { state: CartCheckState; reload: () => void } {
     const key = items;
     checkCart(items).then(
       (cart) => {
-        if (!cancelled) setResult({ for: key, cart });
+        if (!cancelled) setResult({ for: key, attempt, cart });
       },
       (error: unknown) => {
-        if (!cancelled) setResult({ for: key, failed: true, error: error instanceof ClientApiError ? error.code : undefined });
+        if (!cancelled) setResult({ for: key, attempt, failed: true, error: error instanceof ClientApiError ? error.code : undefined });
       },
     );
     return () => {
@@ -52,17 +54,17 @@ export function useCartCheck(): { state: CartCheckState; reload: () => void } {
     };
   }, [hydrated, items, attempt]);
 
-  const reload = useCallback(() => {
-    setResult(null);
-    setAttempt((value) => value + 1);
-  }, []);
+  const reload = useCallback(() => setAttempt((value) => value + 1), []);
 
   let state: CartCheckState;
   if (!hydrated) state = { status: "loading" };
   else if (items.length === 0) state = { status: "empty" };
   else if (!result) state = { status: "loading" };
-  else if ("failed" in result) state = result.for === items ? { status: "error", code: result.error } : { status: "loading" };
-  // ຜົນຂອງກະຕ່າກ່ອນໜ້າ ຍັງສະແດງຕໍ່ລະຫວ່າງຖາມໃໝ່ (ບໍ່ກະພິບ)
-  else state = { status: "ready", cart: result.cart, refreshing: result.for !== items };
+  else {
+    const current = result.for === items && result.attempt === attempt;
+    if ("failed" in result) state = current ? { status: "error", code: result.error } : { status: "loading" };
+    // ຜົນກ່ອນໜ້າຍັງສະແດງຕໍ່ລະຫວ່າງຖາມໃໝ່ (ບໍ່ກະພິບ, ຟອມບໍ່ຫາຍ)
+    else state = { status: "ready", cart: result.cart, refreshing: !current };
+  }
   return { state, reload };
 }

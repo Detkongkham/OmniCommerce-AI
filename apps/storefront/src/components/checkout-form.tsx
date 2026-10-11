@@ -1,0 +1,239 @@
+"use client";
+
+import type { StoreCreateOrderInput } from "@oca/shared";
+import { Button, EmptyState, Field, Input, Select, Skeleton, buttonVariants, cn } from "@oca/ui";
+import { ShoppingCart } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useRef, useState } from "react";
+import { clearCart, useCart } from "@/lib/cart";
+import { ClientApiError, createOrder } from "@/lib/client-api";
+import { formatLak } from "@/lib/format";
+import { newIdempotencyKey } from "@/lib/idempotency";
+import { apiMessage } from "@/lib/messages";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { useCartCheck } from "@/lib/use-cart-check";
+
+const FIELDS = ["name", "phone", "address", "courierId", "branch"] as const;
+type FieldName = (typeof FIELDS)[number];
+type Values = Record<FieldName | "note", string>;
+type Problem = { message: string; cartLink?: boolean };
+
+const EMPTY_VALUES: Values = { name: "", phone: "", address: "", courierId: "", branch: "", note: "" };
+/** code ທີ່ໝາຍຄວາມວ່າກະຕ່າບໍ່ກົງກັບສິ່ງທີ່ຂາຍໄດ້ແລ້ວ */
+const CART_PROBLEM_CODES = new Set(["INSUFFICIENT_STOCK", "VARIANT_NOT_AVAILABLE", "VARIANT_NOT_FOUND"]);
+const TEXTAREA =
+  "w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 aria-[invalid=true]:border-danger";
+
+function validate(values: Values): Partial<Record<FieldName, string>> {
+  const errors: Partial<Record<FieldName, string>> = {};
+  if (!values.name.trim()) errors.name = "ກະລຸນາໃສ່ຊື່ຜູ້ຮັບ";
+  if (!isValidPhone(normalizePhone(values.phone))) errors.phone = "ເບີໂທບໍ່ຖືກຕ້ອງ (ຕົວເລກ 6–15 ຫຼັກ)";
+  if (!values.address.trim()) errors.address = "ກະລຸນາໃສ່ທີ່ຢູ່ຈັດສົ່ງ";
+  if (!values.courierId) errors.courierId = "ກະລຸນາເລືອກບໍລິສັດຂົນສົ່ງ";
+  if (!values.branch.trim()) errors.branch = "ກະລຸນາໃສ່ສາຂາປາຍທາງ";
+  return errors;
+}
+
+/** ຟອມສັ່ງຊື້ແບບ guest + ສະຫຼຸບກະຕ່າ. ສຳເລັດ → ລ້າງກະຕ່າ ແລ້ວໄປໜ້າບິນ */
+export function CheckoutForm({ couriers }: { couriers: { id: string; name: string }[] }) {
+  const router = useRouter();
+  const items = useCart();
+  const { state, reload } = useCartCheck();
+  const [values, setValues] = useState<Values>(EMPTY_VALUES);
+  const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  // key ເດີມຖືກໃຊ້ຊ້ຳສະເພາະເມື່ອສົ່ງ body ເດີມຄືນ (key ເດີມ + body ຕ່າງ = 409 ຈາກ API)
+  const lastAttempt = useRef<{ body: string; key: string } | null>(null);
+  const fieldRefs = useRef<Partial<Record<FieldName, HTMLElement | null>>>({});
+
+  if (done) {
+    return (
+      <p role="status" className="rounded-2xl border border-success-line bg-success-soft p-6 text-center text-sm font-semibold text-success-ink">
+        ສັ່ງຊື້ສຳເລັດ ກຳລັງໄປໜ້າບິນ…
+      </p>
+    );
+  }
+  if (state.status === "loading") {
+    return (
+      <div role="status" aria-label="ກຳລັງໂຫຼດ" className="flex flex-col gap-3">
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
+    );
+  }
+  if (state.status === "empty") {
+    return (
+      <EmptyState
+        icon={ShoppingCart}
+        title="ກະຕ່າຂອງທ່ານຍັງຫວ່າງ"
+        action={
+          <Link href="/products" className={buttonVariants({ variant: "outlinePrimary" })}>
+            ເລືອກຊື້ສິນຄ້າ
+          </Link>
+        }
+      />
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div role="alert" className="flex flex-col items-center gap-3 rounded-2xl border border-danger-line bg-danger-soft p-6 text-center">
+        <p className="text-sm text-danger-ink">{apiMessage(state.code, "ໂຫຼດຂໍ້ມູນກະຕ່າບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່")}</p>
+        <Button variant="outlineDanger" onClick={reload}>
+          ລອງໃໝ່
+        </Button>
+      </div>
+    );
+  }
+
+  const { cart, refreshing } = state;
+  const noCouriers = couriers.length === 0;
+  const blocked = !cart.orderable || noCouriers || refreshing;
+
+  const set = (name: keyof Values) => (event: { target: { value: string } }) => {
+    setValues((current) => ({ ...current, [name]: event.target.value }));
+    if (name !== "note" && errors[name]) setErrors((current) => ({ ...current, [name]: undefined }));
+  };
+  const ref = (name: FieldName) => (element: HTMLElement | null) => {
+    fieldRefs.current[name] = element;
+  };
+
+  const onSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (submitting || blocked) return;
+    const found = validate(values);
+    setErrors(found);
+    const firstInvalid = FIELDS.find((name) => found[name]);
+    if (firstInvalid) {
+      fieldRefs.current[firstInvalid]?.focus();
+      return;
+    }
+
+    const note = values.note.trim();
+    const body: StoreCreateOrderInput = {
+      items: items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
+      name: values.name.trim(),
+      phone: normalizePhone(values.phone),
+      address: values.address.trim(),
+      courierId: values.courierId,
+      branch: values.branch.trim(),
+      ...(note ? { note } : {}),
+      expectedTotal: cart.total,
+    };
+    const serialized = JSON.stringify(body);
+    if (lastAttempt.current?.body !== serialized) lastAttempt.current = { body: serialized, key: newIdempotencyKey() };
+
+    setSubmitting(true);
+    setProblem(null);
+    try {
+      const created = await createOrder(body, lastAttempt.current.key);
+      setDone(true);
+      clearCart();
+      router.push(`/orders/${created.token}`);
+    } catch (error) {
+      const code = error instanceof ClientApiError ? error.code : undefined;
+      if (code === "PRICE_CHANGED") {
+        const total = error instanceof ClientApiError && typeof error.body.total === "string" ? error.body.total : null;
+        setProblem({
+          message: total
+            ? `ລາຄາມີການປ່ຽນແປງ ຍອດໃໝ່ແມ່ນ ${formatLak(total)} ກະລຸນາກວດແລ້ວກົດຢືນຢັນອີກຄັ້ງ`
+            : "ລາຄາມີການປ່ຽນແປງ ກະລຸນາກວດຍອດໃໝ່ແລ້ວກົດຢືນຢັນອີກຄັ້ງ",
+        });
+        reload();
+      } else if (code && CART_PROBLEM_CODES.has(code)) {
+        setProblem({ message: "ສິນຄ້າບາງລາຍການມີບໍ່ພໍ ຫຼື ບໍ່ມີຂາຍແລ້ວ", cartLink: true });
+        reload();
+      } else {
+        setProblem({ message: apiMessage(code, "ສັ່ງຊື້ບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່") });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="grid gap-5 md:grid-cols-[1fr_340px] md:items-start">
+      <div className="flex flex-col gap-4 rounded-2xl border border-line bg-surface p-4">
+        <h2 className="text-base font-semibold text-ink">ຂໍ້ມູນຜູ້ຮັບ</h2>
+        <Field label="ຊື່ຜູ້ຮັບ" htmlFor="checkout-name" required error={errors.name}>
+          <Input id="checkout-name" ref={ref("name")} className="h-11" autoComplete="name" maxLength={100} value={values.name} onChange={set("name")} invalid={Boolean(errors.name)} />
+        </Field>
+        <Field label="ເບີໂທ" htmlFor="checkout-phone" required error={errors.phone}>
+          <Input id="checkout-phone" ref={ref("phone")} className="h-11" type="tel" inputMode="tel" autoComplete="tel" maxLength={24} placeholder="020 5555 5555" value={values.phone} onChange={set("phone")} invalid={Boolean(errors.phone)} />
+        </Field>
+        <Field label="ທີ່ຢູ່ຈັດສົ່ງ" htmlFor="checkout-address" required error={errors.address}>
+          <textarea id="checkout-address" ref={ref("address")} rows={3} maxLength={300} autoComplete="street-address" placeholder="ບ້ານ, ເມືອງ, ແຂວງ" value={values.address} onChange={set("address")} aria-invalid={errors.address ? true : undefined} className={TEXTAREA} />
+        </Field>
+
+        <h2 className="mt-2 text-base font-semibold text-ink">ການຈັດສົ່ງ</h2>
+        {noCouriers ? (
+          <p role="alert" className="rounded-xl border border-warning-line bg-warning-soft px-3 py-2 text-sm text-warning-ink">
+            ຮ້ານຍັງບໍ່ໄດ້ຕັ້ງບໍລິສັດຂົນສົ່ງ ຈຶ່ງຍັງສັ່ງຊື້ທາງເວັບບໍ່ໄດ້
+          </p>
+        ) : null}
+        <Field label="ບໍລິສັດຂົນສົ່ງ" htmlFor="checkout-courier" required error={errors.courierId}>
+          <Select id="checkout-courier" ref={ref("courierId")} className="h-11" value={values.courierId} onChange={set("courierId")} invalid={Boolean(errors.courierId)} disabled={noCouriers}>
+            <option value="">ເລືອກບໍລິສັດຂົນສົ່ງ</option>
+            {couriers.map((courier) => (
+              <option key={courier.id} value={courier.id}>
+                {courier.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="ສາຂາປາຍທາງ" htmlFor="checkout-branch" required error={errors.branch}>
+          <Input id="checkout-branch" ref={ref("branch")} className="h-11" maxLength={200} placeholder="ສາຂາທີ່ຈະໄປຮັບເຄື່ອງ" value={values.branch} onChange={set("branch")} invalid={Boolean(errors.branch)} />
+        </Field>
+        <p className="text-xs text-ink-secondary">ຄ່າຂົນສົ່ງຊຳລະໃຫ້ບໍລິສັດຂົນສົ່ງຕອນຮັບສິນຄ້າ</p>
+        <Field label="ໝາຍເຫດ (ຖ້າມີ)" htmlFor="checkout-note">
+          <textarea id="checkout-note" rows={2} maxLength={500} value={values.note} onChange={set("note")} className={TEXTAREA} />
+        </Field>
+      </div>
+
+      <section aria-label="ສະຫຼຸບຄຳສັ່ງຊື້" className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 md:sticky md:top-20">
+        <h2 className="text-base font-semibold text-ink">ສະຫຼຸບຄຳສັ່ງຊື້</h2>
+        <ul className={cn("flex flex-col gap-2", refreshing && "opacity-60")}>
+          {cart.items.map((line) =>
+            line.unavailable ? null : (
+              <li key={line.variantId} className="flex items-start justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate text-ink">{line.productName}</p>
+                  <p className="text-xs text-ink-secondary">{line.variantName ? `${line.variantName} × ${line.quantity}` : `× ${line.quantity}`}</p>
+                </div>
+                <p className="shrink-0 text-ink">{formatLak(line.lineTotal)}</p>
+              </li>
+            ),
+          )}
+        </ul>
+        <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+          <span className="text-sm text-ink-secondary">ຍອດທີ່ຕ້ອງໂອນ</span>
+          <span className="text-xl font-bold text-ink">{formatLak(cart.total)}</span>
+        </div>
+        {!cart.orderable ? (
+          <p className="text-sm font-semibold text-danger-ink">
+            ບາງລາຍການໃນກະຕ່າສັ່ງບໍ່ໄດ້{" "}
+            <Link href="/cart" className="underline underline-offset-4">
+              ກັບໄປແກ້ໄຂກະຕ່າ
+            </Link>
+          </p>
+        ) : null}
+        {problem ? (
+          <div role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-ink">
+            <p>{problem.message}</p>
+            {problem.cartLink ? (
+              <Link href="/cart" className="font-semibold underline underline-offset-4">
+                ກັບໄປແກ້ໄຂກະຕ່າ
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+        <Button type="submit" size="lg" className="h-11 rounded-xl" loading={submitting} disabled={blocked}>
+          ຢືນຢັນສັ່ງຊື້
+        </Button>
+        <p className="text-xs text-ink-secondary">ຫຼັງສັ່ງຊື້ ທ່ານຈະໄດ້ຮັບເລກບັນຊີສຳລັບໂອນເງິນ ແລະ ອັບໂຫຼດສະລິບ</p>
+      </section>
+    </form>
+  );
+}
