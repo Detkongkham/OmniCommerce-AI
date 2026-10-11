@@ -46,7 +46,7 @@ export async function resetDb(db: PrismaClient): Promise<void> {
       '"SocialPostMedia", "SocialPost", "MediaFile", "Shipment", "Courier", "CfComment", "LiveSessionItem", "LiveSession", "PaymentSlip", "Message", "Conversation", ' +
       '"OrderItem", "Order", "Customer", "StockMovement", "StockLevel", "ProductImage", ' +
       '"ProductVariant", "ProductOptionValue", "ProductOption", "Product", "Category", ' +
-      '"Warehouse", "ExchangeRate", "StoreSetting" RESTART IDENTITY CASCADE',
+      '"Warehouse", "ExchangeRate", "StoreSetting", "Coupon" RESTART IDENTITY CASCADE',
   );
   // sequence ເລກບິນບໍ່ຖືກ RESTART IDENTITY ແຕະ (ບໍ່ໄດ້ເປັນຂອງຖັນໃດ); ມີເງື່ອນໄຂເພາະ sequence ເກີດຈາກ migration inventory
   await db.$executeRawUnsafe(

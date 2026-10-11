@@ -352,6 +352,11 @@ model Order {
   shippingCourierId String?
   shippingCourier   Courier? @relation("OrderShippingCourier", fields: [shippingCourierId], references: [id], onDelete: SetNull)
   shippingBranch    String? // ສາຂາປາຍທາງ
+  // ໂຄດສ່ວນຫຼຸດ (ບິນລະ 1 ໂຄດ). couponDiscount ຖືກຫັກອອກຈາກ subtotal ແລະ ລວມຢູ່ໃນ discountTotal ແລ້ວ
+  couponId       String?
+  coupon         Coupon? @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  couponCode     String? // snapshot ຂອງລະຫັດ ນະ ເວລາສັ່ງ
+  couponDiscount Decimal @default(0) @db.Decimal(18, 2)
   // ລິ້ງລັບຕິດຕາມບິນຂອງເວັບ (32 byte base64url); null = ບິນທີ່ບໍ່ໄດ້ມາຈາກເວັບ
   publicToken     String? @unique
   note            String?
@@ -390,6 +395,7 @@ model Order {
   @@index([createdById, createdAt])
   @@index([paidAt])
   @@index([shippingCourierId])
+  @@index([couponId, status])
 }
 
 model OrderItem {
@@ -801,4 +807,32 @@ model PaymentSlip {
   @@index([readRefNo])
   @@index([confirmedRefNo])
   @@index([status, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Promotion (ໂມດູນ 5)
+// ---------------------------------------------------------------------------
+
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+// ໂຄດສ່ວນຫຼຸດ. ການໃຊ້ນັບຈາກ Order.couponId ຂອງບິນທີ່ບໍ່ແມ່ນ CANCELLED/EXPIRED (ບໍ່ມີຕົວນັບແຍກ)
+model Coupon {
+  id            String     @id @default(cuid())
+  code          String     @unique // ຕົວພິມໃຫຍ່
+  type          CouponType
+  value         Decimal    @db.Decimal(18, 2) // PERCENT: 1..100; FIXED: ຈຳນວນເງິນ (baseCurrency)
+  maxDiscount   Decimal?   @db.Decimal(18, 2) // ເພດານຂອງ PERCENT
+  minSubtotal   Decimal    @default(0) @db.Decimal(18, 2)
+  startsAt      DateTime?
+  endsAt        DateTime?
+  usageLimit    Int? // ຈຳນວນບິນລວມ
+  perPhoneLimit Int? // ຈຳນວນບິນຕໍ່ເບີໂທຂອງລູກຄ້າ
+  isActive      Boolean    @default(true)
+  note          String?
+  orders        Order[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 }

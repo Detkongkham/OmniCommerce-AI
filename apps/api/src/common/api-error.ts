@@ -63,6 +63,9 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   PRICE_CHANGED: HttpStatus.CONFLICT,
   TOO_MANY_OPEN_ORDERS: HttpStatus.CONFLICT,
   SLIP_LIMIT_REACHED: HttpStatus.CONFLICT,
+  COUPON_NOT_FOUND: HttpStatus.NOT_FOUND,
+  COUPON_INVALID: HttpStatus.CONFLICT,
+  COUPON_IN_USE: HttpStatus.CONFLICT,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

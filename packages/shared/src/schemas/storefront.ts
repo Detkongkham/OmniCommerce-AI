@@ -31,7 +31,16 @@ const storeItemsSchema = z
   .max(STORE_MAX_LINES)
   .refine((items) => new Set(items.map((item) => item.variantId)).size === items.length, "ມີສິນຄ້າຊ້ຳກັນໃນກະຕ່າ");
 
-export const storeCartCheckSchema = z.strictObject({ items: storeItemsSchema });
+/** ໂຄດທີ່ລູກຄ້າພິມ: ບໍ່ກວດຮູບແບບທີ່ນີ້ (ຜິດຮູບແບບ = "ບໍ່ພົບໂຄດ" ບໍ່ແມ່ນ 400); ວ່າງ = ບໍ່ໃຊ້ໂຄດ */
+const storeCouponCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .max(30)
+  .transform((value) => (value === "" ? undefined : value))
+  .optional();
+
+export const storeCartCheckSchema = z.strictObject({ items: storeItemsSchema, couponCode: storeCouponCodeSchema });
 
 /** ລາຄາ/ສ່ວນຫຼຸດ/ຄ່າສົ່ງ ບໍ່ຮັບຈາກ client: server ຄິດເອງ ແລ້ວທຽບກັບ expectedTotal */
 export const storeCreateOrderSchema = z.strictObject({
@@ -42,6 +51,7 @@ export const storeCreateOrderSchema = z.strictObject({
   courierId: idSchema,
   branch: text(200),
   note: z.string().trim().max(500).optional(),
+  couponCode: storeCouponCodeSchema,
   expectedTotal: moneySchema,
 });
 

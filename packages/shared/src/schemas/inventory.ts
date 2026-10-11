@@ -423,6 +423,13 @@ export type StockThresholdInput = z.infer<typeof stockThresholdSchema>;
 // ---------------------------------------------------------------------------
 // orders
 // ---------------------------------------------------------------------------
+/** ຮູບແບບດຽວກັບ couponCodeSchema (schemas/promotion); ນິຍາມຢູ່ນີ້ເພື່ອບໍ່ໃຫ້ສອງໄຟລ໌ import ກັນເປັນວົງ */
+const orderCouponCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z0-9_-]{3,30}$/, "ລະຫັດໂຄດບໍ່ຖືກຕ້ອງ");
+
 export const orderItemInputSchema = z.strictObject({
   variantId: idSchema,
   warehouseId: idSchema.optional(),
@@ -449,6 +456,8 @@ export const createOrderSchema = z
     shippingAddress: z.string().trim().max(300).optional(),
     note: z.string().trim().max(500).optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
+    /** ໂຄດສ່ວນຫຼຸດ (ບິນລະ 1 ໂຄດ); server ກວດ ແລະ ຄິດສ່ວນຫຼຸດເອງ */
+    couponCode: orderCouponCodeSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.customerId !== undefined && value.customer !== undefined) {

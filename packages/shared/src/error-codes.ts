@@ -68,6 +68,10 @@ export const ERROR_CODES = [
   "PRICE_CHANGED",
   "TOO_MANY_OPEN_ORDERS",
   "SLIP_LIMIT_REACHED",
+  // promotion
+  "COUPON_NOT_FOUND",
+  "COUPON_INVALID",
+  "COUPON_IN_USE",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
