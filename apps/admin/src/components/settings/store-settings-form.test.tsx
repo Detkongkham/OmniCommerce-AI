@@ -9,9 +9,14 @@ import { StoreSettingsForm } from "./store-settings-form";
 const auth = vi.hoisted(() => ({ canWrite: true }));
 vi.mock("@oca/ui", async (importOriginal) => {
   const original = await importOriginal<typeof import("@oca/ui")>();
-  return { ...original, toast: { ...original.toast, success: vi.fn(), error: vi.fn() } };
+  return {
+    ...original,
+    toast: { ...original.toast, success: vi.fn(), error: vi.fn() },
+  };
 });
-vi.mock("@/components/auth/auth-provider", () => ({ useCan: () => auth.canWrite }));
+vi.mock("@/components/auth/auth-provider", () => ({
+  useCan: () => auth.canWrite,
+}));
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   apiFetch: vi.fn(),
@@ -28,7 +33,9 @@ const settings: StoreSettingsDto = {
 };
 
 function mockApi() {
-  vi.mocked(apiFetch).mockImplementation((async () => settings) as typeof apiFetch);
+  vi.mocked(apiFetch).mockImplementation(
+    (async () => settings) as typeof apiFetch,
+  );
 }
 
 beforeEach(() => {
@@ -47,10 +54,14 @@ describe("StoreSettingsForm", () => {
     renderWithProviders(<StoreSettingsForm />);
     expect(await screen.findByDisplayValue("OCA Store")).toBeInTheDocument();
     expect(screen.getByLabelText("VAT (%)")).toHaveValue("10.00");
-    expect(screen.getByLabelText("Stock reservation time (minutes)")).toHaveValue(30);
+    expect(
+      screen.getByLabelText("Stock reservation time (minutes)"),
+    ).toHaveValue(30);
     expect(screen.getByLabelText("Base currency")).toHaveValue("LAK");
     expect(screen.getByLabelText("Base currency")).toBeDisabled();
-    expect(screen.getByLabelText("VAT (%)")).toHaveAccessibleDescription(/up to 2 decimals/);
+    expect(screen.getByLabelText("VAT (%)")).toHaveAccessibleDescription(
+      /up to 2 decimals/,
+    );
   });
 
   it("ບັນທຶກ: PATCH ພ້ອມ vatRate ເປັນ string ແລະ ນາທີເປັນຕົວເລກ", async () => {
@@ -59,8 +70,13 @@ describe("StoreSettingsForm", () => {
     await user.clear(screen.getByLabelText("VAT (%)"));
     await user.type(screen.getByLabelText("VAT (%)"), "7");
     await user.clear(screen.getByLabelText("Stock reservation time (minutes)"));
-    await user.type(screen.getByLabelText("Stock reservation time (minutes)"), "45");
-    await user.click(screen.getByRole("checkbox", { name: "Selling prices include VAT" }));
+    await user.type(
+      screen.getByLabelText("Stock reservation time (minutes)"),
+      "45",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Selling prices include VAT" }),
+    );
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(apiFetch).toHaveBeenCalledWith("/settings/store", {
@@ -75,7 +91,9 @@ describe("StoreSettingsForm", () => {
         },
       }),
     );
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Settings saved"));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Settings saved"),
+    );
   });
 
   it("VAT ເກີນ 100 ຫຼື ນາທີ 0: ສະແດງ error ແລະ ບໍ່ສົ່ງ", async () => {
@@ -84,11 +102,17 @@ describe("StoreSettingsForm", () => {
     await user.clear(screen.getByLabelText("VAT (%)"));
     await user.type(screen.getByLabelText("VAT (%)"), "101");
     await user.clear(screen.getByLabelText("Stock reservation time (minutes)"));
-    await user.type(screen.getByLabelText("Stock reservation time (minutes)"), "0");
+    await user.type(
+      screen.getByLabelText("Stock reservation time (minutes)"),
+      "0",
+    );
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText(VAT_ERROR)).toBeInTheDocument();
     expect(screen.getByText(MINUTES_ERROR)).toBeInTheDocument();
-    expect(apiFetch).not.toHaveBeenCalledWith("/settings/store", expect.objectContaining({ method: "PATCH" }));
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      "/settings/store",
+      expect.objectContaining({ method: "PATCH" }),
+    );
   });
 
   it("VAT ທົດສະນິຍົມເກີນ 2 ຫຼັກ ແລະ ນາທີເກີນ 10080 ຖືກປະຕິເສດ", async () => {
@@ -97,11 +121,17 @@ describe("StoreSettingsForm", () => {
     await user.clear(screen.getByLabelText("VAT (%)"));
     await user.type(screen.getByLabelText("VAT (%)"), "7.555");
     await user.clear(screen.getByLabelText("Stock reservation time (minutes)"));
-    await user.type(screen.getByLabelText("Stock reservation time (minutes)"), "10081");
+    await user.type(
+      screen.getByLabelText("Stock reservation time (minutes)"),
+      "10081",
+    );
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText(VAT_ERROR)).toBeInTheDocument();
     expect(screen.getByText(MINUTES_ERROR)).toBeInTheDocument();
-    expect(apiFetch).not.toHaveBeenCalledWith("/settings/store", expect.objectContaining({ method: "PATCH" }));
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      "/settings/store",
+      expect.objectContaining({ method: "PATCH" }),
+    );
   });
 
   it("ຊື່ວ່າງ = required, ຊື່ຍາວເກີນ = too long; VAT ວ່າງ = required", async () => {
@@ -110,25 +140,38 @@ describe("StoreSettingsForm", () => {
     await user.clear(screen.getByLabelText("Store name"));
     await user.clear(screen.getByLabelText("VAT (%)"));
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findAllByText("This field is required")).toHaveLength(2);
+    expect(await screen.findAllByText("This field is required")).toHaveLength(
+      2,
+    );
     expect(screen.queryByText(VAT_ERROR)).toBeNull();
 
     await user.click(screen.getByLabelText("Store name"));
     await user.paste("a".repeat(101));
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Too long (up to 100 characters)")).toBeInTheDocument();
-    expect(apiFetch).not.toHaveBeenCalledWith("/settings/store", expect.objectContaining({ method: "PATCH" }));
+    expect(
+      await screen.findByText("Too long (up to 100 characters)"),
+    ).toBeInTheDocument();
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      "/settings/store",
+      expect.objectContaining({ method: "PATCH" }),
+    );
   });
 
   it("API error ສະແດງຂໍ້ຄວາມແປໃນຟອມ", async () => {
-    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
-      if (options?.method === "PATCH") throw new ApiError(400, "invalid", [], "VALIDATION_FAILED");
+    vi.mocked(apiFetch).mockImplementation((async (
+      _path: string,
+      options?: { method?: string },
+    ) => {
+      if (options?.method === "PATCH")
+        throw new ApiError(400, "invalid", [], "VALIDATION_FAILED");
       return settings;
     }) as typeof apiFetch);
     const { user } = renderWithProviders(<StoreSettingsForm />);
     await screen.findByDisplayValue("OCA Store");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Please check the information you entered");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Please check the information you entered",
+    );
     expect(toast.success).not.toHaveBeenCalled();
   });
 
@@ -146,7 +189,10 @@ describe("StoreSettingsForm", () => {
 
   it("ກຳລັງບັນທຶກ: ກົດ Save ຊ້ຳບໍ່ສົ່ງຊ້ຳ", async () => {
     let release: () => void = () => {};
-    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+    vi.mocked(apiFetch).mockImplementation((async (
+      _path: string,
+      options?: { method?: string },
+    ) => {
       if (options?.method === "PATCH") {
         await new Promise<void>((resolve) => {
           release = resolve;
@@ -160,14 +206,23 @@ describe("StoreSettingsForm", () => {
     const saving = await screen.findByRole("button", { name: "Saving..." });
     expect(saving).toBeDisabled();
     await user.click(saving);
-    expect(vi.mocked(apiFetch).mock.calls.filter(([, o]) => (o as { method?: string } | undefined)?.method === "PATCH")).toHaveLength(1);
+    expect(
+      vi
+        .mocked(apiFetch)
+        .mock.calls.filter(
+          ([, o]) => (o as { method?: string } | undefined)?.method === "PATCH",
+        ),
+    ).toHaveLength(1);
     release();
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
   });
 
   it("ຫຼັງບັນທຶກ: ຟອມຮີເຊັດເປັນຄ່າຈາກ server (7 -> 7.00)", async () => {
     let saved = false;
-    vi.mocked(apiFetch).mockImplementation((async (_path: string, options?: { method?: string }) => {
+    vi.mocked(apiFetch).mockImplementation((async (
+      _path: string,
+      options?: { method?: string },
+    ) => {
       if (options?.method === "PATCH") {
         saved = true;
         return { ...settings, vatRate: "7.00" };
@@ -179,7 +234,9 @@ describe("StoreSettingsForm", () => {
     await user.clear(screen.getByLabelText("VAT (%)"));
     await user.type(screen.getByLabelText("VAT (%)"), "7");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.getByLabelText("VAT (%)")).toHaveValue("7.00"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("VAT (%)")).toHaveValue("7.00"),
+    );
   });
 
   it("ບໍ່ມີ inventory:write: ທຸກ field ອ່ານຢ່າງດຽວ ແລະ ບໍ່ມີປຸ່ມບັນທຶກ", async () => {
@@ -187,18 +244,29 @@ describe("StoreSettingsForm", () => {
     renderWithProviders(<StoreSettingsForm />);
     expect(await screen.findByDisplayValue("OCA Store")).toBeDisabled();
     expect(screen.getByLabelText("VAT (%)")).toBeDisabled();
-    expect(screen.getByLabelText("Stock reservation time (minutes)")).toBeDisabled();
-    expect(screen.getByRole("checkbox", { name: "Selling prices include VAT" })).toBeDisabled();
-    expect(screen.getByLabelText("Payment details for customers")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Stock reservation time (minutes)"),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Selling prices include VAT" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByLabelText("Payment details for customers"),
+    ).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   });
 
   describe("ຂໍ້ມູນການໂອນ (paymentInstructions)", () => {
     const PAYMENT = "Payment details for customers";
     const patchBody = () =>
-      (vi.mocked(apiFetch).mock.calls.find(([, o]) => (o as { method?: string } | undefined)?.method === "PATCH")?.[1] as
-        | { body: Record<string, unknown> }
-        | undefined)?.body;
+      (
+        vi
+          .mocked(apiFetch)
+          .mock.calls.find(
+            ([, o]) =>
+              (o as { method?: string } | undefined)?.method === "PATCH",
+          )?.[1] as { body: Record<string, unknown> } | undefined
+      )?.body;
 
     it("ໂຫຼດຄ່າເຂົ້າ textarea ພ້ອມ hint ແລະ ຕົວນັບ", async () => {
       renderWithProviders(<StoreSettingsForm />);
@@ -209,7 +277,10 @@ describe("StoreSettingsForm", () => {
     });
 
     it("ຄ່າຈາກ server ເປັນ null: textarea ວ່າງ", async () => {
-      vi.mocked(apiFetch).mockImplementation((async () => ({ ...settings, paymentInstructions: null })) as typeof apiFetch);
+      vi.mocked(apiFetch).mockImplementation((async () => ({
+        ...settings,
+        paymentInstructions: null,
+      })) as typeof apiFetch);
       renderWithProviders(<StoreSettingsForm />);
       expect(await screen.findByLabelText(PAYMENT)).toHaveValue("");
     });
@@ -220,7 +291,9 @@ describe("StoreSettingsForm", () => {
       await user.clear(field);
       await user.type(field, "  LDB 123  ");
       await user.click(screen.getByRole("button", { name: "Save" }));
-      await waitFor(() => expect(patchBody()?.paymentInstructions).toBe("LDB 123"));
+      await waitFor(() =>
+        expect(patchBody()?.paymentInstructions).toBe("LDB 123"),
+      );
 
       vi.mocked(apiFetch).mockClear();
       await user.clear(field);
@@ -236,7 +309,9 @@ describe("StoreSettingsForm", () => {
       await user.click(field);
       await user.paste("x".repeat(501));
       await user.click(screen.getByRole("button", { name: "Save" }));
-      expect(await screen.findByText("Too long (up to 500 characters)")).toBeInTheDocument();
+      expect(
+        await screen.findByText("Too long (up to 500 characters)"),
+      ).toBeInTheDocument();
       expect(field).toHaveAttribute("aria-invalid", "true");
       expect(patchBody()).toBeUndefined();
     });
@@ -244,22 +319,36 @@ describe("StoreSettingsForm", () => {
 
   describe("ບັນຊີຮັບເງິນ (receivingAccounts)", () => {
     const patchCall = () =>
-      vi.mocked(apiFetch).mock.calls.find((call) => (call[1] as { method?: string } | undefined)?.method === "PATCH");
-    const patchBody = () => (patchCall()?.[1] as { body: Record<string, unknown> } | undefined)?.body;
+      vi
+        .mocked(apiFetch)
+        .mock.calls.find(
+          (call) =>
+            (call[1] as { method?: string } | undefined)?.method === "PATCH",
+        );
+    const patchBody = () =>
+      (patchCall()?.[1] as { body: Record<string, unknown> } | undefined)?.body;
 
     it("ແກ້ບັນຊີຮັບເງິນ: ເພີ່ມແຖວ ແລ້ວບັນທຶກສົ່ງ receivingAccounts ໃນ PATCH ດຽວກັນ", async () => {
       const { user } = renderWithProviders(<StoreSettingsForm />);
-      expect(await screen.findByText("No receiving accounts set")).toBeInTheDocument();
+      expect(
+        await screen.findByText("No receiving accounts set"),
+      ).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Add account" }));
       await user.type(screen.getByLabelText("Bank"), " BCEL ");
       await user.type(screen.getByLabelText("Account no."), "010-12-00-0123");
       await user.type(screen.getByLabelText("Account name"), "OCA");
       await user.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() => expect(patchCall()).toBeDefined());
-      expect(patchBody()).toMatchObject({
+      // toEqual ຢືນຢັນວ່າບໍ່ມີ id/key ເກີນຈາກ useFieldArray
+      expect(patchBody()).toEqual({
         name: "OCA Store",
+        vatRate: "10.00",
+        pricesIncludeVat: true,
+        reservationMinutes: 30,
         paymentInstructions: "BCEL One 0201 1234 5678",
-        receivingAccounts: [{ bank: "BCEL", accountNo: "010-12-00-0123", accountName: "OCA" }],
+        receivingAccounts: [
+          { bank: "BCEL", accountNo: "010-12-00-0123", accountName: "OCA" },
+        ],
       });
     });
 
@@ -272,7 +361,9 @@ describe("StoreSettingsForm", () => {
       await user.type(screen.getByLabelText("Account name"), "   ");
       await user.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() => expect(patchCall()).toBeDefined());
-      expect(patchBody()?.receivingAccounts).toEqual([{ bank: "BCEL", accountNo: "0101" }]);
+      expect(patchBody()?.receivingAccounts).toEqual([
+        { bank: "BCEL", accountNo: "0101" },
+      ]);
     });
 
     it("ບັນຊີທີ່ເລກບັນຊີບໍ່ມີຕົວເລກ → error ແລະ ບໍ່ຍິງ API; ລຶບແຖວໄດ້", async () => {
@@ -282,13 +373,17 @@ describe("StoreSettingsForm", () => {
       await user.type(screen.getByLabelText("Bank"), "BCEL");
       await user.type(screen.getByLabelText("Account no."), "abc");
       await user.click(screen.getByRole("button", { name: "Save" }));
-      const error = await screen.findByText("Bank and account number (with digits) are required");
-      expect(screen.getByRole("group", { name: "Store receiving accounts" })).toHaveAccessibleDescription(
-        /Bank and account number/,
+      const error = await screen.findByText(
+        "Row 1: bank and a numeric account number are required",
       );
+      expect(
+        screen.getByRole("group", { name: "Store receiving accounts" }),
+      ).toHaveAccessibleDescription(/Row 1: bank/);
       expect(error).toBeInTheDocument();
       expect(patchCall()).toBeUndefined();
-      await user.click(screen.getByRole("button", { name: "Remove account 1" }));
+      await user.click(
+        screen.getByRole("button", { name: "Remove account 1" }),
+      );
       expect(screen.getByText("No receiving accounts set")).toBeInTheDocument();
     });
 
@@ -298,34 +393,145 @@ describe("StoreSettingsForm", () => {
       await user.click(screen.getByRole("button", { name: "Add account" }));
       await user.type(screen.getByLabelText("Account no."), "0101");
       await user.click(screen.getByRole("button", { name: "Save" }));
-      expect(await screen.findByText("Bank and account number (with digits) are required")).toBeInTheDocument();
+      expect(
+        await screen.findByText(
+          "Row 1: bank and a numeric account number are required",
+        ),
+      ).toBeInTheDocument();
       expect(patchCall()).toBeUndefined();
     });
 
     it("ສູງສຸດ 20 ແຖວ: ປຸ່ມເພີ່ມຖືກປິດເມື່ອຄົບ", async () => {
-      vi.mocked(apiFetch).mockImplementation(
-        (async () => ({
-          ...settings,
-          receivingAccounts: Array.from({ length: 20 }, (_, i) => ({ bank: "BCEL", accountNo: `${1000 + i}` })),
-        })) as typeof apiFetch,
-      );
+      vi.mocked(apiFetch).mockImplementation((async () => ({
+        ...settings,
+        receivingAccounts: Array.from({ length: 20 }, (_, i) => ({
+          bank: "BCEL",
+          accountNo: `${1000 + i}`,
+        })),
+      })) as typeof apiFetch);
       renderWithProviders(<StoreSettingsForm />);
       await screen.findAllByLabelText("Bank");
       expect(screen.getAllByLabelText("Bank")).toHaveLength(20);
-      expect(screen.getByRole("button", { name: "Add account" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Remove account 20" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Add account" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Remove account 20" }),
+      ).toBeInTheDocument();
+    });
+
+    it("ລຶບແຖວແລ້ວບັນທຶກ: ສົ່ງສະເພາະແຖວທີ່ເຫຼືອ (ບໍ່ມີ id)", async () => {
+      vi.mocked(apiFetch).mockImplementation((async () => ({
+        ...settings,
+        receivingAccounts: [
+          { bank: "BCEL", accountNo: "0101", accountName: "OCA" },
+          { bank: "LDB", accountNo: "0202" },
+        ],
+      })) as typeof apiFetch);
+      const { user } = renderWithProviders(<StoreSettingsForm />);
+      await screen.findByDisplayValue("BCEL");
+      await user.click(
+        screen.getByRole("button", { name: "Remove account 1" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(patchCall()).toBeDefined());
+      expect(patchBody()?.receivingAccounts).toEqual([
+        { bank: "LDB", accountNo: "0202" },
+      ]);
+    });
+
+    it("input ມີ maxLength ຕາມ schema ແລະ ເລກບັນຊີບໍ່ບັງຄັບ numeric keypad", async () => {
+      const { user } = renderWithProviders(<StoreSettingsForm />);
+      await screen.findByText("No receiving accounts set");
+      await user.click(screen.getByRole("button", { name: "Add account" }));
+      expect(screen.getByLabelText("Bank")).toHaveAttribute("maxlength", "50");
+      expect(screen.getByLabelText("Account no.")).toHaveAttribute(
+        "maxlength",
+        "40",
+      );
+      expect(screen.getByLabelText("Account name")).toHaveAttribute(
+        "maxlength",
+        "100",
+      );
+      expect(screen.getByLabelText("Account no.")).not.toHaveAttribute(
+        "inputmode",
+      );
+    });
+
+    it("error ບອກແຖວ + ໝາຍ aria-invalid ຖືກ field; ລ້າງເມື່ອແກ້ ຫຼື ເພີ່ມ/ລຶບແຖວ", async () => {
+      vi.mocked(apiFetch).mockImplementation((async () => ({
+        ...settings,
+        receivingAccounts: [
+          { bank: "BCEL", accountNo: "0101" },
+          { bank: "LDB", accountNo: "0202" },
+        ],
+      })) as typeof apiFetch);
+      const { user } = renderWithProviders(<StoreSettingsForm />);
+      await screen.findByDisplayValue("BCEL");
+      const accountNos = screen.getAllByLabelText("Account no.");
+      await user.clear(accountNos[1]!);
+      await user.type(accountNos[1]!, "abc");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      expect(
+        await screen.findByText(
+          "Row 2: bank and a numeric account number are required",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getAllByLabelText("Account no.")[1]).toHaveAttribute(
+        "aria-invalid",
+        "true",
+      );
+      expect(screen.getAllByLabelText("Account no.")[0]).not.toHaveAttribute(
+        "aria-invalid",
+      );
+      expect(patchCall()).toBeUndefined();
+
+      await user.type(screen.getAllByLabelText("Account no.")[1]!, "1");
+      expect(screen.queryByText(/Row 2/)).toBeNull();
+      expect(screen.getAllByLabelText("Account no.")[1]).not.toHaveAttribute(
+        "aria-invalid",
+      );
+
+      await user.clear(screen.getAllByLabelText("Account no.")[1]!);
+      await user.type(screen.getAllByLabelText("Account no.")[1]!, "abc");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await screen.findByText(/Row 2/);
+      await user.click(screen.getByRole("button", { name: "Add account" }));
+      expect(screen.queryByText(/Row 2/)).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await screen.findByText(/Row/);
+      await user.click(
+        screen.getByRole("button", { name: "Remove account 3" }),
+      );
+      expect(screen.queryByText(/Row/)).toBeNull();
+    });
+
+    it("focus: ເພີ່ມແຖວ → ໄປຊ່ອງ Bank ຂອງແຖວໃໝ່; ລຶບແຖວ → ໄປປຸ່ມ Add account", async () => {
+      const { user } = renderWithProviders(<StoreSettingsForm />);
+      await screen.findByText("No receiving accounts set");
+      await user.click(screen.getByRole("button", { name: "Add account" }));
+      expect(screen.getByLabelText("Bank")).toHaveFocus();
+      await user.click(
+        screen.getByRole("button", { name: "Remove account 1" }),
+      );
+      expect(screen.getByRole("button", { name: "Add account" })).toHaveFocus();
     });
 
     it("ບໍ່ມີສິດຂຽນ → ເຫັນລາຍການ ແຕ່ແກ້ບໍ່ໄດ້ (input ປິດ, ບໍ່ມີປຸ່ມເພີ່ມ/ລຶບ)", async () => {
       auth.canWrite = false;
-      vi.mocked(apiFetch).mockImplementation(
-        (async () => ({ ...settings, receivingAccounts: [{ bank: "BCEL", accountNo: "0101", accountName: "OCA" }] })) as typeof apiFetch,
-      );
+      vi.mocked(apiFetch).mockImplementation((async () => ({
+        ...settings,
+        receivingAccounts: [
+          { bank: "BCEL", accountNo: "0101", accountName: "OCA" },
+        ],
+      })) as typeof apiFetch);
       renderWithProviders(<StoreSettingsForm />);
       expect(await screen.findByDisplayValue("BCEL")).toBeDisabled();
       expect(screen.getByLabelText("Account no.")).toBeDisabled();
       expect(screen.queryByRole("button", { name: "Add account" })).toBeNull();
-      expect(screen.queryByRole("button", { name: "Remove account 1" })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Remove account 1" }),
+      ).toBeNull();
     });
   });
 });

@@ -67,11 +67,14 @@ const amountField = z
     return normalized;
   });
 
+/** ຄວາມຍາວສູງສຸດຂອງແຕ່ລະ field ຂອງບັນຊີຮັບເງິນ (ໃຊ້ທັງ schema ແລະ maxLength ຂອງຟອມ) */
+export const RECEIVING_ACCOUNT_LIMITS = { bank: 50, accountNo: 40, accountName: 100 } as const;
+
 /** ບັນຊີຮັບເງິນຂອງຮ້ານ (StoreSetting.receivingAccounts) */
 export const receivingAccountSchema = z.strictObject({
-  bank: trimmed(50),
-  accountNo: trimmed(40).refine((value) => /\d/.test(value), "accountNo must contain digits"),
-  accountName: trimmed(100).optional(),
+  bank: trimmed(RECEIVING_ACCOUNT_LIMITS.bank),
+  accountNo: trimmed(RECEIVING_ACCOUNT_LIMITS.accountNo).refine((value) => /\d/.test(value), "accountNo must contain digits"),
+  accountName: trimmed(RECEIVING_ACCOUNT_LIMITS.accountName).optional(),
 });
 export const receivingAccountsSchema = z.array(receivingAccountSchema).max(20);
 export type ReceivingAccount = z.infer<typeof receivingAccountSchema>;

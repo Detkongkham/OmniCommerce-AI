@@ -5,6 +5,7 @@ import {
   linkChatSlipSchema,
   normalizeSlipAmount,
   patchSlipSchema,
+  RECEIVING_ACCOUNT_LIMITS,
   receivingAccountsSchema,
   rejectSlipSchema,
 } from "./slips";
@@ -106,5 +107,16 @@ describe("strict body + edge cases", () => {
   it("accountName ຫວ່າງບໍ່ໄດ້; patch ທີ່ມີແຕ່ undefined ບໍ່ຜ່ານ", () => {
     expect(receivingAccountsSchema.safeParse([{ bank: "A", accountNo: "1", accountName: "" }]).success).toBe(false);
     expect(patchSlipSchema.safeParse({ orderId: undefined }).success).toBe(false);
+  });
+});
+
+describe("RECEIVING_ACCOUNT_LIMITS", () => {
+  it("ຂີດຈຳກັດຕົງກັບ schema (ເກີນ 1 = ຜິດ, ເທົ່າ = ຖືກ)", () => {
+    const { bank, accountNo, accountName } = RECEIVING_ACCOUNT_LIMITS;
+    const ok = { bank: "b".repeat(bank), accountNo: "1".repeat(accountNo), accountName: "n".repeat(accountName) };
+    expect(receivingAccountsSchema.safeParse([ok]).success).toBe(true);
+    expect(receivingAccountsSchema.safeParse([{ ...ok, bank: "b".repeat(bank + 1) }]).success).toBe(false);
+    expect(receivingAccountsSchema.safeParse([{ ...ok, accountNo: "1".repeat(accountNo + 1) }]).success).toBe(false);
+    expect(receivingAccountsSchema.safeParse([{ ...ok, accountName: "n".repeat(accountName + 1) }]).success).toBe(false);
   });
 });
