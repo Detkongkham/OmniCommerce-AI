@@ -114,14 +114,22 @@ describe("slip hooks", () => {
     const { client, Wrapper } = wrapper();
     const spy = vi.spyOn(client, "invalidateQueries");
     const { result } = renderHook(() => useConfirmSlip(), { wrapper: Wrapper });
-    await act(() => result.current.mutateAsync("s1"));
+    // ບໍ່ມີ expected = ບໍ່ສົ່ງ body
+    await act(() => result.current.mutateAsync({ id: "s1" }));
     expect(apiFetch).toHaveBeenCalledWith("/slips/s1/confirm", { method: "POST" });
+    // ມີ expected = map ເປັນ expectedAmount/Currency/OrderId (currency null ຖືກສົ່ງໄປດ້ວຍ)
+    vi.mocked(apiFetch).mockResolvedValueOnce({});
+    await act(() => result.current.mutateAsync({ id: "s2", expected: { amount: "100.00", currency: null, orderId: "o1" } }));
+    expect(apiFetch).toHaveBeenCalledWith("/slips/s2/confirm", {
+      method: "POST",
+      body: { expectedAmount: "100.00", expectedCurrency: null, expectedOrderId: "o1" },
+    });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["slips"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["orders"] });
     spy.mockClear();
     vi.mocked(apiFetch).mockRejectedValueOnce(new Error("409"));
     await act(async () => {
-      await result.current.mutateAsync("s1").catch(() => undefined);
+      await result.current.mutateAsync({ id: "s1" }).catch(() => undefined);
     });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["slips"] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ["orders"] });

@@ -179,7 +179,32 @@ describe("SlipCard: ຢືນຢັນ / ປະຕິເສດ / ອ່ານໃ
     expect(dialog).toHaveTextContent("1 warning(s)");
     await user.click(within(dialog).getByRole("button", { name: "Confirm payment" }));
     await waitFor(() => expect(calls("POST")).toHaveLength(1));
-    expect(calls("POST")[0]).toEqual(["/slips/s1/confirm", { method: "POST" }]);
+    // ສົ່ງຄ່າທີ່ dialog ສະແດງ (ຍອດ DTO ດິບ, ສະກຸນຂອງສະລິບ, ບິນ) ໃຫ້ API ກວດວ່າບໍ່ປ່ຽນ
+    expect(calls("POST")[0]).toEqual([
+      "/slips/s1/confirm",
+      { method: "POST", body: { expectedAmount: "100000.00", expectedCurrency: "LAK", expectedOrderId: "o1" } },
+    ]);
+  });
+
+  it("ຢືນຢັນ: ໃຊ້ຄ່າທີ່ແອດມິນແກ້ (confirmed) ແລະ ສະກຸນ null ສົ່ງເປັນ null", async () => {
+    const { user } = renderWithProviders(
+      <SlipCard slip={slip({ read: { ...base.read, currency: null }, confirmed: confirmed({ amount: "95000.00" }) })} order={order} canReview />,
+    );
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Confirm 95,000.00 LAK for order SO-000001?");
+    await user.click(within(dialog).getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(calls("POST")).toHaveLength(1));
+    expect(calls("POST")[0]).toEqual(["/slips/s1/confirm", { method: "POST", body: { expectedAmount: "95000.00", expectedCurrency: null, expectedOrderId: "o1" } }]);
+  });
+
+  it("409 CONFLICT (ສະລິບຖືກແກ້) → dialog ປິດ ແລະ toast ເປັນຂໍ້ຄວາມເຕືອນໃຫ້ກວດຄ່າໃໝ່ (ບໍ່ແມ່ນ message ອັງກິດດິບຂອງ API)", async () => {
+    vi.mocked(apiFetch).mockRejectedValue(new ApiError(409, "The slip was changed; reload and confirm again", [], "CONFLICT"));
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    await user.click(screen.getByRole("button", { name: "Confirm payment" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm payment" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(toast.error).toHaveBeenCalledWith("The slip was changed by someone else; check the new values and confirm again");
   });
 
   it("ບໍ່ມີຍອດ → ປຸ່ມຢືນຢັນໃນ dialog ຖືກປິດ ແລະ ບອກເຫດຜົນ", async () => {

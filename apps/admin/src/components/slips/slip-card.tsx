@@ -121,12 +121,18 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
     if (confirming.current || final.amount === null) return;
     confirming.current = true;
     try {
-      await confirm.mutateAsync(slip.id);
+      // ສົ່ງຄ່າທີ່ dialog ສະແດງ (ສະກຸນ = ຂອງສະລິບ, null ຖ້າບໍ່ມີ; ຄ່າສຳຮອງຂອງບິນເປັນພຽງຂໍ້ຄວາມສະແດງ)
+      await confirm.mutateAsync({
+        id: slip.id,
+        // ປຸ່ມຢືນຢັນມີແຕ່ເມື່ອຜູກບິນ (canConfirmSlip) ຈຶ່ງ orderId ບໍ່ເປັນ null ຢູ່ບ່ອນນີ້
+        expected: { amount: final.amount, currency: final.currency, orderId: slip.orderId ?? undefined },
+      });
       toast.success(t("slips.toast.confirmed"));
       focusCardAfterConfirm.current = true;
       setConfirmOpen(false);
     } catch (error) {
-      toast.error(errorMessage(error, t));
+      // CONFLICT ຂອງ flow ນີ້ = ສະລິບຖືກແກ້ຫຼັງເປີດ dialog: ໃຊ້ຂໍ້ຄວາມແປ ບໍ່ໃຊ້ message ອັງກິດຂອງ API
+      toast.error(error instanceof ApiError && error.code === "CONFLICT" ? t("slips.confirm.changed") : errorMessage(error, t));
       // state conflict → ປິດ (card refetch ສະແດງຄວາມຈິງ); error ຊົ່ວຄາວ → ເປີດຄ້າງໃຫ້ລອງໃໝ່
       if (isStateConflict(error)) setConfirmOpen(false);
     } finally {

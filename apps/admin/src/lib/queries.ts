@@ -668,7 +668,17 @@ export function useRejectSlip() {
 export function useConfirmSlip() {
   const invalidate = useInvalidate(queryKeys.slips, queryKeys.orders);
   return useMutation({
-    mutationFn: (id: string) => apiFetch<SlipDto>(`/slips/${id}/confirm`, { method: "POST" }),
+    mutationFn: ({ id, expected }: { id: string; expected?: { amount?: string; currency?: string | null; orderId?: string } }) =>
+      apiFetch<SlipDto>(
+        `/slips/${id}/confirm`,
+        expected
+          ? {
+              method: "POST",
+              // ຄ່າທີ່ dialog ສະແດງ: ຖ້າສະລິບປ່ຽນຫຼັງຈາກນັ້ນ API ຕອບ 409 CONFLICT; key ທີ່ undefined ບໍ່ສົ່ງ
+              body: { expectedAmount: expected.amount, expectedCurrency: expected.currency, expectedOrderId: expected.orderId },
+            }
+          : { method: "POST" },
+      ),
     onSuccess: invalidate,
     onError: invalidate,
   });
