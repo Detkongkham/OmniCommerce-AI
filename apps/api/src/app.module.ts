@@ -9,6 +9,7 @@ import { StorageModule } from "./common/storage/storage.module";
 import { AppConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
 import { FEATURE_MODULES } from "./modules";
+import { StorefrontModule } from "./modules/storefront/storefront.module";
 import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
@@ -20,6 +21,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     AuthModule,
     HealthModule,
     ...Object.values(FEATURE_MODULES),
+    StorefrontModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: HttpErrorsFilter },
