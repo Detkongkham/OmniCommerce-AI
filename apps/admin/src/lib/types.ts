@@ -133,7 +133,11 @@ export interface VariantSearchItemDto {
   productName: string;
   productStatus: ProductStatus;
   imageUrl: string | null;
+  /** price an order created now would charge (flash sale applied) */
   price: string;
+  /** the variant's own price; differs from `price` only during a flash sale */
+  regularPrice?: string;
+  saleEndsAt?: string | null;
   costPrice?: string;
   isActive: boolean;
   availableTotal: number;
@@ -544,5 +548,24 @@ export interface CouponDto {
   isActive: boolean;
   note: string | null;
   usedCount: number;
+  createdAt: string;
+}
+
+export interface FlashSaleItemDto {
+  variantId: string;
+  sku: string;
+  productName: string;
+  variantName: string | null;
+  regularPrice: string;
+  salePrice: string;
+}
+
+export interface FlashSaleDto {
+  id: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
+  items: FlashSaleItemDto[];
   createdAt: string;
 }

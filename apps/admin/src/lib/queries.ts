@@ -56,6 +56,7 @@ import type {
   CategoryDto,
   CfCommentDto,
   CouponDto,
+  FlashSaleDto,
   CourierDto,
   FulfillmentDetailDto,
   FulfillmentListItemDto,
@@ -102,6 +103,7 @@ export const queryKeys = {
   liveSessions: ["live-sessions"] as const,
   couriers: ["couriers"] as const,
   coupons: ["coupons"] as const,
+  flashSales: ["flash-sales"] as const,
   fulfillment: ["fulfillment"] as const,
 };
 
@@ -848,6 +850,29 @@ export function useSaveCourier() {
 // ---------------------------------------------------------------------------
 // Promotion: ໂຄດສ່ວນຫຼຸດ
 // ---------------------------------------------------------------------------
+export interface FlashSaleBody {
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
+  items: { variantId: string; salePrice: string }[];
+}
+
+export function useFlashSales() {
+  return useQuery({ queryKey: queryKeys.flashSales, queryFn: () => apiFetch<FlashSaleDto[]>("/flash-sales") });
+}
+
+export function useSaveFlashSale() {
+  const invalidate = useInvalidate(queryKeys.flashSales);
+  return useMutation({
+    mutationFn: (args: { id?: string; input: FlashSaleBody }) =>
+      args.id
+        ? apiFetch<FlashSaleDto>(`/flash-sales/${encodeURIComponent(args.id)}`, { method: "PATCH", body: args.input })
+        : apiFetch<FlashSaleDto>("/flash-sales", { method: "POST", body: args.input }),
+    onSuccess: invalidate,
+  });
+}
+
 /** body ຂອງ POST/PATCH /coupons: ວັນເວລາເປັນ ISO string (schema ຂອງ API ແປງເປັນ Date ເອງ) */
 export type CouponBody = Omit<CreateCouponInput, "startsAt" | "endsAt" | "minSubtotal" | "isActive"> & {
   minSubtotal: string;

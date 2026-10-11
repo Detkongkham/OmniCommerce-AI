@@ -11,7 +11,6 @@ import {
   EmptyState,
   Field,
   Input,
-  PageHeader,
   Select,
   StatusPill,
   Table,
@@ -52,20 +51,15 @@ export function CouponList() {
 
   return (
     <div>
-      <PageHeader
-        breadcrumbs={[t("nav.home"), t("promotions.title")]}
-        title={t("promotions.title")}
-        description={t("promotions.description")}
-        actions={
-          canWrite ? (
-            <Button className="rounded-xl" onClick={() => open(null)}>
-              <Plus aria-hidden="true" />
-              {t("coupons.add")}
-            </Button>
-          ) : null
-        }
-      />
-      <div className="px-3 pb-10 sm:px-6">
+      {canWrite ? (
+        <div className="mb-4 flex justify-end">
+          <Button className="rounded-xl" onClick={() => open(null)}>
+            <Plus aria-hidden="true" />
+            {t("coupons.add")}
+          </Button>
+        </div>
+      ) : null}
+      <div>
         <Card className="overflow-hidden rounded-[20px]">
           {query.isError ? (
             <EmptyState

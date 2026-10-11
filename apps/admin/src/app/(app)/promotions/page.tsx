@@ -1,10 +1,10 @@
 import { PermissionGate } from "@/components/auth/permission-gate";
-import { CouponList } from "@/components/promotion/coupon-list";
+import { PromotionsPage } from "@/components/promotion/promotions-page";
 
 export default function PromotionsRoute() {
   return (
     <PermissionGate permission="promotion:read">
-      <CouponList />
+      <PromotionsPage />
     </PermissionGate>
   );
 }

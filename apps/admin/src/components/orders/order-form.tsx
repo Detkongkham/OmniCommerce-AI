@@ -321,7 +321,12 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
                             {line.variant.name ? ` — ${line.variant.name}` : ""}
                           </p>
                           <p className="font-mono text-xs text-ink-muted">{sku}</p>
-                          <p className="text-xs text-ink-muted tabular-nums">{formatMoney(line.variant.price)}</p>
+                          <p className="text-xs text-ink-muted tabular-nums">
+                            {formatMoney(line.variant.price)}
+                            {line.variant.regularPrice && line.variant.regularPrice !== line.variant.price ? (
+                              <span className="ml-1 font-semibold text-brand-ink">{t("orders.items.flashSale")}</span>
+                            ) : null}
+                          </p>
                         </th>
                         <td className="px-2 py-2">
                           <Select
