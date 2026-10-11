@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFacebookWebhook } from "./parse";
+import { parseFacebookComments, parseFacebookWebhook } from "./parse";
 
 const wrap = (...messaging: unknown[]) => ({ object: "page", entry: [{ id: "PAGE", time: 1, messaging }] });
 
@@ -86,5 +86,70 @@ describe("parseFacebookWebhook", () => {
       );
       expect(Number.isNaN(event?.timestamp.getTime())).toBe(false);
     }
+  });
+});
+
+describe("parseFacebookComments", () => {
+  const change = (value: object, pageId = "PAGE1") => ({
+    object: "page",
+    entry: [{ id: pageId, time: 1_700_000_000, changes: [{ field: "feed", value }] }],
+  });
+  const base = {
+    item: "comment",
+    verb: "add",
+    comment_id: "100_200",
+    post_id: "100_300",
+    from: { id: "U1", name: "ນາງ ກ" },
+    message: "A1 2",
+    parent_id: "100_300",
+    created_time: 1_700_000_000,
+  };
+
+  it("ແປງຄອມເມັ້ນໃໝ່", () => {
+    expect(parseFacebookComments(change(base))).toEqual([
+      {
+        channel: "FACEBOOK",
+        postId: "100_300",
+        commentId: "100_200",
+        authorId: "U1",
+        authorName: "ນາງ ກ",
+        message: "A1 2",
+        parentId: "100_300",
+        timestamp: new Date(1_700_000_000_000),
+      },
+    ]);
+  });
+  it("parentId: top-level = post_id; reply = parent_id ຂອງຄອມເມັ້ນແມ່; ບໍ່ມີ → null", () => {
+    expect(parseFacebookComments(change({ ...base, parent_id: "100_300" }))[0]?.parentId).toBe("100_300");
+    expect(parseFacebookComments(change({ ...base, parent_id: "100_200_1" }))[0]?.parentId).toBe("100_200_1");
+    expect(parseFacebookComments(change({ ...base, parent_id: undefined }))[0]?.parentId).toBeNull();
+    expect(parseFacebookComments(change({ ...base, parent_id: "" }))[0]?.parentId).toBeNull();
+  });
+  it("id ແບບ live video ຈິງ", () => {
+    const [event] = parseFacebookComments(
+      change({ ...base, post_id: "123456789_987654321", comment_id: "123456789_987654321_555", parent_id: "123456789_987654321" }),
+    );
+    expect(event).toMatchObject({ postId: "123456789_987654321", commentId: "123456789_987654321_555" });
+  });
+  it("ຂ້າມ edited/remove, ປະເພດອື່ນ (reaction, post), ຄອມເມັ້ນຂອງ Page ເອງ, ຂໍ້ຄວາມວ່າງ, field ຂາດ", () => {
+    expect(parseFacebookComments(change({ ...base, verb: "edited" }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, verb: "remove" }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, item: "reaction" }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, from: { id: "PAGE1", name: "Shop" } }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, message: "   " }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, comment_id: undefined }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, post_id: undefined }))).toEqual([]);
+    expect(parseFacebookComments(change({ ...base, from: undefined }))).toEqual([]);
+  });
+  it("ບໍ່ມີ name → ຊື່ຊົ່ວຄາວ; message ຍາວເກີນຖືກຕັດ 1000 ຕົວ", () => {
+    const [event] = parseFacebookComments(change({ ...base, from: { id: "U1234" }, message: "x".repeat(2000) }));
+    expect(event?.authorName).toBe("Facebook 1234");
+    expect(event?.message).toHaveLength(1000);
+  });
+  it("payload ຜິດຮູບແບບ → [] (ບໍ່ throw) ແລະ messaging ບໍ່ຖືກນັບເປັນຄອມເມັ້ນ", () => {
+    for (const payload of [null, 1, "x", {}, { object: "user" }, { object: "page", entry: "x" }, { object: "page", entry: [null, { changes: "x" }] }]) {
+      expect(parseFacebookComments(payload)).toEqual([]);
+    }
+    expect(parseFacebookComments({ object: "page", entry: [{ id: "P", messaging: [{}] }] })).toEqual([]);
   });
 });

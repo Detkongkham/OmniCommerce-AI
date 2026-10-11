@@ -92,7 +92,7 @@ const boolQuery = z.enum(["true", "false"]).transform((value) => value === "true
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function dateBound(edge: "from" | "to") {
+export function dateBound(edge: "from" | "to") {
   return z
     .string()
     .trim()
@@ -477,6 +477,14 @@ export const updateStoreSettingsSchema = z
     pricesIncludeVat: z.boolean().optional(),
     reservationMinutes: reservationMinutesSchema.optional(),
     receivingAccounts: receivingAccountsSchema.optional(),
+    // transform ຢູ່ກ່ອນ nullable/optional: ໃຫ້ key ຍັງເປັນ optional ໃນ type ຂາອອກ (ວ່າງ = null)
+    paymentInstructions: z
+      .string()
+      .trim()
+      .max(500)
+      .transform((value) => (value === "" ? null : value))
+      .nullable()
+      .optional(),
   })
   .refine(requireNonEmpty, NON_EMPTY_MESSAGE);
 

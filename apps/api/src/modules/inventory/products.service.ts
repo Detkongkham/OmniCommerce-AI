@@ -261,6 +261,9 @@ export class ProductsService {
       });
       return { archived: true };
     }
+    if ((await this.prisma.liveSessionItem.count({ where: { variantId: { in: variantIds } } })) > 0) {
+      throw apiError("PRODUCT_IN_LIVE_SESSION", "Product is used by a live/post CF session; archive it instead (PATCH status=ARCHIVED)");
+    }
     if ((await this.prisma.stockMovement.count({ where: { variantId: { in: variantIds } } })) > 0) {
       throw apiError("PRODUCT_HAS_STOCK_HISTORY", "Product has stock history; archive it instead (PATCH status=ARCHIVED)");
     }

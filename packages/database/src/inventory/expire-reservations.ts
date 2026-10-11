@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../generated/client";
+import { releaseCfClaims } from "./release-cf-claims";
 import { releaseMany } from "./stock-engine";
 
 /**
@@ -19,6 +20,7 @@ export async function expireOrder(db: PrismaClient, orderId: string, now: Date =
       select: { variantId: true, warehouseId: true, quantity: true },
     });
     await releaseMany(tx, items, { orderId });
+    await releaseCfClaims(tx, orderId);
     return true;
   });
 }

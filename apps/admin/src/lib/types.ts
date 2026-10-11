@@ -1,9 +1,14 @@
 import type {
+  CfOutcome,
+  CfReplyStatus,
   ConversationStatus,
+  LiveSessionKind,
+  LiveSessionStatus,
   MessageDirection,
   MessageStatus,
   OrderStatus,
   Permission,
+  ShipmentNotifyStatus,
   ProductStatus,
   ReceivingAccount,
   SalesChannel,
@@ -67,6 +72,8 @@ export interface StoreSettingsDto {
   reservationMinutes: number;
   /** ບັນຊີຮັບເງິນຂອງຮ້ານ (ໃຊ້ກວດບັນຊີປາຍທາງຂອງສະລິບ) */
   receivingAccounts: ReceivingAccount[];
+  /** ຂໍ້ມູນໂອນທີ່ແນບທ້າຍສະຫຼຸບບິນ CF (null = ບໍ່ມີ) */
+  paymentInstructions: string | null;
 }
 
 export interface ProductListItemDto {
@@ -248,6 +255,14 @@ export interface OrderDetailDto {
   completedAt: string | null;
   cancelledAt: string | null;
   createdAt: string;
+  /** null = ຍັງບໍ່ເລີ່ມແພັກຜ່ານໜ້າ fulfillment */
+  shipment: {
+    courierName: string | null;
+    trackingNumber: string | null;
+    trackingUrl: string | null;
+    notifyStatus: ShipmentNotifyStatus;
+    shippedAt: string | null;
+  } | null;
   items: OrderItemDto[];
   movements: OrderMovementDto[];
 }
@@ -320,4 +335,185 @@ export interface SlipDto {
   reviewedAt: string | null;
   rejectReason: string | null;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Live & CF (ກົງກັບ apps/api/src/modules/live-cf/live-cf.mapper.ts)
+// ---------------------------------------------------------------------------
+export interface LiveSessionDto {
+  id: string;
+  title: string;
+  kind: LiveSessionKind;
+  status: LiveSessionStatus;
+  externalPostId: string | null;
+  publicReplyEnabled: boolean;
+  /** ສິນຄ້າທີ່ກຳລັງນຳສະເໜີເທິງ Host screen */
+  featuredItemId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  itemCount: number;
+  commentCount: number;
+}
+
+export interface LiveItemDto {
+  id: string;
+  /** normalize ແລ້ວ (ຕົວໃຫຍ່, ເລກ ASCII) */
+  code: string;
+  variantId: string;
+  sku: string;
+  productName: string;
+  variantName: string | null;
+  /** null = ບໍ່ຈຳກັດ */
+  limit: number | null;
+  /** ຈຳນວນທີ່ CF ຈອງຢູ່ (ຫັກຄືນເມື່ອບິນໝົດເວລາ/ຍົກເລີກ) */
+  claimed: number;
+}
+
+export interface LiveSessionDetailDto extends LiveSessionDto {
+  items: LiveItemDto[];
+}
+
+export interface CfLedgerLine {
+  itemId: string;
+  code: string;
+  quantity: number;
+}
+
+export interface CfCommentDto {
+  id: string;
+  externalCommentId: string;
+  authorExternalId: string;
+  authorName: string;
+  message: string;
+  outcome: CfOutcome;
+  lines: CfLedgerLine[] | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  replyStatus: CfReplyStatus;
+  replyErrorCode: string | null;
+  createdAt: string;
+}
+
+/** GET /live-sessions/:id/host (ກົງກັບ apps/api/src/modules/live-cf/live-host.service.ts) */
+export type HostItemLevel = "OK" | "LOW" | "SOLD_OUT";
+
+export interface HostItemDto {
+  id: string;
+  code: string;
+  productName: string;
+  variantName: string | null;
+  sku: string;
+  price: string;
+  imageUrl: string | null;
+  limit: number | null;
+  claimed: number;
+  /** null = ບໍ່ມີສາງຫຼັກ */
+  stockAvailable: number | null;
+  /** null = ບໍ່ຈຳກັດ */
+  remaining: number | null;
+  level: HostItemLevel;
+}
+
+export interface HostSnapshotDto {
+  session: {
+    id: string;
+    title: string;
+    kind: LiveSessionKind;
+    status: LiveSessionStatus;
+    startedAt: string | null;
+    endedAt: string | null;
+    featuredItemId: string | null;
+  };
+  items: HostItemDto[];
+  totals: {
+    buyers: number;
+    orders: number;
+    reservedAmount: string;
+    paidAmount: string;
+    unitsClaimed: number;
+    comments: number;
+  };
+  recent: {
+    id: string;
+    authorName: string;
+    message: string;
+    outcome: CfOutcome;
+    lines: { code: string; quantity: number }[];
+    createdAt: string;
+  }[];
+}
+
+// ---------------------------------------------------------------------------
+// Logistics (ກົງກັບ apps/api/src/modules/logistics)
+// ---------------------------------------------------------------------------
+export interface CourierDto {
+  id: string;
+  code: string;
+  name: string;
+  trackingUrlTemplate: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface UserRefDto {
+  id: string;
+  name: string;
+}
+
+export interface ShipmentDto {
+  id: string;
+  courier: { id: string; code: string; name: string } | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  packedBy: UserRefDto | null;
+  packedAt: string | null;
+  verifiedAt: string | null;
+  verifiedBy: UserRefDto | null;
+  verifyOverrideReason: string | null;
+  shippedBy: UserRefDto | null;
+  shippedAt: string | null;
+  notifyStatus: ShipmentNotifyStatus;
+  notifyErrorCode: string | null;
+  notifiedAt: string | null;
+}
+
+export interface FulfillmentListItemDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  customer: { name: string; phone: string | null } | null;
+  itemCount: number;
+  paidAt: string | null;
+  hasShippingInfo: boolean;
+  verified: boolean;
+}
+
+export interface FulfillmentItemDto {
+  id: string;
+  variantId: string;
+  sku: string;
+  barcode: string | null;
+  productName: string;
+  variantName: string | null;
+  quantity: number;
+  warehouseId: string;
+  warehouseCode: string;
+}
+
+export interface FulfillmentDetailDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  channel: SalesChannel;
+  customer: { id: string; name: string; phone: string | null } | null;
+  shippingName: string | null;
+  shippingPhone: string | null;
+  shippingAddress: string | null;
+  note: string | null;
+  paidAt: string | null;
+  items: FulfillmentItemDto[];
+  shipment: ShipmentDto | null;
+  notifyText: string | null;
+  storeName: string;
 }

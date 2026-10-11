@@ -68,9 +68,49 @@
 - Migration `20261006000000_inbox` ເພີ່ມຕາຕະລາງ `Conversation`, `Message` ແລະ `Order.conversationId` (ເພີ່ມຢ່າງດຽວ); ກວດເທິງ Postgres 16 ກ່ອນ deploy ຈິງ (ຄືກັບຂໍ້ 6). Role `CHAT_ADMIN`/`MANAGER`/`OWNER` ມີ `inbox:*` ຢູ່ແລ້ວ; role ອື່ນທີ່ປັບແຕ່ງເອງຕ້ອງຕິກສິດ `inbox` ເອງ.
 - ເປີດບິນຈາກແຊັດ (`POST /orders` ພ້ອມ `conversationId`): API ບັງຄັບ `inbox:write` ເພີ່ມຈາກ `orders:write` (ກວດກ່ອນຫາເຄສ); `channel` ຕາມເຄສ + `source=CHAT` ກຳນົດຝັ່ງ server (client ສົ່ງ `channel`/`source` ບໍ່ໄດ້); `GET /orders?conversationId=` ກອງບິນຂອງເຄສ (ຕ້ອງ `orders:read`). ໜ້າ `/orders/new?conversationId=` ຕ້ອງ `orders:write` + `inventory:read` + `inbox:write`. ຫຼັງສ້າງບິນ admin ສົ່ງສະຫຼຸບບິນເຂົ້າແຊັດ; ສົ່ງບໍ່ໄດ້ = ບິນຍັງຢູ່ ແລະ ກົດສົ່ງຄືນໄດ້ (ຂໍ້ຄວາມຕອບບໍ່ມີ idempotency key ຈຶ່ງອາດຊ້ຳຖ້າການສົ່ງຄັ້ງກ່ອນ timeout ແຕ່ຝັ່ງ Meta ໄດ້ຮັບແລ້ວ).
 - SSE ຜ່ານ proxy `/api` ຂອງ admin (Next): ໃນ smoke test ດ້ວຍ `next build && next start` ຂໍ້ຄວາມເຂົ້າ admin ພາຍໃນ ~1 ວິ (ບໍ່ຖືກ buffer). ແຕ່ຖ້າມີ gzip/CDN ຢູ່ກາງ ໃຫ້ຢືນຢັນດ້ວຍ `curl -N .../api/inbox/events`; ແນະນຳໃຫ້ route `/webhooks/facebook` ແລະ `/inbox/events` ຕົງໄປ API ທີ່ reverse proxy. SSE ອາດຢູ່ຕໍ່ຫຼັງ token ໝົດສິດໄດ້ຫຼາຍສຸດ ~`ACCESS_TOKEN_TTL_SECONDS` (event ມີແຕ່ id; endpoint ຂໍ້ມູນກວດສິດທຸກຄັ້ງ).
+- Host screen (4b): SSE `GET /live-sessions/:id/events` ໃຊ້ channel `oca:live:events` ແລະ ກົດດຽວກັນກັບ `/inbox/events` (ປິດ buffering, read timeout > 25 ວິ, ຕັດຫຼັງ `ACCESS_TOKEN_TTL_SECONDS`). Worker publish ຊ່ອງດຽວກັນເມື່ອບິນ CF ໝົດເວລາຈອງ ຈຶ່ງຕ້ອງໃຊ້ Redis ດຽວກັບ API. ໂມງຂອງ worker ແລະ Postgres ຄວນ sync (NTP): worker ຫາບິນທີ່ໝົດເວລາດ້ວຍ `updatedAt >= ເວລາເລີ່ມ job`.
 - `FACEBOOK_GRAPH_BASE_URL` ໃຊ້ກັບ simulator/dev ເທົ່ານັ້ນ (ຢ່າຕັ້ງໃນ production); `FACEBOOK_APP_ID` ສຳຮອງໄວ້ ຍັງບໍ່ຖືກອ່ານ.
 
-## 12. ສະລິບໂອນເງິນ (Slip Verification)
+## 12. CF Engine
+
+- **Meta App**: ນອກຈາກ webhook field `messages` ຕ້ອງ subscribe field `feed` ແລະ ມີສິດ `pages_read_engagement`, `pages_manage_engagement`, `pages_messaging`.
+- **`externalPostId`** ຂອງ LiveSession ຕ້ອງເປັນ `post_id` ຕາມທີ່ webhook ສົ່ງມາ (ຮູບ `<pageId>_<postOrVideoId>`). ກວດຈາກ log/ledger ຂອງ webhook ຕອນທົດລອງຈິງຄັ້ງທຳອິດ ກ່ອນເປີດໃຊ້.
+- **Private Reply**: ຕອບສ່ວນຕົວໄດ້ 1 ຄັ້ງຕໍ່ຄອມເມັ້ນ ແລະ ພາຍໃນ 7 ວັນ. ຂໍ້ຄວາມ Messenger ຈຳກັດ 2000 ຕົວອັກສອນ.
+- **`from.id` ອາດບໍ່ຕົງ PSID** ຂອງ Messenger: ເຄສຈາກຄອມເມັ້ນຈຶ່ງອາດບໍ່ລິ້ງກັບແຊັດ (conversation) ອັດຕະໂນມັດ.
+- **ຄອມເມັ້ນທີ່ເປັນ reply ຂອງຄອມເມັ້ນ** ຖືກນັບເປັນ CF ເໝືອນຄອມເມັ້ນປົກກະຕິ.
+- **`QUEUE_PREFIX`** (env ຂອງ API): ຢ່າໃຊ້ prefix ດຽວກັນລະຫວ່າງ instance ທີ່ບໍ່ຕ້ອງການແບ່ງ job ກັນ (ໃນ Redis ດຽວກັນ). Test ໃຊ້ prefix ຕໍ່ pid ແລະ `OCA_TEST_DB_NAME` ແຍກຖານ test.
+- **Consumer ຢູ່ໃນ process ຂອງ API**: concurrency 4, serialize ຕໍ່ session ດ້ວຍ Postgres advisory lock, retry 3 ຄັ້ງແບບ backoff, ຖ້າຄັ້ງສຸດທ້າຍຍັງລົ້ມບັນທຶກ ledger ເປັນ ERROR.
+- **Migration**: `20261007000000_cf_engine` ມີ partial unique index ແລະ CHECK ທີ່ບໍ່ຢູ່ໃນ `schema.prisma` (ຕ້ອງແກ້ migration ທີ່ generate ດ້ວຍມື, ຢ່າ drop ເມື່ອ `migrate dev`), ແລະ `20261007010000_cf_reply_claim`. ຕ້ອງ `pnpm --filter @oca/database db:deploy`.
+- **Reply claim**: ສະຖານະ SENDING ຖືວ່າ stale ຫຼັງ 2 ນາທີ; ຖ້າ process ຕາຍກາງທາງ ການສົ່ງເປັນ at-least-once (ອາດສົ່ງຊ້ຳໄດ້).
+- **ຂໍ້ຈຳກັດ**: cache ຢູ່ໃນ API instance ດຽວ (ຍັງບໍ່ຮອງຮັບຫຼາຍ instance), ບໍ່ມີ waitlist, ບໍ່ໃສ່ QR ໃນຂໍ້ຄວາມ, ຍັງບໍ່ພິສູດກັບ Meta ຈິງ (ພັດທະນາດ້ວຍ simulator: `simulate comment ...`).
+- ຕັ້ງຂໍ້ມູນໂອນເງິນທີ່ໃສ່ໃນຂໍ້ຄວາມບິນ ຜ່ານ `PATCH /settings/store` field `paymentInstructions` (ສູງສຸດ 500 ຕົວ; ຊ່ອງໃນໜ້າ admin ມາກັບ 4a-2).
+
+### CF Engine: ຂໍ້ສັງເກດເພີ່ມເຕີມ
+
+- **ຄວາມໝາຍຂອງ limit**: `limit` ນັບຈຳນວນ CF ທີ່ "ຍັງຄ້າງຢູ່" (`LiveSessionItem.claimed`). ເມື່ອບິນ CF ໝົດເວລາ (EXPIRED) ຫຼື ຖືກຍົກເລີກ (CANCELLED) ລະບົບຄືນທັງສະຕ໋ອກ ແລະ ຈຳນວນທີ່ນັບໄວ້ (ລວມທຸກຄອມເມັ້ນທີ່ merge ເຂົ້າບິນດຽວກັນ, ບໍ່ຕ່ຳກວ່າ 0) ໃນ transaction ດຽວກັນ ຈຶ່ງເປີດຂາຍຕໍ່ໄດ້ເອງ. ບິນທີ່ຊຳລະ/ແພັກ/ຈັດສົ່ງ/ສຳເລັດແລ້ວ ຍັງນັບຢູ່ (ບໍ່ຄືນ). ການຄືນເກີດຄັ້ງດຽວຕໍ່ບິນ (ຜູ້ຊະນະ guard ຂອງການປ່ຽນສະຖານະ).
+- **ກໍລະນີ comment ຫາຍແບບງຽບ (ຮູ້ແລ້ວ 2 ກໍລະນີ)**: (ກ) comment ທີ່ເຂົ້າຄິວກ່ອນ session ຈົບ ແຕ່ຖືກປະມວນຜົນຫຼັງຈົບ ຖືກຂ້າມໂດຍບໍ່ມີແຖວ ledger; (ຂ) ຖ້າ attempt ສຸດທ້າຍລົ້ມ ແລະ ການຂຽນ ledger ກໍລົ້ມນຳ (ເຊັ່ນ DB ລົ່ມ) job BullMQ ທີ່ລົ້ມ (jobId = commentId, ຢູ່ໃນ failed set) ຈະເຮັດໃຫ້ Meta retry ຖືກ dedupe ແລະ comment ຫາຍ. ໂອກາດເກີດຕ່ຳ.
+- **Retry**: processor retry ຄວາມຜິດພາດຊົ່ວຄາວ 3 ຄັ້ງແບບ backoff ແລະຂຽນ ERROR ໃນ ledger ສະເພາະ attempt ສຸດທ້າຍ (ຕ່າງຈາກ spec ທີ່ວ່າ "ບໍ່ retry").
+- **Connection pool**: ແຕ່ລະ transaction ຂອງ processor ຖື DB connection ໃນລະຫວ່າງລໍ advisory lock ຕໍ່ session; concurrency 4 ອາດຄ້າງ connection ໄດ້ເຖິງ 4 ໃນ session ທີ່ຮ້ອນ.
+
+## 13. Logistics (8a)
+
+- ຕ້ອງ `pnpm --filter @oca/database db:deploy` ເພື່ອໃຫ້ migration `20261008010000_logistics` (Courier, Shipment) ຖືກໃຊ້. ໃຫ້ຮ້ານເພີ່ມບໍລິສັດຂົນສົ່ງທີ່ `/couriers` ກ່ອນສົ່ງເຄື່ອງອອກ.
+- ແຈ້ງ tracking ໃຊ້ Messenger ເສັ້ນທາງດຽວກັບ Inbox: ຕ້ອງຕັ້ງ `FACEBOOK_PAGE_ACCESS_TOKEN` ແລະ ຢູ່ໃນໜ້າຕ່າງ 24 ຊມ ນັບແຕ່ລູກຄ້າທັກຫຼ້າສຸດ (ບໍ່ດັ່ງນັ້ນ FAILED/OUTSIDE_WINDOW ແລ້ວພະນັກງານ copy ຂໍ້ຄວາມໄປສົ່ງເອງ). ບິນ CF ທີ່ບໍ່ມີເຄສແຊັດຂອງລູກຄ້າ = MANUAL.
+- ສະແກນດ້ວຍກ້ອງຕ້ອງເປີດໜ້າ admin ຜ່ານ **HTTPS** (browser ອະນຸຍາດກ້ອງສະເພາະ secure context; localhost ຍົກເວັ້ນ). Chrome ໃຊ້ BarcodeDetector; Safari/iOS ໂຫຼດ `@zxing/browser` ຕອນກົດປຸ່ມກ້ອງ.
+- ໃບປະໜ້າໃຊ້ `@page { size: 100mm 150mm }`: ໃນໜ້າຕ່າງພິມໃຫ້ເລືອກເຄື່ອງພິມ thermal ແລະ ຂະໜາດເຈ້ຍ 100×150 mm, margin = none, scale 100%.
+
+
+## 14. Social Posting (2a) ແລະ ບ່ອນເກັບໄຟລ໌
+
+- ຕ້ອງ `pnpm --filter @oca/database db:deploy` ເພື່ອໃຫ້ migration `20261008020000_social_posting` (MediaFile, SocialPost, SocialPostMedia) ຖືກໃຊ້.
+- **ໄຟລ໌ທີ່ອັບໂຫຼດຢູ່ເທິງ disk** ທີ່ `MEDIA_DIR` (default `./.data/media` ນັບຈາກ cwd ຂອງ API): ຕັ້ງເປັນ path ຖາວອນ (ເຊັ່ນ volume ຂອງ container), **backup ເອງ**, ແລະ ໃຊ້ໄດ້ກັບ API instance ດຽວ (ຫຼາຍ instance ຕ້ອງໃຊ້ disk ຮ່ວມກັນ ຫຼື ຍ້າຍໄປ S3 ພາຍຫຼັງ). ໄຟລ໌ຫາຍ = ໂພສທີ່ໃຊ້ຮູບນັ້ນ FAILED/MEDIA_MISSING.
+- `GET /media/files/:key` ເປີດສາທາລະນະ (key ສຸ່ມ 128 bit) ສຳລັບຮູບການຕະຫຼາດເທົ່ານັ້ນ. ຂໍ້ມູນລັບ (ເຊັ່ນ ສະລິບ) ໃຫ້ໃຊ້ `StorageService` ດຽວກັນແຕ່ເປີດຜ່ານ route ທີ່ກວດສິດ.
+- Reverse proxy ຕ້ອງຍອມ body ≥ 8 MB ສຳລັບ `POST /media` (ເຊັ່ນ nginx `client_max_body_size 9m;`).
+- Page Access Token ຕ້ອງມີສິດ `pages_manage_posts` + `pages_read_engagement` (ໂພສ) ນອກຈາກສິດ Messenger ເດີມ; ບໍ່ມີ = ໂພສ FAILED/SEND_REJECTED ຫຼື CHANNEL_AUTH.
+- ຕົວໂພສແລ່ນໃນ process ຂອງ API ທຸກ `POSTING_TICK_MS` (default 30 ວິນາທີ); ຫຼາຍ instance ປອດໄພ (claim ໃນ DB). ໂພສທີ່ຄ້າງ PUBLISHING ເກີນ 10 ນາທີ (API ລົ້ມກາງທາງ) ຈະເປັນ FAILED/PUBLISH_UNCERTAIN: **ກວດເພຈກ່ອນກົດລອງໃໝ່** ເພື່ອບໍ່ໂພສຊ້ຳ.
+- `pnpm db:seed` ບໍ່ຂຽນທັບ role ທີ່ມີຢູ່ແລ້ວ (ຂໍ້ 10): deployment ເກົ່າຕ້ອງຕິກສິດ `posting:read`/`posting:write` ໃຫ້ CHAT_ADMIN ເອງທີ່ `/roles`.
+
+## 15. ສະລິບໂອນເງິນ (Slip Verification)
 
 - ຮູບສະລິບເກັບເປັນໄຟລ໌ໃນ `SLIP_STORAGE_DIR`. **API ແລະ worker ຕ້ອງຊີ້ໄປໂຟເດີດຽວກັນ** (ເຄື່ອງດຽວກັນ ຫຼື volume ຮ່ວມ). ໃນ production ໃຫ້ໃຊ້ path ແບບ absolute ແລະ ສຳຮອງໂຟເດີນີ້ (ເປັນຂໍ້ມູນການເງິນຂອງທະນາຄານ + ຂໍ້ມູນສຳລັບ train). path ແບບ relative ຖືກຕີຈາກ cwd ຂອງແຕ່ລະ process (ຄ່າເລີ່ມຕົ້ນ `../../.data/slips` ຊີ້ root ຂອງ repo ຄືກັນທັງ `apps/api` ແລະ `apps/worker`).
 - ຄິວ BullMQ `slips` ຕ້ອງໃຊ້ `QUEUE_PREFIX` ດຽວກັນທັງ API ແລະ worker (ຄ່າເລີ່ມຕົ້ນ `oca`). API ເປັນຝ່າຍ enqueue ເທົ່ານັ້ນ.
@@ -81,7 +121,7 @@
 - ລິ້ງຮູບຈາກ Meta ອາດໝົດອາຍຸ: ປຸ່ມ "ໃຊ້ເປັນສະລິບ" ໃນ Inbox (`POST /conversations/:id/messages/:mid/slips`) ດາວໂຫຼດຮູບຕອນກົດ; ຖ້າລົ້ມ ໃຫ້ອັບໂຫຼດຮູບເອງໃນໜ້າບິນ. ການດາວໂຫຼດບໍ່ຕາມ redirect, ຕ້ອງ https (http ໃຊ້ໄດ້ສະເພາະ dev/simulator) ແລະ ຫ້າມ credentials ໃນ URL.
 - reverse proxy ຕ້ອງອະນຸຍາດ body ≥ 8MB ໃຫ້ `POST /orders/:id/slips` (ຂີດຈຳກັດຂອງ API = 8MB; nginx ຕັ້ງ `client_max_body_size 8m;` ຂຶ້ນໄປ ແລະ ແນະນຳເພື່ອ multipart overhead ເຊັ່ນ `10m`). ເກີນຂີດຈຳກັດຂອງ API ຕອບ 413 `BAD_REQUEST`.
 - SSRF guard ຂອງການດາວໂຫຼດຮູບກວດສະເພາະ **hostname ທີ່ເປັນຕົວອັກສອນ/IP ໃນ URL** (localhost, private/link-local IPv4/IPv6, `.local`/`.internal`, host ບໍ່ມີຈຸດ ຯລຯ) ບໍ່ໄດ້ resolve DNS: DNS rebinding (ຊື່ໂດເມນສາທາລະນະທີ່ຊີ້ເຂົ້າ IP ພາຍໃນ) **ບໍ່ຖືກກັນ**. ແນະນຳ egress firewall ໃຫ້ API ອອກເຄືອຂ່າຍພາຍໃນບໍ່ໄດ້.
-- test ຂອງ API ໃຊ້ DB ຕາມ `OCA_TEST_DB` (ຄ່າເລີ່ມຕົ້ນ `oca_test`; ວ່າງ = ຄ່າເລີ່ມຕົ້ນ). ສອງ session/worktree ທີ່ຣັນ test ພ້ອມກັນ **ຕ້ອງໃຊ້ຊື່ຕ່າງກັນ** ເຊັ່ນ `OCA_TEST_DB=oca_test_slip pnpm --filter @oca/api exec vitest run` ບໍ່ດັ່ງນັ້ນຈະຊົນກັນ. ຫ້າມຊີ້ໄປ DB `oca` ຂອງການພັດທະນາ.
+- test ຂອງ API ໃຊ້ DB ຕາມ `OCA_TEST_DB_NAME` (ຄ່າເລີ່ມຕົ້ນ `oca_test`; ວ່າງ = ຄ່າເລີ່ມຕົ້ນ). ສອງ session/worktree ທີ່ຣັນ test ພ້ອມກັນ **ຕ້ອງໃຊ້ຊື່ຕ່າງກັນ** ເຊັ່ນ `OCA_TEST_DB_NAME=oca_test_slip pnpm --filter @oca/api exec vitest run` ບໍ່ດັ່ງນັ້ນຈະຊົນກັນ. ຫ້າມຊີ້ໄປ DB `oca` ຂອງການພັດທະນາ.
 - `receivingAccounts` (ບັນຊີຮັບໂອນຂອງຮ້ານ ໃຊ້ກວດບັນຊີປາຍທາງໃນສະລິບ) ຖືກສົ່ງອອກທາງ `GET /settings/store` ໃຫ້ຜູ້ໃຊ້ທີ່ມີ `inventory:read`; ເປັນບັນຊີສາທາລະນະທີ່ຮ້ານສະແດງໃຫ້ລູກຄ້າໂອນຢູ່ແລ້ວ. ແກ້ໄດ້ດ້ວຍ `PATCH /settings/store` (`inventory:write`); PATCH ທີ່ບໍ່ສົ່ງ `receivingAccounts` ຈະບໍ່ແຕະຄ່າເດີມ.
 - ຮູບສະລິບ `GET /slips/:id/image` ຕ້ອງ login + `orders:read` (ບໍ່ມີ URL ສາທາລະນະ), ຕອບ `Cache-Control: private, no-store`, `nosniff` ແລະ CSP `default-src 'none'; sandbox`. ຢ່າໃຫ້ CDN/proxy cache ເສັ້ນທາງນີ້.
 - Retention: ສະລິບ/ຮູບ **ຖືກເກັບໄວ້ຢ່າງຕັ້ງໃຈ** (ເປັນຫຼັກຖານການເງິນ ແລະ ຂໍ້ມູນ train) ຈຶ່ງບໍ່ມີ job ລຶບ/ກວາດ; ໂຟເດີ `SLIP_STORAGE_DIR` ຈະໃຫຍ່ຂຶ້ນເລື້ອຍໆ ຕ້ອງຕິດຕາມພື້ນທີ່ດິສກ໌ ແລະ ກຳນົດນະໂຍບາຍຂອງຮ້ານເອງ.

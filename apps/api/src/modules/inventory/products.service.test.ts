@@ -14,6 +14,7 @@ function build(overrides: Record<string, unknown>) {
     productVariant: { findUnique: vi.fn().mockResolvedValue(variantRow) },
     orderItem: { count: vi.fn().mockResolvedValue(0) },
     stockMovement: { count: vi.fn().mockResolvedValue(0) },
+    liveSessionItem: { count: vi.fn().mockResolvedValue(0) },
     ...overrides,
   };
   const audit = { record: vi.fn() };

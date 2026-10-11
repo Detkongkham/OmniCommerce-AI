@@ -29,6 +29,8 @@ const envSchema = z
     PORT: z.coerce.number().int().positive().default(3001),
     DATABASE_URL: z.string().min(1),
     REDIS_URL: z.string().min(1),
+    // prefix ຄິວ BullMQ ຕ້ອງຄືກັບ worker
+    QUEUE_PREFIX: z.preprocess(emptyToUndefined, z.string().min(1).default("oca")),
     JWT_ACCESS_SECRET: z.string().min(32),
     ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(7),
@@ -45,8 +47,10 @@ const envSchema = z
     FACEBOOK_GRAPH_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
     // ຕ້ອງຊີ້ບ່ອນດຽວກັບ worker. relative ຖືກຕີຈາກ cwd (apps/api ແລະ apps/worker) ຈຶ່ງໃຊ້ ../../ ໃຫ້ຊີ້ root ຂອງ repo ຄືກັນ
     SLIP_STORAGE_DIR: z.preprocess(emptyToUndefined, z.string().min(1).default("../../.data/slips")),
-    // prefix ຄິວ BullMQ ຕ້ອງຄືກັບ worker
-    QUEUE_PREFIX: z.preprocess(emptyToUndefined, z.string().min(1).default("oca")),
+    // ໄຟລ໌ທີ່ອັບໂຫຼດ (relative = ນັບຈາກ cwd)
+    MEDIA_DIR: z.preprocess(emptyToUndefined, z.string().min(1).default("./.data/media")),
+    // ໄລຍະກວດໂພສທີ່ຮອດເວລາ; 0 = ປິດ
+    POSTING_TICK_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).default(30_000)),
   })
   .superRefine((env, ctx) => {
     if (

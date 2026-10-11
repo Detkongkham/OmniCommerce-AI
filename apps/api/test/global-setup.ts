@@ -4,21 +4,16 @@ import { REPO_ROOT, loadRepoEnv, testDatabaseName, testDatabaseUrl } from "./env
 
 export default async function setup(): Promise<void> {
   loadRepoEnv();
-  const dbName = testDatabaseName();
-  const testUrl = testDatabaseUrl(process.env.DATABASE_URL);
-
-  if (new URL(testUrl).pathname !== `/${dbName}`) {
-    throw new Error(`Refusing to set up a database other than ${dbName}: ${new URL(testUrl).pathname}`);
-  }
-  console.log(`[global-setup] test database: ${dbName}`);
+  const name = testDatabaseName(); // throws unless it matches /^oca_test[a-z0-9_]*$/
+  const testUrl = testDatabaseUrl(process.env.DATABASE_URL, name);
 
   const adminUrl = new URL(testUrl);
   adminUrl.pathname = "/postgres";
   const client = new Client({ connectionString: adminUrl.toString() });
   await client.connect();
   try {
-    const found = await client.query("SELECT 1 FROM pg_database WHERE datname = $1", [dbName]);
-    if (found.rowCount === 0) await client.query(`CREATE DATABASE ${client.escapeIdentifier(dbName)}`);
+    const found = await client.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
+    if (found.rowCount === 0) await client.query(`CREATE DATABASE "${name}"`);
   } finally {
     await client.end();
   }

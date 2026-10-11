@@ -100,4 +100,11 @@ describe("parseEnv", () => {
     expect(parseEnv({ ...base, REFRESH_COOKIE_PATH: "/api/auth" }).REFRESH_COOKIE_PATH).toBe("/api/auth");
     expect(() => parseEnv({ ...base, REFRESH_COOKIE_PATH: "api/auth" })).toThrow();
   });
+
+  it("MEDIA_DIR / POSTING_TICK_MS: default, ຄ່າວ່າງ = default, ປະຕິເສດຕົວເລກຕິດລົບ", () => {
+    expect(parseEnv(base)).toMatchObject({ MEDIA_DIR: "./.data/media", POSTING_TICK_MS: 30_000 });
+    expect(parseEnv({ ...base, MEDIA_DIR: "", POSTING_TICK_MS: "" })).toMatchObject({ MEDIA_DIR: "./.data/media", POSTING_TICK_MS: 30_000 });
+    expect(parseEnv({ ...base, MEDIA_DIR: "/srv/media", POSTING_TICK_MS: "0" })).toMatchObject({ MEDIA_DIR: "/srv/media", POSTING_TICK_MS: 0 });
+    expect(() => parseEnv({ ...base, POSTING_TICK_MS: "-1" })).toThrow();
+  });
 });

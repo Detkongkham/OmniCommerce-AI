@@ -103,7 +103,7 @@ function send(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = Object.fromEntries(
     Object.entries(options.headers ?? {}).filter(([name]) => !SYSTEM_HEADERS.has(name.toLowerCase())),
   );
-  // FormData: ປ່ອຍໃຫ້ browser ຕັ້ງ Content-Type ພ້ອມ boundary ເອງ
+  // FormData (ອັບໂຫຼດໄຟລ໌): ໃຫ້ browser ຕັ້ງ Content-Type + boundary ເອງ
   const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (options.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
@@ -150,23 +150,49 @@ export function refreshSession(): Promise<Session | null> {
   return refreshInFlight;
 }
 
-export async function apiFetch<T = void>(path: string, options: RequestOptions = {}): Promise<T> {
+/** ສົ່ງ request ພ້ອມ token; 401 → refresh (single-flight) ແລ້ວລອງໃໝ່ 1 ຄັ້ງ */
+async function authorizedSend(path: string, options: RequestOptions): Promise<Response> {
   const usedToken = accessToken;
   const response = await send(path, options);
-  if (response.status !== 401 || NO_REFRESH_PATHS.has(path)) return parse<T>(response, options.responseType);
+  if (response.status !== 401 || NO_REFRESH_PATHS.has(path)) return response;
 
   // 401: ຖ້າ request ອື່ນ refresh ໄປແລ້ວ (token ປ່ຽນ) ລອງໃໝ່ເລີຍ; ບໍ່ດັ່ງນັ້ນ refresh (single-flight).
   const recovered = accessToken !== null && accessToken !== usedToken ? true : (await refreshSession()) !== null;
   if (!recovered) {
     onUnauthorized?.();
-    return parse<T>(response, options.responseType);
+    return response;
   }
   const retry = await send(path, options);
   if (retry.status === 401) {
     setAccessToken(null);
     onUnauthorized?.();
   }
-  return parse<T>(retry, options.responseType);
+  return retry;
+}
+
+export async function apiFetch<T = void>(path: string, options: RequestOptions = {}): Promise<T> {
+  return parse<T>(await authorizedSend(path, options), options.responseType);
+}
+
+/** ດາວໂຫຼດໄຟລ໌ (ເຊັ່ນ CSV) ດ້ວຍ token ຂອງ session; ຊື່ໄຟລ໌ຈາກ Content-Disposition (ບໍ່ມີ = fallback) */
+export async function apiDownload(path: string, fallbackName: string): Promise<{ blob: Blob; filename: string }> {
+  const response = await authorizedSend(path, {});
+  if (!response.ok) throw await toApiError(response);
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName;
+  return { blob: await response.blob(), filename };
+}
+
+/** ໃຫ້ browser ບັນທຶກ blob ເປັນໄຟລ໌ */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export async function loginRequest(input: LoginInput): Promise<Session> {

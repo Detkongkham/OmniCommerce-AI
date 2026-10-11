@@ -7,6 +7,29 @@ export interface SentMessage {
   authorization: string | undefined;
 }
 
+export interface CommentReply {
+  commentId: string;
+  text: string;
+  authorization: string | undefined;
+}
+
+export interface FakePhoto {
+  id: string;
+  /** URL ທີ່ສົ່ງມາ ຫຼື null ຖ້າເປັນໄຟລ໌ (multipart) */
+  url: string | null;
+  filename: string | null;
+  mimeType: string | null;
+  size: number | null;
+  published: boolean;
+}
+
+export interface FakePost {
+  id: string;
+  message: string;
+  attachedMedia: string[];
+  authorization: string | undefined;
+}
+
 export interface FakeGraphFailure {
   status: number;
   code: number;
@@ -21,12 +44,20 @@ export interface FakeGraphOptions {
   /** id ທີ່ບໍ່ຮູ້ຈັກ ຕອບຊື່ `Sim <id>` ແທນ error */
   autoProfiles?: boolean;
   onSend?: (message: SentMessage) => void;
+  onCommentReply?: (kind: "private" | "public", reply: CommentReply) => void;
+  onPost?: (post: FakePost) => void;
 }
 
 export interface FakeGraph {
   readonly url: string;
   readonly sent: SentMessage[];
   readonly profiles: Map<string, string>;
+  readonly privateReplies: CommentReply[];
+  readonly commentReplies: CommentReply[];
+  /** ຮູບທີ່ອັບໂຫຼດຜ່ານ /me/photos */
+  readonly photos: FakePhoto[];
+  /** ໂພສທີ່ສ້າງຜ່ານ /me/feed */
+  readonly posts: FakePost[];
   /** message_id ທີ່ຈະໄດ້ໃນການສົ່ງຄັ້ງຖັດໄປ */
   nextMessageId(): string;
   failNext(failure: FakeGraphFailure): void;
@@ -34,21 +65,41 @@ export interface FakeGraph {
   close(): Promise<void>;
 }
 
+async function readBody(request: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown> | null> {
   try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(chunk as Buffer);
-    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const parsed: unknown = JSON.parse((await readBody(request)).toString("utf8"));
     return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
   } catch {
     return null;
   }
 }
 
-/** Graph API ປອມ: POST .../me/messages ແລະ GET .../<psid>?fields=... (ສຳລັບ dev/test ເທົ່ານັ້ນ) */
+/** multipart/form-data ຫຼື JSON → object ຂອງ field (ໄຟລ໌ = File) */
+async function readFields(request: IncomingMessage): Promise<Record<string, unknown> | null> {
+  const contentType = request.headers["content-type"] ?? "";
+  if (!contentType.startsWith("multipart/form-data")) return readJson(request);
+  try {
+    const form = await new Request("http://fake.local", { method: "POST", headers: { "content-type": contentType }, body: await readBody(request) }).formData();
+    return Object.fromEntries(form.entries());
+  } catch {
+    return null;
+  }
+}
+
+/** Graph API ປອມ: POST .../me/messages, .../me/photos, .../me/feed, ຄອມເມັ້ນ ແລະ GET .../<psid>?fields=... (ສຳລັບ dev/test ເທົ່ານັ້ນ) */
 export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<FakeGraph> {
   const sent: SentMessage[] = [];
   const profiles = new Map<string, string>();
+  const privateReplies: CommentReply[] = [];
+  const commentReplies: CommentReply[] = [];
+  const photos: FakePhoto[] = [];
+  const posts: FakePost[] = [];
   const failures: FakeGraphFailure[] = [];
   let counter = 0;
 
@@ -63,6 +114,72 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
       return;
     }
     const url = new URL(request.url ?? "/", "http://localhost");
+
+    const commentRoute = /^\/(?:v[\d.]+\/)?([^/]+)\/(private_replies|comments)$/.exec(url.pathname);
+    if (request.method === "POST" && commentRoute) {
+      const failure = failures.shift();
+      if (failure) {
+        reply(failure.status, {
+          error: { message: failure.message, type: "OAuthException", code: failure.code, error_subcode: failure.subcode },
+        });
+        return;
+      }
+      const body = await readJson(request);
+      if (typeof body?.message !== "string") {
+        reply(400, { error: { message: "(#100) Invalid parameter", type: "OAuthException", code: 100 } });
+        return;
+      }
+      const entry = { commentId: decodeURIComponent(commentRoute[1] ?? ""), text: body.message, authorization };
+      counter += 1;
+      if (commentRoute[2] === "private_replies") {
+        privateReplies.push(entry);
+        options.onCommentReply?.("private", entry);
+        reply(200, { id: `m_sim_pr_${counter}`, recipient_id: "sim" });
+      } else {
+        commentReplies.push(entry);
+        options.onCommentReply?.("public", entry);
+        reply(200, { id: `c_sim_${counter}` });
+      }
+      return;
+    }
+
+    const pageRoute = /^\/(?:v[\d.]+\/)?me\/(photos|feed)$/.exec(url.pathname);
+    if (request.method === "POST" && pageRoute) {
+      const failure = failures.shift();
+      if (failure) {
+        reply(failure.status, {
+          error: { message: failure.message, type: "OAuthException", code: failure.code, error_subcode: failure.subcode },
+        });
+        return;
+      }
+      const invalid = () => reply(400, { error: { message: "(#100) Invalid parameter", type: "OAuthException", code: 100 } });
+      const body = await readFields(request);
+      if (!body) return invalid();
+      counter += 1;
+      if (pageRoute[1] === "photos") {
+        const published = body.published !== false && body.published !== "false";
+        const source = body.source;
+        if (source instanceof File) {
+          photos.push({ id: `ph_sim_${counter}`, url: null, filename: source.name, mimeType: source.type, size: source.size, published });
+        } else if (typeof body.url === "string") {
+          photos.push({ id: `ph_sim_${counter}`, url: body.url, filename: null, mimeType: null, size: null, published });
+        } else {
+          return invalid();
+        }
+        reply(200, { id: `ph_sim_${counter}` });
+        return;
+      }
+      const attached = Array.isArray(body.attached_media) ? body.attached_media : [];
+      const attachedMedia = attached.map((item) => (typeof item === "object" && item !== null ? (item as { media_fbid?: unknown }).media_fbid : undefined));
+      if (typeof body.message !== "string" || attachedMedia.some((id) => typeof id !== "string" || !photos.some((photo) => photo.id === id))) {
+        return invalid();
+      }
+      const post = { id: `sim_page_${counter}`, message: body.message, attachedMedia: attachedMedia as string[], authorization };
+      posts.push(post);
+      options.onPost?.(post);
+      reply(200, { id: post.id });
+      return;
+    }
 
     if (request.method === "POST" && url.pathname.endsWith("/me/messages")) {
       const failure = failures.shift();
@@ -125,12 +242,20 @@ export async function startFakeGraph(options: FakeGraphOptions = {}): Promise<Fa
     url: `http://127.0.0.1:${port}`,
     sent,
     profiles,
+    privateReplies,
+    commentReplies,
+    photos,
+    posts,
     nextMessageId: () => `m_sim_${counter + 1}`,
     failNext: (failure) => {
       failures.push(failure);
     },
     reset: () => {
       sent.length = 0;
+      privateReplies.length = 0;
+      commentReplies.length = 0;
+      photos.length = 0;
+      posts.length = 0;
       failures.length = 0;
       profiles.clear();
       counter = 0;

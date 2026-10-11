@@ -3,11 +3,17 @@ import { PERMISSIONS } from "@oca/shared";
 import { NAV_GROUPS, firstAllowedHref, isActivePath, visibleNavGroups } from "./nav";
 
 describe("visibleNavGroups", () => {
-  it("ຜູ້ມີ staff:read ເຫັນສະເພາະ staff ແລະ roles", () => {
+  it("ຜູ້ມີ staff:read ເຫັນ staff, roles ແລະ ລາຍງານ KPI/Audit (ກຸ່ມລາຍງານຢູ່ທ້າຍ)", () => {
     const groups = visibleNavGroups(["staff:read"]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.id).toBe("settings");
+    expect(groups.map((group) => group.id)).toEqual(["settings", "reports"]);
     expect(groups[0]?.items.map((item) => item.href)).toEqual(["/staff", "/roles"]);
+    expect(groups[1]?.items.map((item) => item.href)).toEqual(["/staff-kpi", "/audit"]);
+  });
+
+  it("analytics:read ເຫັນລາຍງານຍອດຂາຍ", () => {
+    const groups = visibleNavGroups(["analytics:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["reports"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/analytics"]);
   });
 
   it("ຜູ້ມີ inventory:read ເຫັນກຸ່ມສະຕ໊ອກ (ສິນຄ້າ, ສະຕ໋ອກ, ສາງ, ໝວດໝູ່) ແລະ ຕັ້ງຄ່າຮ້ານ", () => {
@@ -40,6 +46,42 @@ describe("visibleNavGroups", () => {
     expect(firstAllowedHref(["inbox:read"])).toBe("/inbox");
     // ມີສິດສະຕ໊ອກນຳ: ກຸ່ມ inventory ຍັງມາກ່ອນ ຈຶ່ງບໍ່ປ່ຽນໜ້າຫຼັງ login ຂອງຜູ້ໃຊ້ເດີມ
     expect(firstAllowedHref(["inbox:read", "inventory:read"])).toBe("/products");
+  });
+});
+
+describe("visibleNavGroups: logistics", () => {
+  it("logistics:read ເຫັນ /fulfillment (ກຸ່ມສາງ) ແລະ /couriers (ກຸ່ມຕັ້ງຄ່າ)", () => {
+    const groups = visibleNavGroups(["logistics:read"]);
+    expect(groups.map((group) => [group.id, group.items.map((item) => item.href)])).toEqual([
+      ["inventory", ["/fulfillment"]],
+      ["settings", ["/couriers"]],
+    ]);
+  });
+
+  it("WAREHOUSE (inventory + logistics + orders:read): /fulfillment ຖັດຈາກ /orders; landing ຍັງ /products", () => {
+    const permissions = ["inventory:read", "logistics:read", "orders:read"];
+    expect(visibleNavGroups(permissions)[0]?.items.map((item) => item.href)).toEqual([
+      "/products",
+      "/stock",
+      "/orders",
+      "/fulfillment",
+      "/warehouses",
+      "/categories",
+    ]);
+    expect(firstAllowedHref(permissions)).toBe("/products");
+  });
+});
+
+describe("visibleNavGroups: live-cf", () => {
+  it("ຜູ້ມີ live-cf:read ເຫັນກຸ່ມ live (/live)", () => {
+    const groups = visibleNavGroups(["live-cf:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["live"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/live"]);
+  });
+
+  it("inbox:read + live-cf:read: ກຸ່ມ chat ມາກ່ອນ live ຈຶ່ງ landing ຍັງເປັນ /inbox", () => {
+    expect(visibleNavGroups(["inbox:read", "live-cf:read"]).map((group) => group.id)).toEqual(["chat", "live"]);
+    expect(firstAllowedHref(["inbox:read", "live-cf:read"])).toBe("/inbox");
   });
 });
 
@@ -77,6 +119,7 @@ describe("firstAllowedHref (ໜ້າຫຼັງ login)", () => {
   it("ມີແຕ່ orders:read -> /orders; ມີແຕ່ staff:read -> /staff", () => {
     expect(firstAllowedHref(["orders:read"])).toBe("/orders");
     expect(firstAllowedHref(["staff:read"])).toBe("/staff");
+    expect(firstAllowedHref(["analytics:read"])).toBe("/analytics");
   });
 
   it("ບໍ່ມີສິດທີ່ເຫັນໃນເມນູເລີຍ: null", () => {

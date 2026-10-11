@@ -21,7 +21,7 @@ const base: OrderDetailDto = {
   currency: "LAK", exchangeRate: "1.000000", subtotal: "190.00", discountTotal: "10.00", shippingFee: "5.00",
   vatRate: "10.00", vatAmount: "17.73", total: "195.00", shippingName: "Mali", shippingPhone: "02055550001",
   shippingAddress: "Vientiane", note: "gift", reservedUntil: "2026-10-05T06:00:00.000Z", secondsUntilExpiry: 120,
-  paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-05T05:30:00.000Z",
+  paidAt: null, shippedAt: null, completedAt: null, cancelledAt: null, createdAt: "2026-10-05T05:30:00.000Z", shipment: null,
   items: [{ id: "i1", variantId: "v1", warehouseId: "w1", productName: "Tee", variantName: "Red", sku: "TEE-R", unitPrice: "100.00", unitCost: "60.00", quantity: 2, discount: "10.00", lineTotal: "190.00" }],
   movements: [{ id: "m1", type: "RESERVE", quantity: 2, variantId: "v1", sku: "TEE-R", warehouseId: "w1", warehouseCode: "MAIN", createdAt: "2026-10-05T05:30:00.000Z" }],
 };
@@ -200,11 +200,29 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
     await waitFor(() => expect(posts()).toEqual([["/orders/o1/pay", { method: "POST" }]]));
   });
 
-  it.each([
-    ["PAID", "Start packing", "pack"],
-    ["PACKING", "Ship", "ship"],
-    ["SHIPPED", "Complete order", "complete"],
-  ] as const)("%s: ປຸ່ມຂັ້ນຕໍ່ໄປຄື '%s' (POST /%s)", async (status, label, action) => {
+  it.each(["PAID", "PACKING"] as const)("%s: ແພັກ/ສົ່ງ ເຮັດທີ່ໜ້າ fulfillment (ລິ້ງ, ບໍ່ POST)", async (status) => {
+    mockOrder(withStatus(status));
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByRole("link", { name: "Go to pack & ship" })).toHaveAttribute("href", "/fulfillment/o1");
+    expect(screen.queryByRole("button", { name: "Start packing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ship" })).toBeNull();
+    expect(posts()).toEqual([]);
+  });
+
+  it("ຂໍ້ມູນການສົ່ງ: ບໍລິສັດ + tracking + ລິ້ງຕິດຕາມ", async () => {
+    mockOrder(
+      withStatus("SHIPPED", {
+        shipment: { courierName: "Anousith", trackingNumber: "AN123", trackingUrl: "https://an.la/t/AN123", notifyStatus: "SENT", shippedAt: "2026-10-05T06:00:00.000Z" },
+      }),
+    );
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByText("Anousith · AN123")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Track parcel" })).toHaveAttribute("href", "https://an.la/t/AN123");
+  });
+
+  it.each([["SHIPPED", "Complete order", "complete"]] as const)("%s: ປຸ່ມຂັ້ນຕໍ່ໄປຄື '%s' (POST /%s)", async (status, label, action) => {
     mockOrder(withStatus(status));
     const { user } = renderWithProviders(<OrderDetail id="o1" />);
     await heading();
@@ -270,7 +288,7 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
     const { user } = renderWithProviders(<OrderDetail id="o1" />);
     await heading();
     await user.click(screen.getByRole("button", { name: "Confirm payment" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Start packing" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("link", { name: "Go to pack & ship" })).toBeInTheDocument());
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("order-announce")));
     expect(screen.getByTestId("order-announce")).toHaveTextContent("Payment confirmed");
   });
@@ -289,7 +307,7 @@ describe("OrderDetail: ປຸ່ມຂັ້ນຕໍ່ໄປ", () => {
     await user.click(screen.getByRole("button", { name: "Confirm payment" }));
     // ສະຖານະຫຼ້າສຸດມາແລ້ວ: ບໍ່ມີ alert ເກົ່າຄ້າງຂ້າງສະຖານະໃໝ່; ຂໍ້ຄວາມຖືກປະກາດທີ່ status region
     expect(await screen.findByText("Paid")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start packing" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Go to pack & ship" })).toBeEnabled();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByTestId("order-announce")).toHaveTextContent("The order status does not allow this step");
   });
@@ -313,7 +331,7 @@ describe("OrderDetail: ສິດ", () => {
     mockOrder(withStatus("PAID"));
     renderWithProviders(<OrderDetail id="o1" />);
     await heading();
-    expect(screen.getByRole("button", { name: "Start packing" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to pack & ship" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
   });
 
@@ -578,7 +596,7 @@ describe("OrderDetail: ແກ້ຕາມ review (ຂໍ້ມູນເກົ່
     await act(async () => {
       await queryClient.invalidateQueries();
     });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Start packing" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("link", { name: "Go to pack & ship" })).toBeInTheDocument());
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

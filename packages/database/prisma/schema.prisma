@@ -98,19 +98,46 @@ enum MessageStatus {
   FAILED
 }
 
+enum LiveSessionKind {
+  LIVE
+  POST
+}
+
+enum LiveSessionStatus {
+  DRAFT
+  LIVE
+  ENDED
+}
+
+enum CfOutcome {
+  ORDERED
+  NO_MATCH
+  OUT_OF_STOCK
+  LIMIT_REACHED
+  ERROR
+}
+
+enum CfReplyStatus {
+  NONE
+  SENDING
+  SENT
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // ການຕັ້ງຄ່າຮ້ານ (ແຖວດຽວ, id = 1)
 // ---------------------------------------------------------------------------
 
 model StoreSetting {
-  id                 Int      @id @default(1)
-  name               String
-  baseCurrency       Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
-  vatRate            Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
-  pricesIncludeVat   Boolean  @default(true)
-  reservationMinutes Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
-  receivingAccounts  Json     @default("[]") // [{ bank, accountNo, accountName? }] ບັນຊີຮັບເງິນຂອງຮ້ານ; [] = ບໍ່ກວດບັນຊີປາຍທາງ
-  updatedAt          DateTime @updatedAt
+  id                  Int      @id @default(1)
+  name                String
+  baseCurrency        Currency @default(LAK) // ລາຄາ ແລະ ຕົ້ນທຶນສິນຄ້າທັງໝົດເກັບເປັນສະກຸນນີ້
+  vatRate             Decimal  @default(10) @db.Decimal(5, 2) // ເປີເຊັນ
+  pricesIncludeVat    Boolean  @default(true)
+  reservationMinutes  Int      @default(30) // ເວລາຈອງສະຕ໋ອກເລີ່ມຕົ້ນຂອງຄຳສັ່ງຊື້ (ນາທີ), 1..10080
+  paymentInstructions String? // ຂໍ້ຄວາມຂໍ້ມູນໂອນເງິນ ໃສ່ໃນສະຫຼຸບບິນ CF
+  receivingAccounts   Json     @default("[]") // [{ bank, accountNo, accountName? }] ບັນຊີຮັບເງິນຂອງຮ້ານ; [] = ບໍ່ກວດບັນຊີປາຍທາງ
+  updatedAt           DateTime @updatedAt
 }
 
 model ExchangeRate {
@@ -185,24 +212,25 @@ model ProductOptionValue {
 
 // ໜ່ວຍທີ່ຂາຍ ແລະ ນັບສະຕ໋ອກຕົວຈິງ. ສິນຄ້າທີ່ບໍ່ມີຕົວເລືອກກໍມີ 1 variant
 model ProductVariant {
-  id             String               @id @default(cuid())
-  productId      String
-  product        Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  sku            String               @unique
-  barcode        String?              @unique
-  name           String? // ເຊັ່ນ "ດຳ / M"; null ຖ້າສິນຄ້າບໍ່ມີຕົວເລືອກ
-  optionValues   ProductOptionValue[]
-  price          Decimal              @db.Decimal(18, 2) // baseCurrency
-  compareAtPrice Decimal?             @db.Decimal(18, 2) // ລາຄາກ່ອນຫຼຸດ
-  costPrice      Decimal              @default(0) @db.Decimal(18, 2) // ຕົ້ນທຶນ (COGS)
-  weightGrams    Int?
-  isActive       Boolean              @default(true)
-  images         ProductImage[]
-  stockLevels    StockLevel[]
-  stockMovements StockMovement[]
-  orderItems     OrderItem[]
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id               String               @id @default(cuid())
+  productId        String
+  product          Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku              String               @unique
+  barcode          String?              @unique
+  name             String? // ເຊັ່ນ "ດຳ / M"; null ຖ້າສິນຄ້າບໍ່ມີຕົວເລືອກ
+  optionValues     ProductOptionValue[]
+  price            Decimal              @db.Decimal(18, 2) // baseCurrency
+  compareAtPrice   Decimal?             @db.Decimal(18, 2) // ລາຄາກ່ອນຫຼຸດ
+  costPrice        Decimal              @default(0) @db.Decimal(18, 2) // ຕົ້ນທຶນ (COGS)
+  weightGrams      Int?
+  isActive         Boolean              @default(true)
+  images           ProductImage[]
+  stockLevels      StockLevel[]
+  stockMovements   StockMovement[]
+  orderItems       OrderItem[]
+  liveSessionItems LiveSessionItem[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   @@index([productId])
 }
@@ -274,6 +302,7 @@ model StockMovement {
 
   @@index([variantId, warehouseId, createdAt])
   @@index([orderId])
+  @@index([actorId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -281,14 +310,15 @@ model StockMovement {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id            String         @id @default(cuid())
-  name          String
-  phone         String?        @unique
-  email         String?
-  orders        Order[]
-  conversations Conversation[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id             String         @id @default(cuid())
+  name           String
+  phone          String?        @unique
+  email          String?
+  facebookUserId String?        @unique // ລະຫັດຜູ້ຄອມເມັ້ນ (CF Engine)
+  orders         Order[]
+  conversations  Conversation[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +351,11 @@ model Order {
   conversationId  String?
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   slips           PaymentSlip[]
+  liveSessionId   String?
+  liveSession     LiveSession?  @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
+  // ພະນັກງານທີ່ເປີດບິນ (KPI ຍອດປິດການຂາຍ); null = ລະບົບ (CF Engine)
+  createdById     String?
+  createdBy       User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   // Idempotency-Key ຂອງ POST /orders: key ຊ້ຳ + payload ຄືເກົ່າ = ຄືນບິນເດີມ. hash = sha256 ຂອງ payload
   idempotencyKey  String? @unique
@@ -336,12 +371,17 @@ model Order {
 
   items          OrderItem[]
   stockMovements StockMovement[]
+  cfComments     CfComment[]
+  shipment       Shipment?
 
   @@index([status, reservedUntil])
   @@index([customerId])
   @@index([channel, createdAt])
   @@index([createdAt])
   @@index([conversationId])
+  @@index([liveSessionId, customerId, status])
+  @@index([createdById, createdAt])
+  @@index([paidAt])
 }
 
 model OrderItem {
@@ -407,6 +447,14 @@ model User {
   assignedConversations Conversation[]
   sentMessages          Message[]
   reviewedSlips         PaymentSlip[]
+  liveSessions          LiveSession[]
+  packedShipments       Shipment[]     @relation("ShipmentPackedBy")
+  verifiedShipments     Shipment[]     @relation("ShipmentVerifiedBy")
+  shippedShipments      Shipment[]     @relation("ShipmentShippedBy")
+  mediaFiles            MediaFile[]
+  createdSocialPosts    SocialPost[]   @relation("SocialPostCreatedBy")
+  scheduledSocialPosts  SocialPost[]   @relation("SocialPostScheduledBy")
+  createdOrders         Order[]
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
@@ -447,6 +495,8 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +547,196 @@ model Message {
 
   @@unique([conversationId, externalId])
   @@index([conversationId, createdAt])
+  @@index([sentByUserId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Live & Post CF Engine (ໂມດູນ 4)
+// ---------------------------------------------------------------------------
+
+// 1 Live ຫຼື 1 ໂພສທີ່ເປີດຮັບ CF. externalPostId = post_id ທີ່ webhook feed ສົ່ງມາ.
+// ຫ້າມ 2 session ສະຖານະ LIVE ໃຊ້ externalPostId ດຽວກັນ (partial unique index ໃນ migration)
+model LiveSession {
+  id                 String            @id @default(cuid())
+  title              String
+  kind               LiveSessionKind
+  status             LiveSessionStatus @default(DRAFT)
+  externalPostId     String?
+  publicReplyEnabled Boolean           @default(true)
+  // ສິນຄ້າທີ່ກຳລັງນຳສະເໜີເທິງ Host screen (ລຶບລະຫັດ → null)
+  featuredItemId     String?
+  featuredItem       LiveSessionItem?  @relation("LiveSessionFeaturedItem", fields: [featuredItemId], references: [id], onDelete: SetNull)
+  startedAt          DateTime?
+  endedAt            DateTime?
+  createdById        String?
+  createdBy          User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  items    LiveSessionItem[] @relation("LiveSessionItems")
+  comments CfComment[]
+  orders   Order[]
+  // ໂພສ (Social Posting) ທີ່ຈະ start session ນີ້ຫຼັງຂຶ້ນເພຈ
+  socialPost SocialPost?
+
+  @@index([status, externalPostId])
+  @@index([featuredItemId])
+}
+
+// ລະຫັດ CF → variant ຂອງ session. claimed = ຈຳນວນທີ່ CF ແລ້ວ (increment ໃນ transaction ຂອງຄອມເມັ້ນ)
+model LiveSessionItem {
+  id        String         @id @default(cuid())
+  sessionId String
+  session   LiveSession    @relation("LiveSessionItems", fields: [sessionId], references: [id], onDelete: Cascade)
+  code      String // normalize ແລ້ວ (ຕົວໃຫຍ່, ເລກ ASCII)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  limit     Int?
+  claimed   Int            @default(0)
+  createdAt DateTime       @default(now())
+
+  featuredIn LiveSession[] @relation("LiveSessionFeaturedItem")
+
+  @@unique([sessionId, code])
+  @@index([variantId])
+}
+
+// ledger ຂອງທຸກຄອມເມັ້ນທີ່ເຂົ້າ queue (ໃຊ້ກັນຊ້ຳ, ສະແດງໃນໜ້າ admin, ຂໍ້ມູນໜ້າ Host ໃນອະນາຄົດ)
+model CfComment {
+  id                String        @id @default(cuid())
+  externalCommentId String        @unique
+  sessionId         String
+  session           LiveSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  authorExternalId  String
+  authorName        String
+  message           String
+  outcome           CfOutcome
+  lines             Json? // [{ itemId, code, quantity }]
+  orderId           String?
+  order             Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  replyStatus       CfReplyStatus @default(NONE)
+  replyErrorCode    String? // ຄ່າຈາກ MESSAGE_SEND_ERRORS
+  replyAttemptedAt  DateTime? // ເວລາ claim ການສົ່ງຫຼ້າສຸດ (ກັນສົ່ງຊ້ຳ/ຍຶດຄືນເມື່ອຄ້າງ)
+  createdAt         DateTime      @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([sessionId, authorExternalId])
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// Logistics (Phase 2 ໂມດູນ 8a): ບໍລິສັດຂົນສົ່ງ ແລະ ການແພັກ/ສົ່ງຕໍ່ບິນ
+// ---------------------------------------------------------------------------
+enum ShipmentNotifyStatus {
+  NONE // ຍັງບໍ່ໄດ້ແຈ້ງ (ຍັງບໍ່ສົ່ງອອກ)
+  SENT
+  FAILED // ສົ່ງທາງແຊັດບໍ່ໄດ້ (ເຊັ່ນ ເກີນ 24 ຊມ): ສົ່ງໃໝ່ ຫຼື copy ໄປສົ່ງເອງ
+  MANUAL // ບໍ່ມີແຊັດຂອງລູກຄ້າ: ພະນັກງານແຈ້ງເອງ
+}
+
+// ບໍລິສັດຂົນສົ່ງທີ່ຮ້ານຕັ້ງເອງ; code ເປັນຈຸດຜູກ adapter API ໃນອະນາຄົດ
+model Courier {
+  id                  String     @id @default(cuid())
+  code                String     @unique
+  name                String
+  // https://…/{tracking}
+  trackingUrlTemplate String?
+  isActive            Boolean    @default(true)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  shipments           Shipment[]
+}
+
+// ການແພັກ/ສົ່ງຂອງບິນ (1 ຕໍ່ 1); ສ້າງຕອນເລີ່ມແພັກ
+model Shipment {
+  id                   String               @id @default(cuid())
+  orderId              String               @unique
+  order                Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courierId            String?
+  courier              Courier?             @relation(fields: [courierId], references: [id], onDelete: Restrict)
+  trackingNumber       String?
+  packedById           String?
+  packedBy             User?                @relation("ShipmentPackedBy", fields: [packedById], references: [id], onDelete: SetNull)
+  packedAt             DateTime?
+  verifiedAt           DateTime?
+  verifiedById         String?
+  verifiedBy           User?                @relation("ShipmentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifyOverrideReason String?
+  shippedById          String?
+  shippedBy            User?                @relation("ShipmentShippedBy", fields: [shippedById], references: [id], onDelete: SetNull)
+  shippedAt            DateTime?
+  notifyStatus         ShipmentNotifyStatus @default(NONE)
+  notifyErrorCode      String?
+  notifiedAt           DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([courierId])
+}
+
+// ໄຟລ໌ທີ່ອັບໂຫຼດ (ເກັບເທິງ disk ທີ່ MEDIA_DIR); ໃຊ້ຮ່ວມກັນໄດ້ຫຼາຍໂມດູນ
+model MediaFile {
+  id           String            @id @default(cuid())
+  // <32 hex>.<jpg|png|webp>
+  storageKey   String            @unique
+  mimeType     String
+  size         Int
+  originalName String
+  createdById  String?
+  createdBy    User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+  postMedia    SocialPostMedia[]
+}
+
+enum SocialPostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+// ໂພສລົງ Facebook Page (ທັນທີ/ຕັ້ງເວລາ)
+model SocialPost {
+  id             String            @id @default(cuid())
+  message        String
+  status         SocialPostStatus  @default(DRAFT)
+  scheduledAt    DateTime?
+  // ເວລາທີ່ຕົວໂພສ claim (ກວດໂພສທີ່ຄ້າງ)
+  publishingAt   DateTime?
+  publishedAt    DateTime?
+  // <pageId>_<postId>
+  externalPostId String?
+  errorCode      String?
+  errorMessage   String?
+  liveSessionId  String?           @unique
+  liveSession    LiveSession?      @relation(fields: [liveSessionId], references: [id], onDelete: SetNull)
+  cfLinkError    String?
+  createdById    String?
+  createdBy      User?             @relation("SocialPostCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  scheduledById  String?
+  scheduledBy    User?             @relation("SocialPostScheduledBy", fields: [scheduledById], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  media          SocialPostMedia[]
+
+  @@index([status, scheduledAt])
+  @@index([createdById])
+  @@index([scheduledById])
+}
+
+// ຮູບຂອງໂພສ: ໄຟລ໌ທີ່ອັບໂຫຼດ ຫຼື URL ພາຍນອກ (ອັນໃດອັນໜຶ່ງ, CHECK ໃນ migration)
+model SocialPostMedia {
+  id          String     @id @default(cuid())
+  postId      String
+  post        SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  position    Int
+  mediaFileId String?
+  mediaFile   MediaFile? @relation(fields: [mediaFileId], references: [id], onDelete: Restrict)
+  url         String?
+
+  @@unique([postId, position])
+  @@index([mediaFileId])
 }
 
 // ຕັ້ງໃຈເກັບສະລິບ/ຮູບໄວ້ຖາວອນເປັນຂໍ້ມູນ train (ຍັງບໍ່ມີ job ລຶບ); orderId/conversationId/messageId

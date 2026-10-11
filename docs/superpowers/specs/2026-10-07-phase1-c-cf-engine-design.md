@@ -49,6 +49,8 @@
 - ບິນ PAID/ໝົດເວລາ/ຍົກເລີກ ບໍ່ merge; CF ຖັດໄປໄດ້ບິນໃໝ່.
 - ຂໍ້ຜິດພາດທີ່ບໍ່ຄາດ = `ERROR` ໃນ ledger, ບໍ່ retry ອັດຕະໂນມັດສ່ວນບິນ (ກັນຈອງຊ້ຳ).
 
+- **ຂໍ້ສັງເກດ (limit):** `LiveSessionItem.claimed` ນັບສະເພາະ CF ທີ່ຍັງຄ້າງຢູ່. ເມື່ອບິນ CF ຖືກ EXPIRED (worker) ຫຼື CANCELLED (API) `releaseCfClaims(tx, orderId)` (`@oca/database`) ຈະຫັກ `claimed` ຕາມ `CfComment.lines` ຂອງທຸກຄອມເມັ້ນ ORDERED ທີ່ຜູກກັບບິນ (ລວມບິນ merge; `GREATEST(claimed - n, 0)`) ໃນ transaction ດຽວກັບການປ່ຽນສະຕ໋ອກ/ສະຖານະ ຈຶ່ງເກີດຄັ້ງດຽວ. ບໍ່ຫັກເມື່ອ pay/pack/ship/complete. ບິນທີ່ບໍ່ແມ່ນ CF ບໍ່ຖືກກະທົບ.
+
 ## 6. ຂໍ້ຄວາມ
 
 - ສະຫຼຸບ: ລາຍການ, ຍອດ, "ກະລຸນາໂອນກ່ອນ HH:mm" (ເຂດເວລາລາວ), `paymentInstructions`; ໃຊ້ຕົວສ້າງຂໍ້ຄວາມຮ່ວມກັບ `buildOrderSummary` ຖ້າເຮັດໄດ້.

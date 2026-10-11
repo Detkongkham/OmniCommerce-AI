@@ -147,3 +147,123 @@ describe("FacebookAdapter webhook helpers", () => {
     expect(DEFAULT_GRAPH_BASE_URL).toBe("https://graph.facebook.com/v21.0");
   });
 });
+
+describe("FacebookAdapter comments", () => {
+  it("parseComments ໃຊ້ parser ຄອມເມັ້ນ", () => {
+    const adapter = make(vi.fn() as unknown as typeof fetch);
+    const events = adapter.parseComments({
+      object: "page",
+      entry: [{ id: "P", changes: [{ field: "feed", value: { item: "comment", verb: "add", comment_id: "c1", post_id: "p1", from: { id: "U1", name: "A" }, message: "A1" } }] }],
+    });
+    expect(events.map((event) => event.commentId)).toEqual(["c1"]);
+  });
+
+  it("sendPrivateReply: POST /<commentId>/private_replies ດ້ວຍ Bearer ແລະ ຄືນ id", async () => {
+    const fetchMock = vi.fn(async () => json(200, { id: "m_1", recipient_id: "U1" }));
+    const result = await make(fetchMock as unknown as typeof fetch).sendPrivateReply("100_200", "ສະບາຍດີ");
+    expect(result).toEqual({ ok: true, externalId: "m_1" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/v1/100_200/private_replies");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    expect(JSON.parse(String(init.body))).toEqual({ message: "ສະບາຍດີ" });
+  });
+
+  it("sendPrivateReply ຍອມຮັບ message_id ໃນ response", async () => {
+    const fetchMock = vi.fn(async () => json(200, { message_id: "m_2" }));
+    expect(await make(fetchMock as unknown as typeof fetch).sendPrivateReply("100_200", "x")).toEqual({ ok: true, externalId: "m_2" });
+  });
+
+  it("replyToComment: POST /<commentId>/comments", async () => {
+    const fetchMock = vi.fn(async () => json(200, { id: "c_9" }));
+    const result = await make(fetchMock as unknown as typeof fetch).replyToComment("100_200", "ຮັບແລ້ວ");
+    expect(result).toEqual({ ok: true, externalId: "c_9" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://graph.test/v1/100_200/comments");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    expect(JSON.parse(String(init.body))).toEqual({ message: "ຮັບແລ້ວ" });
+  });
+
+  it("ບໍ່ມີ token → CHANNEL_NOT_CONFIGURED; commentId ຜິດຮູບແບບ → SEND_REJECTED (ບໍ່ເອີ້ນ fetch)", async () => {
+    const fetchMock = vi.fn();
+    expect(await make(fetchMock as unknown as typeof fetch, { pageAccessToken: undefined }).sendPrivateReply("1_2", "x")).toMatchObject({ ok: false, code: "CHANNEL_NOT_CONFIGURED" });
+    expect(await make(fetchMock as unknown as typeof fetch).sendPrivateReply("../x", "x")).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Graph error: 400 ປະຕິເສດ → SEND_REJECTED; 500 → CHANNEL_UNAVAILABLE; 2xx ບໍ່ມີ id → CHANNEL_UNAVAILABLE", async () => {
+    const reply = async (response: Response) =>
+      make((async () => response) as unknown as typeof fetch).sendPrivateReply("1_2", "x");
+    expect(await reply(json(400, { error: { code: 100, message: "(#100) bad" } }))).toMatchObject({ code: "SEND_REJECTED" });
+    expect(await reply(json(500, { error: { code: 2, message: "boom" } }))).toMatchObject({ code: "CHANNEL_UNAVAILABLE" });
+    expect(await reply(json(200, {}))).toMatchObject({ ok: false, code: "CHANNEL_UNAVAILABLE" });
+  });
+});
+
+describe("FacebookAdapter.publishPost", () => {
+  type Call = [string | URL | Request, RequestInit | undefined];
+  const calls = (fn: ReturnType<typeof vi.fn>) => fn.mock.calls as unknown as Call[];
+
+  it("ບໍ່ມີຮູບ: POST /me/feed { message } ແລ້ວຄືນ id ຂອງໂພສ", async () => {
+    const fetchImpl = vi.fn(async () => json(200, { id: "PAGE_POST1" }));
+    const result = await make(fetchImpl as unknown as typeof fetch).publishPost({ message: "ສະບາຍດີ", photos: [] });
+    expect(result).toEqual({ ok: true, externalId: "PAGE_POST1" });
+    const [url, init] = calls(fetchImpl)[0] ?? [];
+    expect(url).toBe("http://graph.test/v1/me/feed");
+    expect((init?.headers as Record<string, string>).authorization).toBe("Bearer tok");
+    expect(JSON.parse(String(init?.body))).toEqual({ message: "ສະບາຍດີ" });
+  });
+
+  it("ມີຮູບ: ອັບໂຫຼດແຕ່ລະຮູບ published=false (URL = JSON, ໄຟລ໌ = multipart source) ແລ້ວແນບໃນ feed ຕາມລຳດັບ", async () => {
+    const replies = [json(200, { id: "PH1" }), json(200, { id: "PH2" }), json(200, { id: "PAGE_POST2" })];
+    const fetchImpl = vi.fn(async () => replies.shift() ?? json(500, {}));
+    const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const result = await make(fetchImpl as unknown as typeof fetch).publishPost({
+      message: "ໂພສ",
+      photos: [{ url: "https://cdn.test/a.jpg" }, { data, mimeType: "image/png", filename: "b.png" }],
+    });
+    expect(result).toEqual({ ok: true, externalId: "PAGE_POST2" });
+
+    const [first, second, third] = calls(fetchImpl);
+    expect(first?.[0]).toBe("http://graph.test/v1/me/photos");
+    expect(JSON.parse(String(first?.[1]?.body))).toEqual({ url: "https://cdn.test/a.jpg", published: false });
+
+    expect(second?.[0]).toBe("http://graph.test/v1/me/photos");
+    const form = second?.[1]?.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("published")).toBe("false");
+    const source = form.get("source") as File;
+    expect(source.name).toBe("b.png");
+    expect(source.type).toBe("image/png");
+    expect(new Uint8Array(await source.arrayBuffer())).toEqual(data);
+    // ໃຫ້ fetch ຕັ້ງ boundary ເອງ
+    expect((second?.[1]?.headers as Record<string, string>)["content-type"]).toBeUndefined();
+
+    expect(third?.[0]).toBe("http://graph.test/v1/me/feed");
+    expect(JSON.parse(String(third?.[1]?.body))).toEqual({ message: "ໂພສ", attached_media: [{ media_fbid: "PH1" }, { media_fbid: "PH2" }] });
+  });
+
+  it("ຮູບລົ້ມ → ຢຸດ (ບໍ່ສ້າງໂພສ), code ຕາມ Graph ແລະ detail ບອກຮູບທີ່ເທົ່າໃດ", async () => {
+    const replies = [json(200, { id: "PH1" }), json(400, { error: { message: "(#324) Missing or invalid image file", code: 324 } })];
+    const fetchImpl = vi.fn(async () => replies.shift() ?? json(200, { id: "NEVER" }));
+    const result = await make(fetchImpl as unknown as typeof fetch).publishPost({
+      message: "x",
+      photos: [{ url: "https://cdn.test/a.jpg" }, { url: "https://cdn.test/b.jpg" }],
+    });
+    expect(result).toEqual({ ok: false, code: "SEND_REJECTED", detail: "photo 2: (#324) Missing or invalid image file" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("feed: token ຜິດ → CHANNEL_AUTH; 2xx ບໍ່ມີ id → CHANNEL_UNAVAILABLE (ຜົນບໍ່ແນ່ນອນ); ບໍ່ມີ token → CHANNEL_NOT_CONFIGURED", async () => {
+    const auth = vi.fn(async () => json(400, { error: { message: "Invalid OAuth access token.", code: 190 } }));
+    expect(await make(auth as unknown as typeof fetch).publishPost({ message: "x", photos: [] })).toMatchObject({ ok: false, code: "CHANNEL_AUTH" });
+    const noId = vi.fn(async () => json(200, { success: true }));
+    expect(await make(noId as unknown as typeof fetch).publishPost({ message: "x", photos: [] })).toMatchObject({ ok: false, code: "CHANNEL_UNAVAILABLE" });
+    const none = vi.fn();
+    expect(await make(none as unknown as typeof fetch, { pageAccessToken: undefined }).publishPost({ message: "x", photos: [] })).toMatchObject({
+      ok: false,
+      code: "CHANNEL_NOT_CONFIGURED",
+    });
+    expect(none).not.toHaveBeenCalled();
+  });
+});

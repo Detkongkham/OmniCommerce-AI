@@ -306,6 +306,16 @@ describe("updateStoreSettingsSchema", () => {
   });
 });
 
+describe("updateStoreSettingsSchema paymentInstructions", () => {
+  it("trim, ສະຕຣິງວ່າງ → null, null ໄດ້, ≤500", () => {
+    expect(updateStoreSettingsSchema.parse({ paymentInstructions: " BCEL 1 " })).toEqual({ paymentInstructions: "BCEL 1" });
+    expect(updateStoreSettingsSchema.parse({ paymentInstructions: "  " })).toEqual({ paymentInstructions: null });
+    expect(updateStoreSettingsSchema.parse({ paymentInstructions: null })).toEqual({ paymentInstructions: null });
+    expect(updateStoreSettingsSchema.safeParse({ paymentInstructions: "x".repeat(500) }).success).toBe(true);
+    expect(updateStoreSettingsSchema.safeParse({ paymentInstructions: "x".repeat(501) }).success).toBe(false);
+  });
+});
+
 describe("hardening: invalid money must not throw", () => {
   const cases = [
     { price: "abc", compareAtPrice: "5" },

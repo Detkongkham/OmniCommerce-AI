@@ -16,6 +16,7 @@ import {
 import type { Request, Response } from "express";
 import { apiError } from "../../common/api-error";
 import { Public } from "../../common/decorators";
+import { CfIngestService } from "../live-cf/cf-ingest.service";
 import { ChannelRegistry } from "./channel-registry";
 import { InboxIngestService } from "./inbox-ingest.service";
 import { classifyIngestError } from "./ingest-errors";
@@ -34,6 +35,7 @@ export class FacebookWebhookController {
   constructor(
     @Inject(ChannelRegistry) private readonly channels: ChannelRegistry,
     @Inject(InboxIngestService) private readonly ingest: InboxIngestService,
+    @Inject(CfIngestService) private readonly cf: CfIngestService,
   ) {}
 
   @Public()
@@ -61,7 +63,7 @@ export class FacebookWebhookController {
     @Req() req: RawBodyRequest<Request>,
     @Body() body: unknown,
     @Headers("x-hub-signature-256") signature?: string,
-  ): Promise<{ received: number; failed?: number }> {
+  ): Promise<{ received: number; failed?: number; comments?: number }> {
     const adapter = this.channels.facebook;
     if (!adapter.canReceive) throw apiError("CHANNEL_NOT_CONFIGURED", "Facebook webhook is not configured");
     if (!req.rawBody || !adapter.verifySignature(req.rawBody, signature)) throw new UnauthorizedException();
@@ -92,6 +94,11 @@ export class FacebookWebhookController {
       for (const conversationId of enrich) this.ingest.enrichInBackground(conversationId);
       await this.ingest.notify(stored);
     }
-    return failed > 0 ? { received: events.length - failed, failed } : { received: events.length };
+    // ຄອມເມັ້ນ CF ເຂົ້າ queue ຫຼັງງານ inbox (DB ລ້ວນ ແລະ idempotent) ແລ້ວ: Redis ລົ້ມ = 500 ໃຫ້ Meta ສົ່ງຊ້ຳ
+    // ໂດຍຂໍ້ຄວາມ inbox ບໍ່ເສຍ (jobId ກັນຄອມເມັ້ນຊ້ຳ); ບໍ່ປະມວນຜົນ CF ໃນ request
+    const comments = adapter.parseComments(body);
+    const queuedComments = comments.length > 0 ? await this.cf.enqueue(comments) : 0;
+    const base = failed > 0 ? { received: events.length - failed, failed } : { received: events.length };
+    return queuedComments > 0 ? { ...base, comments: queuedComments } : base;
   }
 }

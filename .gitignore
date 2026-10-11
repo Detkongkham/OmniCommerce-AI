@@ -27,4 +27,6 @@ packages/database/src/generated/
 
 # local dev infra data
 .local/
+
+# uploaded media (MEDIA_DIR default)
 .data/

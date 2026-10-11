@@ -11,24 +11,29 @@ export function loadRepoEnv(): void {
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
-const TEST_DB_PATTERN = /^oca_test(_[a-z0-9_]+)?$/;
+const TEST_DB_NAME_PATTERN = /^oca_test[a-z0-9_]*$/;
 
-/** ຊື່ database ສຳລັບ test: OCA_TEST_DB (ຄ່າເລີ່ມຕົ້ນ oca_test), ຕ້ອງຂຶ້ນຕົ້ນດ້ວຍ oca_test. */
-export function testDatabaseName(): string {
-  const name = process.env.OCA_TEST_DB || "oca_test";
-  if (!TEST_DB_PATTERN.test(name)) {
-    throw new Error(`Invalid OCA_TEST_DB "${name}": must match ${TEST_DB_PATTERN} (e.g. oca_test_mybranch)`);
-  }
-  return name;
+export function isValidTestDatabaseName(name: string): boolean {
+  return TEST_DB_NAME_PATTERN.test(name);
 }
 
-/** ປ່ຽນຊື່ database ໃນ URL ເປັນຊື່ test (ເບິ່ງ testDatabaseName) ເພື່ອບໍ່ໃຫ້ test ແຕະຂໍ້ມູນ dev. */
-export function testDatabaseUrl(url: string | undefined): string {
+/** ຊື່ database ຂອງ test: OCA_TEST_DB_NAME (ຕ້ອງຂຶ້ນຕົ້ນ oca_test) ຫຼື oca_test ຖ້າບໍ່ຕັ້ງ. */
+export function testDatabaseName(raw: string | undefined = process.env.OCA_TEST_DB_NAME): string {
+  if (raw === undefined) return "oca_test";
+  if (!isValidTestDatabaseName(raw)) {
+    throw new Error(`OCA_TEST_DB_NAME must match ${TEST_DB_NAME_PATTERN}, got "${raw}"`);
+  }
+  return raw;
+}
+
+/** ປ່ຽນຊື່ database ໃນ URL ເປັນຊື່ test ເພື່ອບໍ່ໃຫ້ test ແຕະຂໍ້ມູນ dev. */
+export function testDatabaseUrl(url: string | undefined, name: string = testDatabaseName()): string {
   if (!url) throw new Error("DATABASE_URL is not set (copy .env.example to .env)");
+  if (!isValidTestDatabaseName(name)) throw new Error(`Invalid test database name "${name}"`);
   const parsed = new URL(url);
   if (!LOCAL_HOSTS.has(parsed.hostname)) {
     throw new Error(`Refusing to run tests against non-local host "${parsed.hostname}"`);
   }
-  parsed.pathname = `/${testDatabaseName()}`;
+  parsed.pathname = `/${name}`;
   return parsed.toString();
 }

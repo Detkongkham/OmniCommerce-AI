@@ -2,9 +2,9 @@ import { type IncomingMessage, createServer, request as httpRequest } from "node
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { FacebookAdapter } from "../facebook/adapter";
-import { parseFacebookWebhook } from "../facebook/parse";
+import { parseFacebookComments, parseFacebookWebhook } from "../facebook/parse";
 import { isValidSignature } from "../facebook/signature";
-import { type FakeGraph, deliveryPayload, echoPayload, messagePayload, postSignedWebhook, startFakeGraph } from "./index";
+import { type FakeGraph, commentPayload, deliveryPayload, echoPayload, messagePayload, postSignedWebhook, startFakeGraph } from "./index";
 
 describe("payload builders ກັບ parser", () => {
   it("messagePayload → message", () => {
@@ -45,6 +45,38 @@ describe("fake Graph server", () => {
       { recipientId: "U1", text: "hello", authorization: "Bearer tok" },
       { recipientId: "U2", text: "again", authorization: "Bearer tok" },
     ]);
+  });
+
+  it("ໂພສລົງເພຈ: ຮູບ URL + ໄຟລ໌ (multipart) ແລ້ວ feed ແນບຮູບ; reset ລ້າງ", async () => {
+    graph = await startFakeGraph({ token: "tok" });
+    const result = await adapterFor(graph).publishPost({
+      message: "ສິນຄ້າໃໝ່",
+      photos: [{ url: "https://cdn.test/a.jpg" }, { data: new Uint8Array([1, 2, 3]), mimeType: "image/png", filename: "b.png" }],
+    });
+    expect(result).toEqual({ ok: true, externalId: "sim_page_3" });
+    expect(graph.photos).toEqual([
+      { id: "ph_sim_1", url: "https://cdn.test/a.jpg", filename: null, mimeType: null, size: null, published: false },
+      { id: "ph_sim_2", url: null, filename: "b.png", mimeType: "image/png", size: 3, published: false },
+    ]);
+    expect(graph.posts).toEqual([{ id: "sim_page_3", message: "ສິນຄ້າໃໝ່", attachedMedia: ["ph_sim_1", "ph_sim_2"], authorization: "Bearer tok" }]);
+
+    expect(await adapterFor(graph).publishPost({ message: "text only", photos: [] })).toMatchObject({ ok: true });
+    graph.failNext({ status: 400, code: 200, message: "(#200) Requires pages_manage_posts permission" });
+    expect(await adapterFor(graph).publishPost({ message: "x", photos: [] })).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+
+    graph.reset();
+    expect(graph.photos).toEqual([]);
+    expect(graph.posts).toEqual([]);
+  });
+
+  it("feed ທີ່ແນບ id ຮູບທີ່ບໍ່ມີ → 400", async () => {
+    graph = await startFakeGraph();
+    const res = await fetch(`${graph.url}/me/feed`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "x", attached_media: [{ media_fbid: "nope" }] }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it("token ຜິດ → CHANNEL_AUTH", async () => {
@@ -188,6 +220,57 @@ describe("postSignedWebhook", () => {
     } finally {
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+describe("comments", () => {
+  it("commentPayload ຖືກ parse ໂດຍ parseFacebookComments", () => {
+    const events = parseFacebookComments(
+      commentPayload({ pageId: "P", postId: "P_1", commentId: "P_1_9", fromId: "U1", fromName: "ກ", message: "A1", timestamp: 1_700_000_000_000 }),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ postId: "P_1", commentId: "P_1_9", authorId: "U1", message: "A1" });
+    expect(events[0]?.timestamp.getTime()).toBe(1_700_000_000_000);
+  });
+  it("parentId ຂອງ commentPayload: default = postId; ກຳນົດເອງໄດ້", () => {
+    const input = { pageId: "P", postId: "P_1", commentId: "P_1_9", fromId: "U1", fromName: "ກ", message: "A1" };
+    expect(parseFacebookComments(commentPayload(input))[0]?.parentId).toBe("P_1");
+    expect(parseFacebookComments(commentPayload({ ...input, parentId: "P_1_8" }))[0]?.parentId).toBe("P_1_8");
+  });
+  it("verb ອື່ນຖືກຂ້າມ", () => {
+    expect(parseFacebookComments(commentPayload({ pageId: "P", postId: "P_1", commentId: "c", fromId: "U1", fromName: "ກ", message: "A1", verb: "edited" }))).toEqual([]);
+  });
+  it("fake graph ບັນທຶກ private_replies ແລະ comments; failNext ໃຊ້ກັບທັງສອງ", async () => {
+    const graph = await startFakeGraph({ token: "t" });
+    try {
+      const adapter = new FacebookAdapter({ pageAccessToken: "t", graphBaseUrl: graph.url });
+      expect(await adapter.sendPrivateReply("P_1_9", "hi")).toMatchObject({ ok: true });
+      expect(await adapter.replyToComment("P_1_9", "ok")).toMatchObject({ ok: true });
+      expect(graph.privateReplies).toEqual([{ commentId: "P_1_9", text: "hi", authorization: "Bearer t" }]);
+      expect(graph.commentReplies).toEqual([{ commentId: "P_1_9", text: "ok", authorization: "Bearer t" }]);
+      graph.failNext({ status: 400, code: 100, message: "(#100) bad" });
+      expect(await adapter.sendPrivateReply("P_1_9", "again")).toMatchObject({ ok: false, code: "SEND_REJECTED" });
+      graph.reset();
+      expect(graph.privateReplies).toEqual([]);
+      expect(graph.commentReplies).toEqual([]);
+    } finally {
+      await graph.close();
+    }
+  });
+  it("onCommentReply ຖືກເອີ້ນພ້ອມ kind", async () => {
+    const seen: Array<[string, string, string]> = [];
+    const graph = await startFakeGraph({ token: "t", onCommentReply: (kind, reply) => seen.push([kind, reply.commentId, reply.text]) });
+    try {
+      const adapter = new FacebookAdapter({ pageAccessToken: "t", graphBaseUrl: graph.url });
+      await adapter.sendPrivateReply("P_1_9", "hi");
+      await adapter.replyToComment("P_1_9", "ok");
+      expect(seen).toEqual([
+        ["private", "P_1_9", "hi"],
+        ["public", "P_1_9", "ok"],
+      ]);
+    } finally {
+      await graph.close();
     }
   });
 });

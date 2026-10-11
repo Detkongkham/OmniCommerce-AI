@@ -1,5 +1,17 @@
 import type {
   AdjustStockInput,
+  CreateCourierInput,
+  FulfillmentStatus,
+  OverridePackInput,
+  ShipOrderInput,
+  UpdateCourierInput,
+  UpdateShippingInput,
+  CfOutcome,
+  CreateLiveItemInput,
+  CreateLiveSessionInput,
+  LiveSessionStatus,
+  UpdateLiveItemInput,
+  UpdateLiveSessionInput,
   ConversationStatus,
   CreateCategoryInput,
   CreateCustomerFromChatInput,
@@ -23,15 +35,32 @@ import type {
   createProductSchema,
   patchSlipSchema,
   variantInputSchema,
+  AuditLogDto,
+  ChannelReportDto,
+  DailySalesDto,
+  DeadstockItemDto,
+  SalesSummaryDto,
+  StaffKpiDailyDto,
+  StaffKpiRowDto,
+  TopProductDto,
 } from "@oca/shared";
 import type { z } from "zod";
 import { useCallback } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./api";
 import { toQueryString } from "./query-string";
+import type { DateRange } from "./reports";
 import type {
   AssigneeDto,
   CategoryDto,
+  CfCommentDto,
+  CourierDto,
+  FulfillmentDetailDto,
+  FulfillmentListItemDto,
+  HostSnapshotDto,
+  LiveItemDto,
+  LiveSessionDetailDto,
+  LiveSessionDto,
   ConversationDto,
   CustomerDto,
   MessageDto,
@@ -68,6 +97,9 @@ export const queryKeys = {
   customers: ["customers"] as const,
   conversations: ["conversations"] as const,
   assignees: ["inbox-assignees"] as const,
+  liveSessions: ["live-sessions"] as const,
+  couriers: ["couriers"] as const,
+  fulfillment: ["fulfillment"] as const,
 };
 
 export function useStaffList() {
@@ -123,8 +155,12 @@ export function useDeleteRole() {
 // ---------------------------------------------------------------------------
 // Inventory: ສາງ / ໝວດໝູ່ / ຕັ້ງຄ່າຮ້ານ
 // ---------------------------------------------------------------------------
-export function useWarehouses() {
-  return useQuery({ queryKey: queryKeys.warehouses, queryFn: () => apiFetch<WarehouseDto[]>("/warehouses") });
+export function useWarehouses(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.warehouses,
+    queryFn: () => apiFetch<WarehouseDto[]>("/warehouses"),
+  });
 }
 
 export function useCreateWarehouse() {
@@ -631,5 +667,312 @@ export function useConfirmSlip() {
     mutationFn: (id: string) => apiFetch<SlipDto>(`/slips/${id}/confirm`, { method: "POST" }),
     onSuccess: invalidate,
     onError: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Live & CF (4a: poll ທຸກ 5 ວິ ຕອນ session LIVE; ບໍ່ມີ SSE ຈົນ 4b)
+// ---------------------------------------------------------------------------
+export const LIVE_POLL_MS = 5_000;
+
+export interface LiveSessionListParams {
+  status?: LiveSessionStatus | "";
+  page: number;
+  pageSize: number;
+}
+
+export function useLiveSessions(params: LiveSessionListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "list", params],
+    queryFn: () => apiFetch<Page<LiveSessionDto>>(`/live-sessions${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** `poll: false` = realtime (SSE) ເຊື່ອມຢູ່ ບໍ່ຕ້ອງ poll; ຄ່າເລີ່ມຕົ້ນ poll ທຸກ 5 ວິ ຕອນ LIVE */
+export function useLiveSession(id: string, options: { poll?: boolean } = {}) {
+  const poll = options.poll ?? true;
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "detail", id],
+    queryFn: () => apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}`),
+    refetchInterval: (query) => (poll && query.state.data?.status === "LIVE" ? LIVE_POLL_MS : false),
+  });
+}
+
+/** snapshot ຂອງ Host screen; poll ສຳຮອງສະເພາະຕອນ LIVE ແລະ SSE ບໍ່ເຊື່ອມ */
+export function useLiveHost(id: string, options: { poll?: boolean } = {}) {
+  const poll = options.poll ?? true;
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "host", id],
+    queryFn: () => apiFetch<HostSnapshotDto>(`/live-sessions/${encodeURIComponent(id)}/host`),
+    refetchInterval: (query) => (poll && query.state.data?.session.status === "LIVE" ? LIVE_POLL_MS : false),
+  });
+}
+
+export function useSetFeatured() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ sessionId, itemId }: { sessionId: string; itemId: string | null }) =>
+      apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(sessionId)}/featured`, { method: "PUT", body: { itemId } }),
+    onSuccess: invalidate,
+  });
+}
+
+export interface CfCommentListParams {
+  outcome?: CfOutcome | "";
+  page: number;
+  pageSize: number;
+}
+
+/** ledger ຂອງ session; `live` = session ກຳລັງດັກ CF → poll */
+export function useCfComments(sessionId: string, params: CfCommentListParams, options: { live: boolean }) {
+  return useQuery({
+    queryKey: [...queryKeys.liveSessions, "comments", sessionId, params],
+    queryFn: () =>
+      apiFetch<Page<CfCommentDto>>(`/live-sessions/${encodeURIComponent(sessionId)}/comments${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+    refetchInterval: options.live ? LIVE_POLL_MS : false,
+  });
+}
+
+export function useCreateLiveSession() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: (input: CreateLiveSessionInput) =>
+      apiFetch<LiveSessionDetailDto>("/live-sessions", { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateLiveSession() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateLiveSessionInput }) =>
+      apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export type LiveSessionAction = "start" | "end";
+
+export function useLiveSessionAction() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: LiveSessionAction }) =>
+      apiFetch<LiveSessionDetailDto>(`/live-sessions/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
+    onSuccess: invalidate,
+    // ລົ້ມ (ເຊັ່ນ LIVE_SESSION_INVALID_STATE) = ສະຖານະອາດປ່ຽນໄປແລ້ວ → refetch
+    onError: invalidate,
+  });
+}
+
+/** itemId ມີ = PATCH (ແກ້), ບໍ່ມີ = POST (ເພີ່ມ) */
+export function useSaveLiveItem() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: (
+      args: { sessionId: string; itemId?: undefined; input: CreateLiveItemInput } | { sessionId: string; itemId: string; input: UpdateLiveItemInput },
+    ) => {
+      const base = `/live-sessions/${encodeURIComponent(args.sessionId)}/items`;
+      return args.itemId
+        ? apiFetch<LiveItemDto>(`${base}/${encodeURIComponent(args.itemId)}`, { method: "PATCH", body: args.input })
+        : apiFetch<LiveItemDto>(base, { method: "POST", body: args.input });
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteLiveItem() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ sessionId, itemId }: { sessionId: string; itemId: string }) =>
+      apiFetch<void>(`/live-sessions/${encodeURIComponent(sessionId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+    // LIVE_ITEM_IN_USE = ມີ CF ເຂົ້າມາລະຫວ່າງນັ້ນ → refetch ໃຫ້ເຫັນຈຳນວນຈອງ
+    onError: invalidate,
+  });
+}
+
+/** ສົ່ງສະຫຼຸບຄືນ: API ຄືນແຖວປັດຈຸບັນ (replyStatus = SENT | FAILED | SENDING) ທີ່ຜູ້ເອີ້ນຕ້ອງອ່ານ */
+export function useResendCfReply() {
+  const invalidate = useInvalidate(queryKeys.liveSessions);
+  return useMutation({
+    mutationFn: ({ sessionId, commentId }: { sessionId: string; commentId: string }) =>
+      apiFetch<CfCommentDto>(
+        `/live-sessions/${encodeURIComponent(sessionId)}/comments/${encodeURIComponent(commentId)}/resend`,
+        { method: "POST" },
+      ),
+    onSettled: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Logistics: ບໍລິສັດຂົນສົ່ງ ແລະ ການແພັກ/ສົ່ງ
+// ---------------------------------------------------------------------------
+export function useCouriers(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: queryKeys.couriers,
+    queryFn: () => apiFetch<CourierDto[]>("/couriers"),
+  });
+}
+
+export function useSaveCourier() {
+  const invalidate = useInvalidate(queryKeys.couriers);
+  return useMutation({
+    mutationFn: (args: { id?: undefined; input: CreateCourierInput } | { id: string; input: UpdateCourierInput }) =>
+      args.id
+        ? apiFetch<CourierDto>(`/couriers/${encodeURIComponent(args.id)}`, { method: "PATCH", body: args.input })
+        : apiFetch<CourierDto>("/couriers", { method: "POST", body: args.input }),
+    onSuccess: invalidate,
+  });
+}
+
+export interface FulfillmentListParams {
+  status?: FulfillmentStatus | "";
+  warehouseId?: string;
+  q?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useFulfillmentQueue(params: FulfillmentListParams) {
+  return useQuery({
+    queryKey: [...queryKeys.fulfillment, "list", params],
+    queryFn: () => apiFetch<Page<FulfillmentListItemDto>>(`/fulfillment${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useFulfillment(orderId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: [...queryKeys.fulfillment, "detail", orderId],
+    queryFn: () => apiFetch<FulfillmentDetailDto>(`/fulfillment/${encodeURIComponent(orderId)}`),
+  });
+}
+
+export type FulfillmentAction =
+  | { action: "start" }
+  | { action: "verify"; scans: { code: string; quantity: number }[] }
+  | { action: "override"; input: OverridePackInput }
+  | { action: "ship"; input: ShipOrderInput }
+  | { action: "notify"; force?: boolean };
+
+/** ທຸກ action ຄືນ FulfillmentDetailDto; ປ່ຽນສະຖານະ/ສະຕ໋ອກຂອງບິນ → invalidate orders/stock ນຳ */
+export function useFulfillmentAction(orderId: string) {
+  const invalidate = useInvalidate(queryKeys.fulfillment, queryKeys.orders, queryKeys.stock, queryKeys.conversations);
+  return useMutation({
+    mutationFn: (args: FulfillmentAction) => {
+      const path = `/fulfillment/${encodeURIComponent(orderId)}/${args.action}`;
+      switch (args.action) {
+        case "start":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST" });
+        case "verify":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST", body: { scans: args.scans } });
+        case "override":
+        case "ship":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST", body: args.input });
+        case "notify":
+          return apiFetch<FulfillmentDetailDto>(path, { method: "POST", body: { force: args.force ?? false } });
+      }
+    },
+    onSuccess: invalidate,
+    // ລົ້ມ (ເຊັ່ນ ສະຖານະປ່ຽນ) → refetch ໃຫ້ເຫັນສະຖານະຫຼ້າສຸດ
+    onError: invalidate,
+  });
+}
+
+export function useUpdateShipping(orderId: string) {
+  const invalidate = useInvalidate(queryKeys.fulfillment, queryKeys.orders);
+  return useMutation({
+    mutationFn: (input: UpdateShippingInput) =>
+      apiFetch<FulfillmentDetailDto>(`/fulfillment/${encodeURIComponent(orderId)}/shipping`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ລາຍງານ (ໂມດູນ 10) ແລະ KPI/Audit (ໂມດູນ 12): ອ່ານຢ່າງດຽວ, ຂໍ້ມູນເກົ່າຢູ່ຂະນະປ່ຽນຊ່ວງວັນທີ
+// ---------------------------------------------------------------------------
+
+export const reportKeys = {
+  analytics: ["analytics"] as const,
+  staffKpi: ["staff-kpi"] as const,
+  auditLogs: ["audit-logs"] as const,
+};
+
+function useReport<T>(key: readonly unknown[], path: string, enabled = true) {
+  return useQuery({
+    queryKey: [...key, path],
+    queryFn: () => apiFetch<T>(path),
+    placeholderData: keepPreviousData,
+    enabled,
+  });
+}
+
+export function useAnalyticsSummary(range: DateRange, enabled = true) {
+  return useReport<SalesSummaryDto>(reportKeys.analytics, `/analytics/summary${toQueryString({ ...range })}`, enabled);
+}
+
+export function useAnalyticsDaily(range: DateRange, enabled = true) {
+  return useReport<{ days: DailySalesDto[] }>(reportKeys.analytics, `/analytics/daily${toQueryString({ ...range })}`, enabled);
+}
+
+export function useAnalyticsChannels(range: DateRange, enabled = true) {
+  return useReport<ChannelReportDto>(reportKeys.analytics, `/analytics/channels${toQueryString({ ...range })}`, enabled);
+}
+
+export function useTopProducts(range: DateRange, limit: number, enabled = true) {
+  return useReport<TopProductDto[]>(
+    reportKeys.analytics,
+    `/analytics/top-products${toQueryString({ ...range, limit })}`,
+    enabled,
+  );
+}
+
+export function useDeadstock(params: { days: number; page: number; pageSize: number }) {
+  return useReport<Page<DeadstockItemDto> & { days: number }>(
+    reportKeys.analytics,
+    `/analytics/deadstock${toQueryString({ ...params })}`,
+  );
+}
+
+export function useStaffKpi(range: DateRange, enabled = true) {
+  return useReport<{ from: string; to: string; rows: StaffKpiRowDto[] }>(
+    reportKeys.staffKpi,
+    `/staff-kpi${toQueryString({ ...range })}`,
+    enabled,
+  );
+}
+
+export function useStaffKpiDaily(userId: string | null, range: DateRange) {
+  return useReport<StaffKpiDailyDto>(
+    reportKeys.staffKpi,
+    `/staff-kpi/${encodeURIComponent(userId ?? "")}/daily${toQueryString({ ...range })}`,
+    userId !== null,
+  );
+}
+
+export interface AuditLogParams {
+  userId?: string;
+  action?: string;
+  entity?: string;
+  entityId?: string;
+  from?: string;
+  to?: string;
+  page: number;
+  pageSize: number;
+}
+
+export function useAuditLogs(params: AuditLogParams) {
+  return useReport<Page<AuditLogDto>>(reportKeys.auditLogs, `/audit-logs${toQueryString({ ...params })}`);
+}
+
+export function useAuditFacets() {
+  return useQuery({
+    queryKey: [...reportKeys.auditLogs, "facets"],
+    queryFn: () => apiFetch<{ actions: string[]; entities: string[] }>("/audit-logs/facets"),
+    staleTime: 60_000,
   });
 }

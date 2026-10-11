@@ -242,7 +242,12 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
         title={order.orderNumber}
         actions={
           <>
-            {step && stepAllowed ? (
+            {step && stepAllowed && (step.action === "pack" || step.action === "ship") ? (
+              // ແພັກ/ສົ່ງ ເຮັດທີ່ໜ້າ fulfillment (ຍິງກວດສິນຄ້າ + tracking)
+              <Link href={`/fulfillment/${order.id}`} className={cn(buttonVariants(), "rounded-xl font-bold")}>
+                {t("orders.action.fulfill")}
+              </Link>
+            ) : step && stepAllowed ? (
               <Button
                 className="rounded-xl font-bold"
                 loading={busy && act.variables?.action === step.action}
@@ -327,6 +332,19 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
               {order.shippingPhone ? <p>{order.shippingPhone}</p> : null}
               {order.shippingAddress ? <p>{order.shippingAddress}</p> : null}
               {hasShipping ? null : <p>{t("orders.detail.noShipping")}</p>}
+              {order.shipment?.trackingNumber ? (
+                <div className="mt-2 border-t border-line pt-2">
+                  <p className="text-xs font-semibold text-ink-secondary">{t("orders.detail.shipment")}</p>
+                  <p className="font-medium text-ink">
+                    {t("orders.detail.tracking", { courier: order.shipment.courierName ?? "—", tracking: order.shipment.trackingNumber })}
+                  </p>
+                  {order.shipment.trackingUrl ? (
+                    <a href={order.shipment.trackingUrl} target="_blank" rel="noopener noreferrer" className="text-brand-ink hover:underline">
+                      {t("orders.detail.trackLink")}
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
               <p className="mt-2 whitespace-pre-line border-t border-line pt-2">{order.note ? order.note : t("orders.detail.noNote")}</p>
             </div>
           </Card>

@@ -14,11 +14,14 @@ import { useT } from "@/lib/i18n/language-provider";
 import { useStoreSettings, useUpdateStoreSettings } from "@/lib/queries";
 import type { StoreSettingsDto } from "@/lib/types";
 
+const PAYMENT_MAX = 500;
+
 const formSchema = z.object({
   name: z.string().trim().min(1).max(100),
   vatRate: vatRateSchema,
   pricesIncludeVat: z.boolean(),
   reservationMinutes: z.coerce.number().int().min(1).max(MAX_RESERVATION_MINUTES),
+  paymentInstructions: z.string().max(PAYMENT_MAX),
 });
 type FormValues = z.input<typeof formSchema>;
 type FormOutput = z.output<typeof formSchema>;
@@ -78,6 +81,7 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
     handleSubmit,
     reset,
     getValues,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(formSchema),
@@ -86,6 +90,7 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       vatRate: settings.vatRate,
       pricesIncludeVat: settings.pricesIncludeVat,
       reservationMinutes: settings.reservationMinutes,
+      paymentInstructions: settings.paymentInstructions ?? "",
     },
   });
 
@@ -96,13 +101,16 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       vatRate: settings.vatRate,
       pricesIncludeVat: settings.pricesIncludeVat,
       reservationMinutes: settings.reservationMinutes,
+      paymentInstructions: settings.paymentInstructions ?? "",
     });
   }, [settings, reset]);
 
   const submit = handleSubmit(async (values) => {
     setFormError(null);
     try {
-      await update.mutateAsync(values);
+      // ວ່າງ (ຫຼື ມີແຕ່ຊ່ອງວ່າງ) = ລ້າງຂໍ້ມູນໂອນ
+      const paymentInstructions = values.paymentInstructions.trim();
+      await update.mutateAsync({ ...values, paymentInstructions: paymentInstructions === "" ? null : paymentInstructions });
       toast.success(t("settings.toast.saved"));
     } catch (error) {
       setFormError(errorMessage(error, t));
@@ -115,6 +123,8 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       ? t("validation.required")
       : t("settings.validation.vat")
     : undefined;
+
+  const paymentLength = (watch("paymentInstructions") ?? "").length;
 
   return (
     <form onSubmit={submit} noValidate className="space-y-4">
@@ -182,6 +192,27 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
         />
         {t("settings.pricesIncludeVat")}
       </label>
+      <Field
+        label={t("settings.paymentInstructions")}
+        htmlFor="settings-payment"
+        error={errors.paymentInstructions ? t("validation.tooLong", { max: PAYMENT_MAX }) : undefined}
+      >
+        <textarea
+          id="settings-payment"
+          rows={4}
+          disabled={!canWrite}
+          aria-invalid={errors.paymentInstructions ? true : undefined}
+          aria-describedby="settings-payment-hint"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 disabled:opacity-50 aria-[invalid=true]:border-danger"
+          {...register("paymentInstructions")}
+        />
+        <div className="mt-1 flex justify-between gap-3 text-xs text-ink-muted">
+          <p id="settings-payment-hint">{t("settings.paymentInstructionsHint")}</p>
+          <span className="shrink-0 tabular-nums" aria-hidden="true">
+            {paymentLength}/{PAYMENT_MAX}
+          </span>
+        </div>
+      </Field>
       {canWrite ? (
         <div className="flex justify-end">
           <Button type="submit" className="h-10 rounded-xl px-6 font-bold" loading={isSubmitting}>
