@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { GIF, JPEG, PNG, WEBP, setupSlipTest } from "./slip-fixtures";
@@ -265,6 +266,23 @@ describe("slips (e2e)", () => {
       await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, owner).expect(422);
       expect(await db.paymentSlip.count()).toBe(0);
       expect(await storedFiles()).toHaveLength(0);
+    });
+
+    it("ດາວໂຫຼດລົ້ມ (network) → 422 ຂໍ້ຄວາມທົ່ວໄປ ບໍ່ຮົ່ວ detail; detail ຖືກ log (ບໍ່ມີ URL)", async () => {
+      const { conversation, message, order } = await seedChat();
+      const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {});
+      try {
+        fetchImpl.mockRejectedValueOnce(new Error("connect ECONNREFUSED 10.0.0.5:443"));
+        const res = await link(conversation.id, message.id, { orderId: order.id, attachmentIndex: 0 }, await as("OWNER")).expect(422);
+        expect(res.body.code).toBe("SLIP_FILE_INVALID");
+        expect(res.body.message).toBe("The image could not be downloaded");
+        expect(JSON.stringify(res.body)).not.toContain("ECONNREFUSED");
+        const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
+        expect(logged).toContain("ECONNREFUSED");
+        expect(logged).not.toContain("https://");
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it("ຕ້ອງ orders:write ແລະ inbox:write: ACCOUNTANT/WAREHOUSE → 403; body ຜິດ → 400", async () => {

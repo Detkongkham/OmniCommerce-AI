@@ -97,7 +97,11 @@ export class SlipsService {
         timeoutMs: 10_000,
       });
     } catch (error) {
-      if (error instanceof SlipImageError) throw apiError("SLIP_FILE_INVALID", error.message);
+      if (error instanceof SlipImageError) {
+        // detail (undici/ເຄືອຂ່າຍ) ເກັບໃນ log ເທົ່ານັ້ນ ບໍ່ສົ່ງໃຫ້ client ແລະ ບໍ່ log URL
+        if (error.detail) this.logger.warn(`Slip image download failed (${error.detail})`);
+        throw apiError("SLIP_FILE_INVALID", error.message);
+      }
       throw error;
     }
     const { mime } = this.validateImage(bytes);

@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 import { isInternalHostname } from "./ssrf-guard";
 
+/** ຂໍ້ຄວາມທົ່ວໄປທີ່ສົ່ງໃຫ້ client ເມື່ອດາວໂຫຼດລົ້ມ (ລາຍລະອຽດເຄືອຂ່າຍເກັບໃນ `detail` ເພື່ອ log ເທົ່ານັ້ນ) */
+export const IMAGE_DOWNLOAD_FAILED = "The image could not be downloaded";
+
 export class SlipImageError extends Error {
-  constructor(message: string) {
+  /** ລາຍລະອຽດພາຍໃນ (ຫ້າມສົ່ງໃຫ້ client) */
+  readonly detail?: string;
+  constructor(message: string, detail?: string) {
     super(message);
+    this.detail = detail;
     this.name = "SlipImageError";
   }
 }
@@ -62,13 +68,13 @@ export async function fetchImageBytes(url: string, options: FetchImageOptions): 
       signal: AbortSignal.timeout(options.timeoutMs),
     });
   } catch (error) {
-    throw new SlipImageError(`Image download failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new SlipImageError(IMAGE_DOWNLOAD_FAILED, error instanceof Error ? error.message : String(error));
   }
   // ຍົກເລີກ body ທີ່ບໍ່ໄດ້ອ່ານເມື່ອປະຕິເສດກ່ອນ ເພື່ອປ່ອຍ connection
   const discardBody = () => void response.body?.cancel().catch(() => {});
   if (!response.ok) {
     discardBody();
-    throw new SlipImageError(`Image download failed with status ${response.status}`);
+    throw new SlipImageError(IMAGE_DOWNLOAD_FAILED, `status ${response.status}`);
   }
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > options.maxBytes) {
@@ -94,7 +100,7 @@ export async function fetchImageBytes(url: string, options: FetchImageOptions): 
     }
   } catch (error) {
     if (error instanceof SlipImageError) throw error;
-    throw new SlipImageError(`Image download failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw new SlipImageError(IMAGE_DOWNLOAD_FAILED, error instanceof Error ? error.message : String(error));
   }
   const out = new Uint8Array(total);
   let offset = 0;
