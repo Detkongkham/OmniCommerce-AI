@@ -1,7 +1,8 @@
 import { StorageInvalidKeyError, StorageNotFoundError } from "@oca/ai-engine";
-import type { PrismaClient } from "@oca/database";
+import { type PrismaClient, markSlipReadFailed, storeSlipReadResult } from "@oca/database";
+import { SLIP_MAX_BYTES } from "@oca/shared";
 import { describe, expect, it, vi } from "vitest";
-import { type ReadSlipDeps, processReadSlip } from "./read-slip.processor";
+import { DEFAULT_READER_TIMEOUT_MS, type ReadSlipDeps, createReadSlipDeps, processReadSlip } from "./read-slip.processor";
 
 const bytes = new Uint8Array([1, 2, 3]);
 
@@ -16,8 +17,10 @@ function makeDeps(
     reader: { name: "fake", version: "1", read: vi.fn().mockResolvedValue({ amount: "10", raw: { a: 1 } }) },
     store: vi.fn().mockResolvedValue(true),
     markFailed: vi.fn().mockResolvedValue(true),
+    logger: { error: vi.fn() },
+    deadlineGraceMs: 0,
     ...overrides,
-  } as ReadSlipDeps;
+  };
   return { deps, findUnique };
 }
 const job = (attemptsMade = 0, attempts = 3) => ({ slipId: "s1", attemptsMade, attempts });
@@ -115,7 +118,82 @@ describe("processReadSlip", () => {
     expect(deps.markFailed).toHaveBeenCalledTimes(1);
   });
 
+  it("store ຄືນ false → ບໍ່ເອີ້ນ markFailed", async () => {
+    const { deps } = makeDeps({ store: vi.fn().mockResolvedValue(false) });
+    await processReadSlip(deps, job());
+    expect(deps.markFailed).not.toHaveBeenCalled();
+  });
+
+  describe("markFailed ລົ້ມ", () => {
+    it("ຄັ້ງສຸດທ້າຍ: markFailed throw → ຍັງ throw error ຕົ້ນສະບັບ ແລະ log ໂດຍບໍ່ມີ payload", async () => {
+      const { deps } = makeDeps({
+        reader: failingReader(new Error("boom")),
+        markFailed: vi.fn().mockRejectedValue(new Error("db down")),
+      });
+      await expect(processReadSlip(deps, job(2, 3))).rejects.toThrow("boom");
+      expect(deps.logger.error).toHaveBeenCalledTimes(1);
+      expect(String(vi.mocked(deps.logger.error).mock.calls[0]?.[0])).toContain("s1");
+    });
+
+    it("StorageError + markFailed ລົ້ມ → throw (ໃຫ້ BullMQ retry) ບໍ່ຄືນ 'failed'", async () => {
+      const { deps } = makeDeps({
+        storage: { put: vi.fn(), get: vi.fn().mockRejectedValue(new StorageNotFoundError("slips/k")) },
+        markFailed: vi.fn().mockRejectedValue(new Error("db down")),
+      });
+      await expect(processReadSlip(deps, job(0, 3))).rejects.toThrow("db down");
+    });
+
+    it("ຮູບໃຫຍ່ເກີນ + markFailed ລົ້ມ → throw ແລະ ບໍ່ເອີ້ນ reader", async () => {
+      const big = new Uint8Array(SLIP_MAX_BYTES + 1);
+      const { deps } = makeDeps({
+        storage: { put: vi.fn(), get: vi.fn().mockResolvedValue({ bytes: big, mime: "image/png" }) },
+        markFailed: vi.fn().mockRejectedValue(new Error("db down")),
+      });
+      await expect(processReadSlip(deps, job(0, 3))).rejects.toThrow("db down");
+      expect(deps.reader.read).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("createReadSlipDeps", () => {
+    it("ສ້າງ deps ດ້ວຍຄ່າເລີ່ມຕົ້ນຂອງ @oca/database", () => {
+      const db = {} as PrismaClient;
+      const storage = { put: vi.fn(), get: vi.fn() };
+      const reader = failingReader();
+      const deps = createReadSlipDeps(db, storage, reader);
+      expect(deps.db).toBe(db);
+      expect(deps.storage).toBe(storage);
+      expect(deps.reader).toBe(reader);
+      expect(deps.store).toBe(storeSlipReadResult);
+      expect(deps.markFailed).toBe(markSlipReadFailed);
+      expect(typeof deps.logger.error).toBe("function");
+    });
+  });
+
   describe("timeout ຂອງ reader", () => {
+    // reader ທີ່ບໍ່ສົນ signal ເລີຍ
+    const deafReader = () => ({ name: "d", version: "1", read: vi.fn(() => new Promise<never>(() => {})) });
+
+    it("reader ບໍ່ສົນ signal → deadline ແຂງ reject ດ້ວຍຂໍ້ຄວາມ timeout", async () => {
+      const { deps } = makeDeps({ reader: deafReader(), readerTimeoutMs: 20 });
+      await expect(processReadSlip(deps, job(0, 3))).rejects.toThrow("slip reader timed out after 20ms");
+      expect(deps.markFailed).not.toHaveBeenCalled();
+    });
+
+    it("reader ບໍ່ສົນ signal ຄັ້ງສຸດທ້າຍ → mark failed ແລ້ວ reject", async () => {
+      const { deps } = makeDeps({ reader: deafReader(), readerTimeoutMs: 20 });
+      await expect(processReadSlip(deps, job(2, 3))).rejects.toThrow("timed out");
+      expect(deps.markFailed).toHaveBeenCalledWith(deps.db, "s1");
+    });
+
+    it("ຄ່າເລີ່ມຕົ້ນ: AbortSignal.timeout ຖືກເອີ້ນດ້ວຍ DEFAULT_READER_TIMEOUT_MS (60_000)", async () => {
+      const spy = vi.spyOn(AbortSignal, "timeout");
+      const { deps } = makeDeps();
+      await processReadSlip(deps, job());
+      expect(DEFAULT_READER_TIMEOUT_MS).toBe(60_000);
+      expect(spy).toHaveBeenCalledWith(60_000);
+      spy.mockRestore();
+    });
+
     // reader ທີ່ຄ້າງຕະຫຼອດ ຈົນກວ່າ signal ຖືກ abort
     const hangingReader = () => ({
       name: "h",
@@ -150,8 +228,8 @@ describe("processReadSlip", () => {
   });
 
   describe("ຮູບໃຫຍ່ເກີນ", () => {
-    it("ຮູບ > 16MB → mark failed ທັນທີ ແລະ ຄືນ 'failed' ໂດຍບໍ່ເອີ້ນ reader", async () => {
-      const big = new Uint8Array(16 * 1024 * 1024 + 1);
+    it("ຮູບ > SLIP_MAX_BYTES → mark failed ທັນທີ ແລະ ຄືນ 'failed' ໂດຍບໍ່ເອີ້ນ reader", async () => {
+      const big = new Uint8Array(SLIP_MAX_BYTES + 1);
       const { deps } = makeDeps({
         storage: { put: vi.fn(), get: vi.fn().mockResolvedValue({ bytes: big, mime: "image/png" }) },
       });
@@ -160,8 +238,8 @@ describe("processReadSlip", () => {
       expect(deps.reader.read).not.toHaveBeenCalled();
     });
 
-    it("ຮູບ = 16MB ພໍດີ ຍັງອ່ານ", async () => {
-      const exact = new Uint8Array(16 * 1024 * 1024);
+    it("ຮູບ = SLIP_MAX_BYTES ພໍດີ ຍັງອ່ານ", async () => {
+      const exact = new Uint8Array(SLIP_MAX_BYTES);
       const { deps } = makeDeps({
         storage: { put: vi.fn(), get: vi.fn().mockResolvedValue({ bytes: exact, mime: "image/png" }) },
       });
