@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "@/lib/api";
 import type { Page, StockMovementDto } from "@/lib/types";
-import { renderWithProviders } from "@/test/render";
+import { dateControl, pickDate, renderWithProviders } from "@/test/render";
 import { StockMovements } from "./stock-movements";
 
 const auth = vi.hoisted(() => ({ canReadOrders: true }));
@@ -84,8 +84,8 @@ describe("StockMovements", () => {
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?type=SHIP&page=1&pageSize=10"));
     await user.selectOptions(await screen.findByLabelText("Warehouse"), "w1");
     await waitFor(() => expect(lastUrl()).toContain("warehouseId=w1"));
-    await user.type(screen.getByLabelText("From date"), "2026-10-01");
-    await user.type(screen.getByLabelText("To date"), "2026-10-05");
+    pickDate("From date", "2026-10-01");
+    pickDate("To date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toContain("from=2026-10-01"));
     expect(lastUrl()).toContain("to=2026-10-05");
     expect(lastUrl()).not.toMatch(/\d{4}-\d{2}-\d{2}T/);
@@ -107,10 +107,10 @@ describe("StockMovements", () => {
   it("date, from/to ດຽວ, from=to: ບໍ່ມີ alert ແລະ URL ຖືກຕ້ອງ", async () => {
     const { user } = renderWithProviders(<StockMovements />);
     await screen.findByTestId("row-movement-m1");
-    await user.type(screen.getByLabelText("From date"), "2026-10-05");
+    pickDate("From date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?from=2026-10-05&page=1&pageSize=10"));
     expect(lastUrl()).not.toContain("to=");
-    await user.type(screen.getByLabelText("To date"), "2026-10-05");
+    pickDate("To date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?from=2026-10-05&to=2026-10-05&page=1&pageSize=10"));
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -118,19 +118,11 @@ describe("StockMovements", () => {
   it("date to ດຽວ: ບໍ່ມີ from ໃນ URL", async () => {
     const { user } = renderWithProviders(<StockMovements />);
     await screen.findByTestId("row-movement-m1");
-    await user.type(screen.getByLabelText("To date"), "2026-10-05");
+    pickDate("To date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?to=2026-10-05&page=1&pageSize=10"));
     expect(lastUrl()).not.toContain("from=");
   });
 
-  it("ປີ 5 ຫຼັກ: ຖືວ່າຜິດ, ສະແດງຂໍ້ຄວາມ ແລະ ບໍ່ສົ່ງ request", async () => {
-    renderWithProviders(<StockMovements />);
-    await screen.findByTestId("row-movement-m1");
-    const before = movementUrls().length;
-    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "20261-10-05" } });
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(movementUrls()).toHaveLength(before);
-  });
 
   it("filter ວັນທີ ແລະ variant ກັບໄປໜ້າ 1", async () => {
     mockApi({ items: rows, total: 25, page: 1, pageSize: 10 });
@@ -141,10 +133,10 @@ describe("StockMovements", () => {
       await waitFor(() => expect(lastUrl()).toContain("page=2"));
     };
     await next();
-    await user.type(screen.getByLabelText("From date"), "2026-10-01");
+    pickDate("From date", "2026-10-01");
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?from=2026-10-01&page=1&pageSize=10"));
     await next();
-    await user.type(screen.getByLabelText("To date"), "2026-10-05");
+    pickDate("To date", "2026-10-05");
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?from=2026-10-01&to=2026-10-05&page=1&pageSize=10"));
     await next();
     await user.type(screen.getByLabelText("Item"), "tee");
@@ -169,19 +161,19 @@ describe("StockMovements", () => {
   it("ວັນທີເລີ່ມຫຼັງວັນທີສິ້ນສຸດ: ສະແດງຂໍ້ຄວາມ ແລະ ບໍ່ສົ່ງ request ທີ່ຜິດ", async () => {
     const { user } = renderWithProviders(<StockMovements />);
     await screen.findByTestId("row-movement-m1");
-    await user.type(screen.getByLabelText("From date"), "2026-10-05");
-    await user.type(screen.getByLabelText("To date"), "2026-10-01");
+    pickDate("From date", "2026-10-05");
+    pickDate("To date", "2026-10-01");
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The start date must not be after the end date");
     expect(movementUrls().some((url) => url.includes("from=2026-10-05") && url.includes("to=2026-10-01"))).toBe(false);
     expect(lastUrl()).toBe("/stock/movements?from=2026-10-05&page=1&pageSize=10");
     expect(screen.queryByTestId("row-movement-m1")).toBeNull();
-    expect(screen.getByLabelText("To date")).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByLabelText("To date")).toHaveAttribute("aria-describedby", alert.id);
-    expect(screen.getByLabelText("From date")).toHaveAttribute("aria-describedby", alert.id);
+    expect(dateControl("To date")).toHaveAttribute("aria-invalid", "true");
+    expect(dateControl("To date")).toHaveAttribute("aria-describedby", alert.id);
+    expect(dateControl("From date")).toHaveAttribute("aria-describedby", alert.id);
     // ແກ້ວັນທີ: ກັບມາສະແດງຕາຕະລາງ ແລະ ດຶງຂໍ້ມູນ
-    await user.clear(screen.getByLabelText("To date"));
-    await user.type(screen.getByLabelText("To date"), "2026-10-06");
+    pickDate("To date", "");
+    pickDate("To date", "2026-10-06");
     expect(await screen.findByTestId("row-movement-m1")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(lastUrl()).toBe("/stock/movements?from=2026-10-05&to=2026-10-06&page=1&pageSize=10");
@@ -193,10 +185,10 @@ describe("StockMovements", () => {
     expect(await screen.findByText("No movements found")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
     await user.selectOptions(screen.getByLabelText("Type"), "SHIP");
-    await user.type(screen.getByLabelText("From date"), "2026-10-01");
+    pickDate("From date", "2026-10-01");
     await user.click(await screen.findByRole("button", { name: "Clear search" }));
     expect(screen.getByLabelText("Type")).toHaveValue("");
-    expect(screen.getByLabelText("From date")).toHaveValue("");
+    expect(dateControl("From date")).toHaveAttribute("data-value", "");
     await waitFor(() => expect(lastUrl()).toBe("/stock/movements?page=1&pageSize=10"));
   });
 

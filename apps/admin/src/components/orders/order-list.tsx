@@ -24,6 +24,7 @@ import { useCan } from "@/components/auth/auth-provider";
 import { ServerPager } from "@/components/common/server-pager";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
+import { DateField } from "@/components/common/date-field";
 import { useT } from "@/lib/i18n/language-provider";
 import { useOrders } from "@/lib/queries";
 import { useDebounced } from "@/lib/use-debounced";
@@ -32,8 +33,6 @@ import { OrderStatusPill } from "./order-status";
 const COLUMNS = 6;
 const RANGE_ERROR_ID = "orders-range-error";
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const DATE_INPUT_CLASS =
-  "mt-1 block h-9 rounded-xl border border-input bg-background px-3 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 aria-[invalid=true]:border-danger";
 const HEADERS: { key: TranslationKey; right?: boolean }[] = [
   { key: "orders.col.number" },
   { key: "orders.col.customer" },
@@ -140,36 +139,26 @@ export function OrderList({ initialQuery, initialStatus }: { initialQuery: strin
                 </option>
               ))}
             </Select>
-            <label className="text-xs font-semibold text-ink-secondary">
-              {t("orders.filter.from")}
-              <input
-                type="date"
-                value={from}
-                max={to || undefined}
-                aria-invalid={rangeInvalid}
-                aria-describedby={rangeInvalid ? RANGE_ERROR_ID : undefined}
-                onChange={(event) => {
-                  setFrom(event.target.value);
-                  reset();
-                }}
-                className={DATE_INPUT_CLASS}
-              />
-            </label>
-            <label className="text-xs font-semibold text-ink-secondary">
-              {t("orders.filter.to")}
-              <input
-                type="date"
-                value={to}
-                min={from || undefined}
-                aria-invalid={rangeInvalid}
-                aria-describedby={rangeInvalid ? RANGE_ERROR_ID : undefined}
-                onChange={(event) => {
-                  setTo(event.target.value);
-                  reset();
-                }}
-                className={DATE_INPUT_CLASS}
-              />
-            </label>
+            <DateField
+              label={t("orders.filter.from")}
+              value={from}
+              invalid={rangeInvalid}
+              describedBy={rangeInvalid ? RANGE_ERROR_ID : undefined}
+              onChange={(next) => {
+                setFrom(next);
+                reset();
+              }}
+            />
+            <DateField
+              label={t("orders.filter.to")}
+              value={to}
+              invalid={rangeInvalid}
+              describedBy={rangeInvalid ? RANGE_ERROR_ID : undefined}
+              onChange={(next) => {
+                setTo(next);
+                reset();
+              }}
+            />
           </div>
 
           {rangeInvalid ? (

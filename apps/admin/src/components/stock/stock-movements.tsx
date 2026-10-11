@@ -25,12 +25,11 @@ import { ServerPager } from "@/components/common/server-pager";
 import { VariantPicker } from "@/components/common/variant-picker";
 import { formatDateTime, formatMovementQuantity } from "@/lib/format";
 import type { TranslationKey } from "@/lib/i18n/dictionary";
+import { DateField } from "@/components/common/date-field";
 import { useT } from "@/lib/i18n/language-provider";
 import { useStockMovements, useWarehouses } from "@/lib/queries";
 
 const COLUMNS = 8;
-const DATE_INPUT_CLASS =
-  "mt-1 block h-9 rounded-xl border border-input bg-background px-3 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 aria-[invalid=true]:border-danger";
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const HEADERS: { key: TranslationKey; right?: boolean }[] = [
   { key: "stock.mov.col.time" },
@@ -155,36 +154,26 @@ export function StockMovements() {
             </option>
           ))}
         </Select>
-        <label className="text-xs font-semibold text-ink-secondary">
-          {t("stock.mov.filter.from")}
-          <input
-            type="date"
-            value={from}
-            max={to || undefined}
-            aria-invalid={rangeInvalid}
-            aria-describedby={rangeInvalid ? "movement-range-error" : undefined}
-            onChange={(event) => {
-              setFrom(event.target.value);
-              reset();
-            }}
-            className={DATE_INPUT_CLASS}
-          />
-        </label>
-        <label className="text-xs font-semibold text-ink-secondary">
-          {t("stock.mov.filter.to")}
-          <input
-            type="date"
-            value={to}
-            min={from || undefined}
-            aria-invalid={rangeInvalid}
-            aria-describedby={rangeInvalid ? "movement-range-error" : undefined}
-            onChange={(event) => {
-              setTo(event.target.value);
-              reset();
-            }}
-            className={DATE_INPUT_CLASS}
-          />
-        </label>
+        <DateField
+          label={t("stock.mov.filter.from")}
+          value={from}
+          invalid={rangeInvalid}
+          describedBy={rangeInvalid ? "movement-range-error" : undefined}
+          onChange={(next) => {
+            setFrom(next);
+            reset();
+          }}
+        />
+        <DateField
+          label={t("stock.mov.filter.to")}
+          value={to}
+          invalid={rangeInvalid}
+          describedBy={rangeInvalid ? "movement-range-error" : undefined}
+          onChange={(next) => {
+            setTo(next);
+            reset();
+          }}
+        />
         <div className="min-w-[260px] flex-1">
           {variant ? (
             <div className="flex h-9 items-center justify-between gap-2 rounded-xl border border-line bg-subtle px-3 text-sm">
