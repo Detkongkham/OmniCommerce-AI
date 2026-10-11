@@ -1,11 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { MAX_RESERVATION_MINUTES, vatRateSchema } from "@oca/shared";
+import { MAX_RESERVATION_MINUTES, receivingAccountsSchema, vatRateSchema } from "@oca/shared";
 import { Button, Card, EmptyState, Field, Input, PageHeader, Skeleton, toast } from "@oca/ui";
-import { AlertCircle } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { AlertCircle, Plus, Trash2 } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
 import { z } from "zod";
 import { useCan } from "@/components/auth/auth-provider";
 import { errorMessage } from "@/lib/errors";
@@ -15,6 +15,7 @@ import { useStoreSettings, useUpdateStoreSettings } from "@/lib/queries";
 import type { StoreSettingsDto } from "@/lib/types";
 
 const PAYMENT_MAX = 500;
+const MAX_RECEIVING_ACCOUNTS = 20;
 
 const formSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -22,6 +23,10 @@ const formSchema = z.object({
   pricesIncludeVat: z.boolean(),
   reservationMinutes: z.coerce.number().int().min(1).max(MAX_RESERVATION_MINUTES),
   paymentInstructions: z.string().max(PAYMENT_MAX),
+  // ກວດຂັ້ນຕົ້ນພຽງຄວາມຍາວແຖວ; ກົດຈິງ (ບໍ່ວ່າງ, ເລກບັນຊີມີຕົວເລກ) ກວດດ້ວຍ receivingAccountsSchema ຕອນ submit
+  receivingAccounts: z
+    .array(z.object({ bank: z.string(), accountNo: z.string(), accountName: z.string().optional() }))
+    .max(MAX_RECEIVING_ACCOUNTS),
 });
 type FormValues = z.input<typeof formSchema>;
 type FormOutput = z.output<typeof formSchema>;
@@ -71,17 +76,25 @@ export function StoreSettingsForm() {
   );
 }
 
+/** ແປງບັນຊີຈາກ server ເປັນຄ່າຟອມ (accountName ບໍ່ມີ = ສະຕຣິງວ່າງ) */
+function toAccountValues(accounts: StoreSettingsDto["receivingAccounts"]) {
+  return accounts.map((a) => ({ bank: a.bank, accountNo: a.accountNo, accountName: a.accountName ?? "" }));
+}
+
 function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
   const { t } = useT();
   const canWrite = useCan("inventory:write");
   const update = useUpdateStoreSettings();
   const [formError, setFormError] = useState<string | null>(null);
+  const [accountsError, setAccountsError] = useState(false);
+  const baseId = useId();
   const {
     register,
     handleSubmit,
     reset,
     getValues,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues, unknown, FormOutput>({
     resolver: zodResolver(formSchema),
@@ -91,8 +104,11 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       pricesIncludeVat: settings.pricesIncludeVat,
       reservationMinutes: settings.reservationMinutes,
       paymentInstructions: settings.paymentInstructions ?? "",
+      receivingAccounts: toAccountValues(settings.receivingAccounts),
     },
   });
+  // field.id ຄົງທີ່ຕໍ່ແຖວ ໃຊ້ເປັນ key
+  const { fields, append, remove } = useFieldArray({ control, name: "receivingAccounts" });
 
   // ຫຼັງບັນທຶກ/refetch ຄ່າຈາກ server ປ່ຽນ → ຮີເຊັດຟອມໃຫ້ກົງ
   useEffect(() => {
@@ -102,15 +118,34 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
       pricesIncludeVat: settings.pricesIncludeVat,
       reservationMinutes: settings.reservationMinutes,
       paymentInstructions: settings.paymentInstructions ?? "",
+      receivingAccounts: toAccountValues(settings.receivingAccounts),
     });
+    setAccountsError(false);
   }, [settings, reset]);
 
   const submit = handleSubmit(async (values) => {
     setFormError(null);
+    setAccountsError(false);
+    // trim ແລ້ວຕັດ accountName ທີ່ວ່າງອອກ (strictObject ບໍ່ຮັບສະຕຣິງວ່າງ); ບໍ່ຜ່ານ → ບໍ່ຍິງ API
+    const accounts = receivingAccountsSchema.safeParse(
+      values.receivingAccounts.map(({ accountName, ...rest }) => {
+        const name = accountName?.trim();
+        return { ...rest, ...(name ? { accountName: name } : {}) };
+      }),
+    );
+    if (!accounts.success) {
+      setAccountsError(true);
+      return;
+    }
     try {
       // ວ່າງ (ຫຼື ມີແຕ່ຊ່ອງວ່າງ) = ລ້າງຂໍ້ມູນໂອນ
       const paymentInstructions = values.paymentInstructions.trim();
-      await update.mutateAsync({ ...values, paymentInstructions: paymentInstructions === "" ? null : paymentInstructions });
+      // ສົ່ງ receivingAccounts ທຸກຄັ້ງພ້ອມ field ອື່ນ (ສອດຄ່ອງກັນ; ບໍ່ເຮັດ dirty-tracking)
+      await update.mutateAsync({
+        ...values,
+        paymentInstructions: paymentInstructions === "" ? null : paymentInstructions,
+        receivingAccounts: accounts.data,
+      });
       toast.success(t("settings.toast.saved"));
     } catch (error) {
       setFormError(errorMessage(error, t));
@@ -213,6 +248,68 @@ function SettingsFields({ settings }: { settings: StoreSettingsDto }) {
           </span>
         </div>
       </Field>
+      <fieldset
+        className="space-y-3 rounded-xl border border-line p-4"
+        aria-describedby={accountsError ? `${baseId}-accounts-error` : undefined}
+      >
+        <legend className="px-1 text-sm font-semibold text-ink">{t("settings.receiving.title")}</legend>
+        <p className="text-xs text-ink-muted">{t("settings.receiving.description")}</p>
+        {fields.length === 0 ? <p className="text-sm text-ink-muted">{t("settings.receiving.empty")}</p> : null}
+        {fields.map((field, index) => {
+          const rowId = `${baseId}-acc-${index}`;
+          return (
+            <div
+              key={field.id}
+              role="group"
+              aria-label={t("settings.receiving.row", { n: index + 1 })}
+              className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
+            >
+              <Field label={t("settings.receiving.bank")} htmlFor={`${rowId}-bank`}>
+                <Input id={`${rowId}-bank`} disabled={!canWrite} {...register(`receivingAccounts.${index}.bank`)} />
+              </Field>
+              <Field label={t("settings.receiving.accountNo")} htmlFor={`${rowId}-no`}>
+                <Input
+                  id={`${rowId}-no`}
+                  disabled={!canWrite}
+                  inputMode="numeric"
+                  {...register(`receivingAccounts.${index}.accountNo`)}
+                />
+              </Field>
+              <Field label={t("settings.receiving.accountName")} htmlFor={`${rowId}-name`}>
+                <Input id={`${rowId}-name`} disabled={!canWrite} {...register(`receivingAccounts.${index}.accountName`)} />
+              </Field>
+              {canWrite ? (
+                <Button
+                  type="button"
+                  variant="outlinePrimary"
+                  className="h-10 rounded-lg"
+                  aria-label={t("settings.receiving.remove", { n: index + 1 })}
+                  onClick={() => remove(index)}
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
+          );
+        })}
+        {accountsError ? (
+          <p id={`${baseId}-accounts-error`} role="alert" className="text-xs text-danger">
+            {t("settings.receiving.invalid")}
+          </p>
+        ) : null}
+        {canWrite ? (
+          <Button
+            type="button"
+            variant="outlinePrimary"
+            className="rounded-lg"
+            disabled={fields.length >= MAX_RECEIVING_ACCOUNTS}
+            onClick={() => append({ bank: "", accountNo: "", accountName: "" })}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            {t("settings.receiving.add")}
+          </Button>
+        ) : null}
+      </fieldset>
       {canWrite ? (
         <div className="flex justify-end">
           <Button type="submit" className="h-10 rounded-xl px-6 font-bold" loading={isSubmitting}>
