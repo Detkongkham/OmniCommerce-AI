@@ -6,6 +6,7 @@ import type {
   CreateOrderInput,
   CreateStaffInput,
   CreateWarehouseInput,
+  LinkChatSlipInput,
   PutProductImagesInput,
   ReceiveStockInput,
   ReturnStockInput,
@@ -20,6 +21,7 @@ import type {
   UpdateVariantInput,
   UpdateWarehouseInput,
   createProductSchema,
+  patchSlipSchema,
   variantInputSchema,
 } from "@oca/shared";
 import type { z } from "zod";
@@ -40,6 +42,7 @@ import type {
   ProductDetailDto,
   ProductListItemDto,
   RoleDto,
+  SlipDto,
   StaffDto,
   StockLevelDto,
   StockMovementDto,
@@ -55,6 +58,7 @@ export const queryKeys = {
   warehouses: ["warehouses"] as const,
   categories: ["categories"] as const,
   storeSettings: ["store-settings"] as const,
+  slips: ["slips"] as const,
   products: ["products"] as const,
   stock: ["stock"] as const,
   variants: ["variants"] as const,
@@ -533,5 +537,97 @@ export function useAssignees(options: { enabled?: boolean } = {}) {
     queryKey: queryKeys.assignees,
     queryFn: () => apiFetch<AssigneeDto[]>("/inbox/assignees"),
     staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ສະລິບໂອນເງິນ
+// ---------------------------------------------------------------------------
+/** ມີສະລິບຍັງ PENDING_READ → poll ທຸກ 3 ວິ ຈົນ worker ອ່ານແລ້ວ */
+const slipsRefetchInterval = (query: { state: { data: SlipDto[] | undefined } }): number | false =>
+  query.state.data?.some((slip) => slip.status === "PENDING_READ") ? 3000 : false;
+
+export function useOrderSlips(orderId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: [...queryKeys.slips, "order", orderId],
+    queryFn: () => apiFetch<SlipDto[]>(`/orders/${orderId}/slips`),
+    refetchInterval: slipsRefetchInterval,
+  });
+}
+
+/** ສະລິບທີ່ຜູກຈາກເຄສນີ້ (ເພື່ອຮູ້ວ່າຮູບໃດຜູກແລ້ວ) */
+export function useConversationSlips(conversationId: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: options.enabled ?? true,
+    queryKey: [...queryKeys.slips, "conversation", conversationId],
+    queryFn: () => apiFetch<SlipDto[]>(`/conversations/${conversationId}/slips`),
+    refetchInterval: slipsRefetchInterval,
+  });
+}
+
+/** ຮູບສະລິບບໍ່ເປີດ public: ໂຫຼດດ້ວຍ Bearer ເປັນ Blob (ຮູບບໍ່ປ່ຽນ ຈຶ່ງ cache ຕະຫຼອດ) */
+export function useSlipImage(id: string) {
+  return useQuery({
+    queryKey: [...queryKeys.slips, "image", id],
+    queryFn: () => apiFetch<Blob>(`/slips/${id}/image`, { responseType: "blob" }),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function useUploadSlip() {
+  const invalidate = useInvalidate(queryKeys.slips);
+  return useMutation({
+    mutationFn: ({ orderId, file }: { orderId: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      return apiFetch<SlipDto>(`/orders/${orderId}/slips`, { method: "POST", body: form });
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useLinkChatSlip() {
+  const invalidate = useInvalidate(queryKeys.slips);
+  return useMutation({
+    mutationFn: ({ conversationId, messageId, input }: { conversationId: string; messageId: string; input: LinkChatSlipInput }) =>
+      apiFetch<SlipDto>(`/conversations/${conversationId}/messages/${messageId}/slips`, { method: "POST", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function usePatchSlip() {
+  const invalidate = useInvalidate(queryKeys.slips);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: z.input<typeof patchSlipSchema> }) =>
+      apiFetch<SlipDto>(`/slips/${id}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRetrySlip() {
+  const invalidate = useInvalidate(queryKeys.slips);
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<SlipDto>(`/slips/${id}/retry`, { method: "POST" }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRejectSlip() {
+  const invalidate = useInvalidate(queryKeys.slips);
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiFetch<SlipDto>(`/slips/${id}/reject`, { method: "POST", body: { reason } }),
+    onSuccess: invalidate,
+  });
+}
+
+/** ຢືນຢັນ = ບິນເປັນ PAID ດ້ວຍ → invalidate orders ນຳ. ລົ້ມ (409 ບິນບໍ່ຢູ່ PENDING_PAYMENT/ໝົດເວລາຈອງ) ກໍ refetch ໃຫ້ເຫັນຄວາມຈິງ */
+export function useConfirmSlip() {
+  const invalidate = useInvalidate(queryKeys.slips, queryKeys.orders);
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<SlipDto>(`/slips/${id}/confirm`, { method: "POST" }),
+    onSuccess: invalidate,
+    onError: invalidate,
   });
 }

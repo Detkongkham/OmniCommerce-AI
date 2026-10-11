@@ -5,7 +5,10 @@ import type {
   OrderStatus,
   Permission,
   ProductStatus,
+  ReceivingAccount,
   SalesChannel,
+  SlipSource,
+  SlipStatus,
   StockMovementType,
 } from "@oca/shared";
 
@@ -62,6 +65,8 @@ export interface StoreSettingsDto {
   vatRate: string;
   pricesIncludeVat: boolean;
   reservationMinutes: number;
+  /** ບັນຊີຮັບເງິນຂອງຮ້ານ (ໃຊ້ກວດບັນຊີປາຍທາງຂອງສະລິບ) */
+  receivingAccounts: ReceivingAccount[];
 }
 
 export interface ProductListItemDto {
@@ -285,4 +290,34 @@ export interface MessagePage {
 export interface AssigneeDto {
   id: string;
   name: string;
+}
+
+export interface SlipValuesDto {
+  amount: string | null;
+  currency: string | null;
+  paidAt: string | null;
+  destAccount: string | null;
+  refNo: string | null;
+}
+
+/** ກົງກັບ SlipDto ຂອງ API (ບໍ່ມີ imageKey/readRaw) */
+export interface SlipDto {
+  id: string;
+  orderId: string | null;
+  conversationId: string | null;
+  messageId: string | null;
+  attachmentIndex: number | null;
+  source: SlipSource;
+  status: SlipStatus;
+  imageMime: string;
+  imageBytes: number;
+  readerName: string | null;
+  readerVersion: string | null;
+  read: SlipValuesDto;
+  confirmed: SlipValuesDto;
+  flags: string[];
+  reviewedBy: { id: string; name: string } | null;
+  reviewedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
 }
