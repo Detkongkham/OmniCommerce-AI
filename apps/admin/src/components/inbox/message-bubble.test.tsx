@@ -1,5 +1,5 @@
 import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MessageDto } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
 import { MessageBubble } from "./message-bubble";
@@ -82,5 +82,55 @@ describe("MessageBubble", () => {
     expect(screen.getAllByText("Attachment (image)")).toHaveLength(2);
     expect(screen.getByText("Attachment (location)")).toBeInTheDocument();
     expect(screen.getByText("Attachment (file)")).toBeInTheDocument();
+  });
+});
+
+describe("MessageBubble: ໃຊ້ເປັນສະລິບ", () => {
+  const imageMessage = (patch: Partial<MessageDto> = {}): MessageDto => ({
+    ...base,
+    text: null,
+    attachments: [
+      { type: "image", url: "https://cdn.example/a.png" },
+      { type: "file", url: null },
+      { type: "image", url: "https://cdn.example/b.png" },
+    ],
+    ...patch,
+  });
+  const render = (message: MessageDto, props: Partial<React.ComponentProps<typeof MessageBubble>> = {}) =>
+    renderWithProviders(
+      <ul>
+        <MessageBubble message={message} {...props} />
+      </ul>,
+    );
+
+  it("ບໍ່ມີ onUseAsSlip → ບໍ່ມີປຸ່ມ (ພຶດຕິກຳເດີມ)", () => {
+    render(imageMessage());
+    expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+  });
+
+  it("ຂາເຂົ້າ: ປຸ່ມຕໍ່ຮູບ ແລະ ເອີ້ນ onUseAsSlip ດ້ວຍ index ຂອງ attachment (ຮູບທີສອງ = 2); ໄຟລ໌ບໍ່ມີປຸ່ມ", async () => {
+    const onUseAsSlip = vi.fn();
+    const { user } = render(imageMessage(), { onUseAsSlip });
+    const buttons = screen.getAllByRole("button", { name: "Use as slip" });
+    expect(buttons).toHaveLength(2);
+    await user.click(buttons[1] as HTMLElement);
+    expect(onUseAsSlip).toHaveBeenCalledWith(2);
+  });
+
+  it("ຂາອອກ (OUT) ບໍ່ມີປຸ່ມ ແລະ ບໍ່ມີປ້າຍ", () => {
+    render(imageMessage({ direction: "OUT" }), { onUseAsSlip: vi.fn(), linkedIndexes: new Set([0]) });
+    expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+    expect(screen.queryByText("Linked as a slip")).toBeNull();
+  });
+
+  it("ຮູບທີ່ຜູກແລ້ວສະແດງ 'Linked as a slip' ແທນປຸ່ມ (ສະເພາະຮູບນັ້ນ)", () => {
+    render(imageMessage(), { onUseAsSlip: vi.fn(), linkedIndexes: new Set([0]) });
+    expect(screen.getByText("Linked as a slip")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Use as slip" })).toHaveLength(1);
+  });
+
+  it("ຮູບທີ່ URL ບໍ່ປອດໄພ (http) ບໍ່ມີປຸ່ມ", () => {
+    render(imageMessage({ attachments: [{ type: "image", url: "http://cdn.example/a.png" }] }), { onUseAsSlip: vi.fn() });
+    expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
   });
 });

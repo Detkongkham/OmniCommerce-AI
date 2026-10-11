@@ -1,13 +1,21 @@
 "use client";
 
-import { cn } from "@oca/ui";
+import { Button, cn } from "@oca/ui";
 import { AlertCircle, Clock } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
 import { safeAttachmentUrl, sendErrorKey } from "@/lib/inbox";
 import type { MessageDto } from "@/lib/types";
 
-export function MessageBubble({ message }: { message: MessageDto }) {
+export interface MessageBubbleProps {
+  message: MessageDto;
+  /** ມີ = ສະແດງປຸ່ມ "ໃຊ້ເປັນສະລິບ" ຂອງຮູບຂາເຂົ້າ (ຜູ້ເອີ້ນກວດສິດແລ້ວ) */
+  onUseAsSlip?: (attachmentIndex: number) => void;
+  /** index ຂອງ attachment ໃນຂໍ້ຄວາມນີ້ທີ່ຜູກເປັນສະລິບແລ້ວ */
+  linkedIndexes?: ReadonlySet<number>;
+}
+
+export function MessageBubble({ message, onUseAsSlip, linkedIndexes }: MessageBubbleProps) {
   const { t } = useT();
   const out = message.direction === "OUT";
   const failed = message.status === "FAILED";
@@ -28,23 +36,35 @@ export function MessageBubble({ message }: { message: MessageDto }) {
         {message.attachments.map((attachment, index) => {
           const url = attachment.type === "image" ? safeAttachmentUrl(attachment.url) : null;
           return url ? (
-            <a
-              key={index}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={t("inbox.attachment.open")}
-              className="mt-1 block"
-            >
-              {/* ຮູບຈາກ CDN ຂອງ Meta (ບໍ່ຜ່ານ next/image: URL ໝົດອາຍຸ ແລະ ບໍ່ຢູ່ໃນ remotePatterns) */}
-              <img
-                src={url}
-                alt={t("inbox.attachment.image")}
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                className="max-h-60 rounded-lg"
-              />
-            </a>
+            <div key={index} className="mt-1">
+              <a href={url} target="_blank" rel="noopener noreferrer" title={t("inbox.attachment.open")} className="block">
+                {/* ຮູບຈາກ CDN ຂອງ Meta (ບໍ່ຜ່ານ next/image: URL ໝົດອາຍຸ ແລະ ບໍ່ຢູ່ໃນ remotePatterns) */}
+                <img
+                  src={url}
+                  alt={t("inbox.attachment.image")}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="max-h-60 rounded-lg"
+                />
+              </a>
+              {/* ສະເພາະຮູບຂາເຂົ້າ: ຜູກເປັນສະລິບໄດ້ ຫຼື ສະແດງວ່າຜູກແລ້ວ */}
+              {!out && onUseAsSlip ? (
+                linkedIndexes?.has(index) ? (
+                  <p className="mt-1 text-xs font-semibold text-success-ink">{t("slips.link.linked")}</p>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-1"
+                    data-slip-opener={`${message.id}:${index}`}
+                    onClick={() => onUseAsSlip(index)}
+                  >
+                    {t("slips.link.action")}
+                  </Button>
+                )
+              ) : null}
+            </div>
           ) : (
             <p key={index} className="mt-1 text-xs opacity-80">
               {t("inbox.attachment.file", { type: attachment.type })}

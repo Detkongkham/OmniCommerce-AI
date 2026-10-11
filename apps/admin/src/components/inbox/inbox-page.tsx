@@ -27,6 +27,9 @@ const STATUS_TONE: Record<StreamStatus, "success" | "neutral" | "warning" | "dan
 export function InboxPage({ initialConversationId }: { initialConversationId: string | null }) {
   const { t } = useT();
   const canWrite = useCan("inbox:write");
+  // ຜູກຮູບເປັນສະລິບ = inbox:write + orders:write (ຕາມ API)
+  const canWriteOrders = useCan("orders:write");
+  const canLinkSlip = canWrite && canWriteOrders;
   const connection = useInboxRealtime(true);
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId);
   // ຜູກ dialog ກັບ id ຂອງເຄສ: ປ່ຽນ/ກັບລາຍການ ແລ້ວ dialog ເກົ່າບໍ່ເດັ້ງກັບມາ
@@ -76,6 +79,7 @@ export function InboxPage({ initialConversationId }: { initialConversationId: st
                 key={selectedId}
                 conversationId={selectedId}
                 canWrite={canWrite}
+                canLinkSlip={canLinkSlip}
                 onBack={() => select(null)}
                 onShowDetails={() => setDetailsFor(selectedId)}
               />

@@ -301,3 +301,67 @@ describe("ThreadPane: hardening", () => {
     expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 });
+
+describe("ThreadPane: ໃຊ້ເປັນສະລິບ", () => {
+  const imageIn = message("img1", 50, { text: null, attachments: [{ type: "image", url: "https://cdn.example/a.png" }] });
+  const slipDto = (patch: Record<string, unknown> = {}) => ({ id: "s1", orderId: "B", conversationId: "c1", messageId: "img1", attachmentIndex: 0, status: "PENDING_READ", ...patch });
+  const order = { id: "B", orderNumber: "SO-B", status: "PENDING_PAYMENT", channel: "FACEBOOK", source: "CHAT", conversationId: "c1", customer: null, total: "100.00", itemCount: 1, reservedUntil: null, createdAt: "2026-10-07T08:00:00.000Z" };
+  let slips: unknown[];
+  const slipCalls = () => calls((url, method) => url === "/conversations/c1/slips" && !method);
+
+  beforeEach(() => {
+    slips = [];
+    mockApi({ pages: [{ items: [imageIn], hasMore: false }] });
+    const base = vi.mocked(apiFetch).getMockImplementation() as (url: string, init?: { method?: string }) => Promise<unknown>;
+    vi.mocked(apiFetch).mockImplementation((async (url: string, init?: { method?: string }) => {
+      if (url === "/conversations/c1/slips") return slips;
+      if (url.startsWith("/orders")) return { items: [order], total: 1, page: 1, pageSize: 20 };
+      if (url === "/conversations/c1/messages/img1/slips" && init?.method === "POST") {
+        slips = [slipDto()];
+        return slips[0];
+      }
+      return base(url, init);
+    }) as typeof apiFetch);
+  });
+
+  it("canLinkSlip ບໍ່ສົ່ງ: ບໍ່ມີປຸ່ມ, ບໍ່ຍິງ conversation slips, ບໍ່ມີ dialog", async () => {
+    renderWithProviders(<ThreadPane conversationId="c1" canWrite />);
+    await screen.findByTestId("message-img1");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+    expect(slipCalls()).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("canLinkSlip: ກົດປຸ່ມ → dialog ເປີດ; ຜູກສຳເລັດ → dialog ປິດ, ຮູບສະແດງ 'Linked as a slip' ແລະ focus ກັບໄປປຸ່ມ/ບໍ່ຕົກ body", async () => {
+    const { user } = renderWithProviders(<ThreadPane conversationId="c1" canWrite canLinkSlip />);
+    const button = await screen.findByRole("button", { name: "Use as slip" });
+    await user.click(button);
+    expect(await screen.findByRole("dialog", { name: "Link this image as an order's slip" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("radio", { name: /SO-B/ }));
+    await user.click(screen.getByRole("button", { name: "Link slip" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // conversation slips refetch → ປ້າຍແທນປຸ່ມ
+    expect(await screen.findByText("Linked as a slip")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+    // ປຸ່ມຫາຍ (ຜູກແລ້ວ) → focus ຕ້ອງບໍ່ຕົກ body ຄ້າງ ແຕ່ຄືນມາທີ່ log (ບ່ອນທີ່ຍັງຢູ່)
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it("ປິດ dialog ໂດຍບໍ່ຜູກ: focus ກັບໄປປຸ່ມ 'Use as slip' ເດີມ", async () => {
+    const { user } = renderWithProviders(<ThreadPane conversationId="c1" canWrite canLinkSlip />);
+    const button = await screen.findByRole("button", { name: "Use as slip" });
+    await user.click(button);
+    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(button).toHaveFocus());
+  });
+
+  it("ມີສະລິບທີ່ messageId+attachmentIndex ກົງ → 'Linked as a slip' ແທນປຸ່ມ; slip ຂອງ index ອື່ນ/ບໍ່ມີ message ບໍ່ນັບ", async () => {
+    slips = [slipDto(), slipDto({ id: "s2", messageId: null, attachmentIndex: null })];
+    renderWithProviders(<ThreadPane conversationId="c1" canWrite canLinkSlip />);
+    expect(await screen.findByText("Linked as a slip")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+  });
+});

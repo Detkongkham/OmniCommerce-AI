@@ -6,9 +6,9 @@ import type { ConversationDto, MessageDto } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
 import { InboxPage } from "./inbox-page";
 
-const state = vi.hoisted(() => ({ canWrite: true, status: "connected" as StreamStatus }));
+const state = vi.hoisted(() => ({ canWrite: true, canWriteOrders: true, status: "connected" as StreamStatus }));
 vi.mock("@/components/auth/auth-provider", () => ({
-  useCan: (permission: string) => (permission === "inbox:write" ? state.canWrite : true),
+  useCan: (permission: string) => (permission === "inbox:write" ? state.canWrite : permission === "orders:write" ? state.canWriteOrders : true),
 }));
 vi.mock("@/lib/use-inbox-realtime", () => ({ useInboxRealtime: () => state.status }));
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -57,6 +57,7 @@ afterEach(() => {
 
 beforeEach(() => {
   state.canWrite = true;
+  state.canWriteOrders = true;
   state.status = "connected";
   vi.mocked(apiFetch).mockReset();
   vi.mocked(apiFetch).mockImplementation((async (url: string) => {
@@ -65,6 +66,7 @@ beforeEach(() => {
     if (url.startsWith("/orders")) return { items: [], total: 0, page: 1, pageSize: 20 };
     const detail = /^\/conversations\/(c\d)$/.exec(url);
     if (detail) return conversations.find((c) => c.id === detail[1]);
+    if (/^\/conversations\/c\d\/slips$/.test(url)) return [];
     const messages = /^\/conversations\/(c\d)\/messages/.exec(url);
     if (messages) return { items: [message(messages[1] as string)], hasMore: false };
     throw new Error(`unexpected ${url}`);
@@ -244,5 +246,43 @@ describe("InboxPage", () => {
     expect(pill.querySelector("[class*='danger']")).not.toBeNull();
     expect(screen.getByTestId("reload-hint")).toHaveAttribute("role", "alert");
     expect(screen.getByTestId("reload-hint")).toHaveTextContent("Disconnected, please reload the page");
+  });
+
+  describe("ສິດຜູກສະລິບ (inbox:write + orders:write)", () => {
+    const slipsCalls = () => vi.mocked(apiFetch).mock.calls.filter((call) => /\/slips$/.test(String(call[0])));
+    const withImage = () => {
+      const base = vi.mocked(apiFetch).getMockImplementation() as (url: string) => Promise<unknown>;
+      vi.mocked(apiFetch).mockImplementation((async (url: string) => {
+        if (/^\/conversations\/c1\/messages/.test(url)) {
+          return { items: [{ ...message("c1"), attachments: [{ type: "image", url: "https://cdn.example/a.png" }] }], hasMore: false };
+        }
+        return base(url);
+      }) as typeof apiFetch);
+    };
+
+    it("ມີທັງສອງສິດ: ເຫັນປຸ່ມ ແລະ ດຶງ slips ຂອງເຄສ", async () => {
+      withImage();
+      renderWithProviders(<InboxPage initialConversationId="c1" />);
+      expect(await screen.findByRole("button", { name: "Use as slip" })).toBeInTheDocument();
+      expect(slipsCalls().length).toBeGreaterThan(0);
+    });
+
+    it("ຂາດ orders:write: ບໍ່ມີປຸ່ມ ແລະ ບໍ່ດຶງ slips", async () => {
+      state.canWriteOrders = false;
+      withImage();
+      renderWithProviders(<InboxPage initialConversationId="c1" />);
+      await screen.findByTestId("message-m-c1");
+      expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+      expect(slipsCalls()).toHaveLength(0);
+    });
+
+    it("ຂາດ inbox:write: ບໍ່ມີປຸ່ມ", async () => {
+      state.canWrite = false;
+      withImage();
+      renderWithProviders(<InboxPage initialConversationId="c1" />);
+      await screen.findByTestId("message-m-c1");
+      expect(screen.queryByRole("button", { name: "Use as slip" })).toBeNull();
+      expect(slipsCalls()).toHaveLength(0);
+    });
   });
 });

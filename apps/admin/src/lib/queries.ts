@@ -628,8 +628,9 @@ export function useUploadSlip() {
   });
 }
 
+/** ຜູກແລ້ວ invalidate ທັງ slips ແລະ orders (ລາຍການບິນໃນ dialog/ໜ້າບິນ ດຶງໃໝ່) */
 export function useLinkChatSlip() {
-  const invalidate = useInvalidate(queryKeys.slips);
+  const invalidate = useInvalidate(queryKeys.slips, queryKeys.orders);
   return useMutation({
     mutationFn: ({ conversationId, messageId, input }: { conversationId: string; messageId: string; input: LinkChatSlipInput }) =>
       apiFetch<SlipDto>(`/conversations/${conversationId}/messages/${messageId}/slips`, { method: "POST", body: input }),
