@@ -1,6 +1,17 @@
 import { createHash } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { type OrderSource, Prisma, type PrismaClient, releaseCfClaims, releaseMany, reserveMany, shipMany } from "@oca/database";
+import {
+  type CouponEvaluation,
+  type OrderSource,
+  Prisma,
+  type PrismaClient,
+  evaluateCoupon,
+  lockCoupon,
+  releaseCfClaims,
+  releaseMany,
+  reserveMany,
+  shipMany,
+} from "@oca/database";
 import {
   type CancelOrderInput,
   type CreateOrderInput,
@@ -27,6 +38,7 @@ import {
   toOrderListItem,
 } from "./orders.mapper";
 import { apiError } from "../../common/api-error";
+import { couponRejection } from "../../common/coupon-error";
 
 /** ສ່ວນເພີ່ມຂອງບິນຈາກໜ້າຮ້ານສາທາລະນະ */
 export interface WebOrderExtras {
@@ -273,10 +285,12 @@ export class OrdersService {
 
       // 3) ລູກຄ້າ
       let customerId: string | null = null;
+      let customerPhone: string | null = null;
       if (input.customerId) {
-        const customer = await tx.customer.findUnique({ where: { id: input.customerId }, select: { id: true } });
+        const customer = await tx.customer.findUnique({ where: { id: input.customerId }, select: { id: true, phone: true } });
         if (!customer) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
         customerId = customer.id;
+        customerPhone = customer.phone;
       } else if (input.customer) {
         const customer = await tx.customer.upsert({
           where: { phone: input.customer.phone },
@@ -284,6 +298,7 @@ export class OrdersService {
           update: {},
         });
         customerId = customer.id;
+        customerPhone = customer.phone;
       }
 
       // 4) ເງິນ
@@ -295,21 +310,29 @@ export class OrdersService {
         }
         return { item, variant };
       });
+      const totalsInput = {
+        lines: lines.map(({ item, variant }) => ({
+          unitPrice: variant.price.toFixed(2),
+          quantity: item.quantity,
+          discount: item.discount,
+        })),
+        shippingFee: input.shippingFee,
+        vatRate: settings.vatRate.toString(),
+        pricesIncludeVat: settings.pricesIncludeVat,
+      };
       let totals: ReturnType<typeof calculateOrderTotals>;
+      let coupon: CouponEvaluation | null = null;
       try {
-        totals = calculateOrderTotals({
-          lines: lines.map(({ item, variant }) => ({
-            unitPrice: variant.price.toFixed(2),
-            quantity: item.quantity,
-            discount: item.discount,
-          })),
-          shippingFee: input.shippingFee,
-          vatRate: settings.vatRate.toString(),
-          pricesIncludeVat: settings.pricesIncludeVat,
-        });
+        totals = calculateOrderTotals(totalsInput);
+        if (input.couponCode !== undefined) {
+          // lock ຕໍ່ໂຄດ ຈົນ commit: ການນັບ limit ແລະ ການບັນທຶກ couponId ຂອງບິນນີ້ເປັນ atomic
+          await lockCoupon(tx, input.couponCode);
+          coupon = await evaluateCoupon(tx, { code: input.couponCode, merchandiseSubtotal: totals.subtotal, phone: customerPhone });
+          totals = calculateOrderTotals({ ...totalsInput, orderDiscount: coupon.discount });
+        }
       } catch (error) {
         if (error instanceof RangeError) throw new BadRequestException(error.message);
-        throw error;
+        throw couponRejection(error);
       }
 
       if (origin?.web && !new Prisma.Decimal(origin.web.expectedTotal).equals(totals.total)) {
@@ -334,6 +357,9 @@ export class OrdersService {
           exchangeRate: 1,
           subtotal: totals.subtotal,
           discountTotal: totals.discountTotal,
+          couponId: coupon?.couponId,
+          couponCode: coupon?.code,
+          couponDiscount: coupon?.discount ?? 0,
           shippingFee: input.shippingFee,
           vatRate: settings.vatRate,
           vatAmount: totals.vatAmount,
@@ -445,6 +471,8 @@ export class OrdersService {
           ...added.map(({ variant, quantity }) => ({ unitPrice: variant.price.toFixed(2), quantity, discount: "0" })),
         ],
         shippingFee: order.shippingFee.toFixed(2),
+        // ສ່ວນຫຼຸດຂອງໂຄດຄົງເດີມ (ບໍ່ຄິດໃໝ່ຈາກຍອດທີ່ເພີ່ມ)
+        orderDiscount: order.couponDiscount.toFixed(2),
         vatRate: order.vatRate.toString(),
         // ອ່ານຈາກ settings ປັດຈຸບັນ (ບໍ່ແມ່ນຄ່າ ຕອນສ້າງບິນ)
         pricesIncludeVat: settings.pricesIncludeVat,

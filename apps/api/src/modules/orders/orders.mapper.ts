@@ -64,7 +64,11 @@ export interface OrderDetailDto {
   currency: string;
   exchangeRate: string;
   subtotal: string;
+  /** ລວມສ່ວນຫຼຸດລາຍການ + ໂຄດ */
   discountTotal: string;
+  /** ໂຄດສ່ວນຫຼຸດຂອງບິນ (snapshot) ແລະ ຍອດທີ່ໂຄດຫຼຸດ ("0.00" ຖ້າບໍ່ມີ) */
+  couponCode: string | null;
+  couponDiscount: string;
   shippingFee: string;
   vatRate: string;
   vatAmount: string;
@@ -132,6 +136,8 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
     exchangeRate: row.exchangeRate.toFixed(6),
     subtotal: money(row.subtotal),
     discountTotal: money(row.discountTotal),
+    couponCode: row.couponCode,
+    couponDiscount: money(row.couponDiscount),
     shippingFee: money(row.shippingFee),
     vatRate: money(row.vatRate),
     vatAmount: money(row.vatAmount),
