@@ -22,6 +22,12 @@ describe("ERROR_CODES", () => {
       expect(isErrorCode(code), code).toBe(true);
     }
   });
+  it("ມີ code ຂອງ storefront", () => {
+    for (const code of ["PRICE_CHANGED", "TOO_MANY_OPEN_ORDERS", "SLIP_LIMIT_REACHED"]) {
+      expect(ERROR_CODES).toContain(code);
+    }
+  });
+
   it("isErrorCode", () => {
     expect(isErrorCode("INSUFFICIENT_STOCK")).toBe(true);
     expect(isErrorCode("nope")).toBe(false);

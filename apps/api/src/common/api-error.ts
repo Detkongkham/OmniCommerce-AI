@@ -60,6 +60,9 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   POST_INVALID_STATE: HttpStatus.CONFLICT,
   MEDIA_NOT_FOUND: HttpStatus.NOT_FOUND,
   MEDIA_INVALID: HttpStatus.BAD_REQUEST,
+  PRICE_CHANGED: HttpStatus.CONFLICT,
+  TOO_MANY_OPEN_ORDERS: HttpStatus.CONFLICT,
+  SLIP_LIMIT_REACHED: HttpStatus.CONFLICT,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

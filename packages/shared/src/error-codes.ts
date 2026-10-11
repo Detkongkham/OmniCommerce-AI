@@ -64,6 +64,10 @@ export const ERROR_CODES = [
   "POST_INVALID_STATE",
   "MEDIA_NOT_FOUND",
   "MEDIA_INVALID",
+  // ໜ້າຮ້ານສາທາລະນະ
+  "PRICE_CHANGED",
+  "TOO_MANY_OPEN_ORDERS",
+  "SLIP_LIMIT_REACHED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

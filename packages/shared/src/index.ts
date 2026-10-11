@@ -15,3 +15,4 @@ export * from "./schemas/live-cf";
 export * from "./schemas/logistics";
 export * from "./schemas/posting";
 export * from "./schemas/reports";
+export * from "./schemas/storefront";
