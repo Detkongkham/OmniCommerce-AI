@@ -30,3 +30,6 @@ packages/database/src/generated/
 
 # uploaded media (MEDIA_DIR default)
 .data/
+
+# separate production build dirs of the apps
+**/.next-prod/
