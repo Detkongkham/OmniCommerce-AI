@@ -65,4 +65,15 @@ describe("ConfirmDialog", () => {
     expect(go.className).not.toContain("bg-danger");
     expect(screen.getByRole("dialog").innerHTML).not.toContain("bg-danger-soft");
   });
+
+  it("ສົ່ງ onCloseAutoFocus ຕໍ່ໃຫ້ dialog ເມື່ອປິດ", async () => {
+    const onCloseAutoFocus = vi.fn((event: Event) => event.preventDefault());
+    const { rerender } = render(
+      <ConfirmDialog open onOpenChange={vi.fn()} title="T" description="D" confirmLabel="Go" cancelLabel="Cancel" onConfirm={vi.fn()} onCloseAutoFocus={onCloseAutoFocus} />,
+    );
+    rerender(
+      <ConfirmDialog open={false} onOpenChange={vi.fn()} title="T" description="D" confirmLabel="Go" cancelLabel="Cancel" onConfirm={vi.fn()} onCloseAutoFocus={onCloseAutoFocus} />,
+    );
+    await vi.waitFor(() => expect(onCloseAutoFocus).toHaveBeenCalledTimes(1));
+  });
 });

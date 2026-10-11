@@ -79,6 +79,7 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const rejectButtonRef = useRef<HTMLButtonElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const confirming = useRef(false);
   const focusCardAfterConfirm = useRef(false);
@@ -198,7 +199,7 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
                   <Button ref={rejectButtonRef} variant="outlineDanger" size="sm" disabled={busy} onClick={() => setRejectOpen(true)}>
                     {t("slips.action.reject")}
                   </Button>
-                  <Button size="sm" className="font-bold" disabled={busy || !confirmable} onClick={() => setConfirmOpen(true)}>
+                  <Button ref={confirmButtonRef} size="sm" className="font-bold" disabled={busy || !confirmable} onClick={() => setConfirmOpen(true)}>
                     {t("slips.action.confirm")}
                   </Button>
                 </>
@@ -228,6 +229,14 @@ export function SlipCard({ slip, order, canReview }: { slip: SlipDto; order: Sli
           tone="primary"
           confirmDisabled={final.amount === null}
           onConfirm={onConfirm}
+          onCloseAutoFocus={(event) => {
+            // Radix ຄືນ focus ໃຫ້ແຕ່ Trigger: ຢືນຢັນສຳເລັດ → effect ຂ້າງເທິງຍ້າຍໄປ card; ອື່ນໆ → ຄືນປຸ່ມ Confirm
+            event.preventDefault();
+            if (focusCardAfterConfirm.current) return;
+            const opener = confirmButtonRef.current;
+            if (opener?.isConnected && !opener.disabled) opener.focus();
+            else rootRef.current?.focus();
+          }}
         />
       ) : null}
       {canReview ? (

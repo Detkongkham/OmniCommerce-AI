@@ -356,6 +356,19 @@ describe("SlipCard: ເພີ່ມເຕີມ", () => {
     expect(screen.getByRole("button", { name: "Reject" })).toHaveFocus();
   });
 
+  it("ປິດ dialog ຢືນຢັນດ້ວຍ Escape ຫຼື ຍົກເລີກ → focus ຄືນປຸ່ມ Confirm payment ຂອງ card", async () => {
+    const { user } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
+    const opener = screen.getByRole("button", { name: "Confirm payment" });
+    await user.click(opener);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(opener).toHaveFocus();
+    await user.click(opener);
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(opener).toHaveFocus();
+  });
+
   it("ປຸ່ມ Reject ຫາຍ (ສະລິບຖືກປະຕິເສດແລ້ວ) ຂະນະ dialog ເປີດ → focus ຕົກທີ່ card", async () => {
     const { user, rerender, queryClient } = renderWithProviders(<SlipCard slip={slip()} order={order} canReview />);
     await user.click(screen.getByRole("button", { name: "Reject" }));

@@ -16,6 +16,8 @@ export interface ConfirmDialogProps {
   /** destructive (ເລີ່ມຕົ້ນ, ສີແດງ) ຫຼື primary (ການຢືນຢັນທົ່ວໄປ ບໍ່ແມ່ນການທຳລາຍ) */
   tone?: "destructive" | "primary";
   onConfirm: () => void | Promise<void>;
+  /** dialog ທີ່ເປີດໂດຍບໍ່ມີ Trigger: Radix ຄືນ focus ໃຫ້ບໍ່ໄດ້ → ຜູ້ໃຊ້ຄືນ focus ເອງ (ຕ້ອງ preventDefault) */
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
 /** DESIGN.md §9.10: ຂະນະກຳລັງດຳເນີນການ ປິດ dialog ບໍ່ໄດ້ ແລະ ປຸ່ມທັງສອງ disabled. */
@@ -31,6 +33,7 @@ export function ConfirmDialog({
   confirmDisabled = false,
   tone = "destructive",
   onConfirm,
+  onCloseAutoFocus,
 }: ConfirmDialogProps) {
   return (
     <Dialog
@@ -39,7 +42,7 @@ export function ConfirmDialog({
         if (!busy) onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-[400px] p-6" closeLabel={closeLabel} showClose={!busy}>
+      <DialogContent className="max-w-[400px] p-6" closeLabel={closeLabel} showClose={!busy} onCloseAutoFocus={onCloseAutoFocus}>
         <div className="flex items-start gap-3">
           <div className={`flex size-11 shrink-0 items-center justify-center rounded-full ${tone === "primary" ? "bg-brand-soft" : "bg-danger-soft"}`}>
             <AlertTriangle className={`size-5 ${tone === "primary" ? "text-brand" : "text-danger"}`} aria-hidden="true" />
