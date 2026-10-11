@@ -189,7 +189,7 @@ describe("storefront orders (e2e)", () => {
         vatAmount: "18.18",
         total: "200.00",
         paidAt: null,
-        items: [{ productName: "Product", variantName: null, quantity: 2, unitPrice: "100.00", lineTotal: "200.00" }],
+        items: [{ variantId: state.f.v1.id, productName: "Product", variantName: null, quantity: 2, unitPrice: "100.00", lineTotal: "200.00" }],
         shipping: {
           name: "ນາງ ກ",
           phone: "02055555555",

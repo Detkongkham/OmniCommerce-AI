@@ -69,7 +69,7 @@ export interface StoreOrder {
   subtotal: string;
   vatAmount: string;
   total: string;
-  items: { productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
+  items: { variantId: string; productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
   shipping: {
     name: string | null;
     phone: string | null;
@@ -80,4 +80,33 @@ export interface StoreOrder {
   note: string | null;
   slips: { status: StoreSlipStatus; createdAt: string }[];
   tracking: { courierName: string | null; trackingNumber: string; url: string | null } | null;
+}
+
+export type StoreCartLine =
+  | { variantId: string; quantity: number; unavailable: true }
+  | {
+      variantId: string;
+      quantity: number;
+      unavailable: false;
+      productName: string;
+      productSlug: string;
+      variantName: string | null;
+      imageUrl: string | null;
+      unitPrice: string;
+      lineTotal: string;
+      stock: StoreStock;
+      insufficient: boolean;
+    };
+
+export interface StoreCart {
+  items: StoreCartLine[];
+  subtotal: string;
+  vatAmount: string;
+  total: string;
+  orderable: boolean;
+}
+
+export interface StoreOrderCreated {
+  orderNumber: string;
+  token: string;
 }

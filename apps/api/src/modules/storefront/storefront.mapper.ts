@@ -168,7 +168,8 @@ export interface StoreOrderDto {
   subtotal: string;
   vatAmount: string;
   total: string;
-  items: { productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
+  /** variantId: ໃຫ້ເວັບເຕີມກະຕ່າຄືນໄດ້ ("ສັ່ງໃໝ່" ຂອງບິນທີ່ໝົດອາຍຸ) */
+  items: { variantId: string; productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
   shipping: {
     name: string | null;
     phone: string | null;
@@ -202,6 +203,7 @@ export function toStoreOrder(row: StoreOrderRow, now: Date = new Date()): StoreO
     vatAmount: money(row.vatAmount),
     total: money(row.total),
     items: row.items.map((item) => ({
+      variantId: item.variantId,
       productName: item.productName,
       variantName: item.variantName,
       quantity: item.quantity,
