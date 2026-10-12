@@ -34,11 +34,11 @@
 
 | ຄະແນນ | R (ມື້ນັບຈາກ `lastPaidAt`) | F (ຈຳນວນບິນ) | M (`totalSpent`) |
 |---|---|---|---|
-| 5 | ≤ 30 | ≥ 10 | `NTILE(5)` ສູງສຸດ |
+| 5 | ≤ 30 | ≥ 10 | `ceil(CUME_DIST × 5)` |
 | 4 | ≤ 60 | 5–9 | |
 | 3 | ≤ 90 | 3–4 | |
 | 2 | ≤ 180 | 2 | |
-| 1 | > 180 | 1 | `NTILE(5)` ຕ່ຳສຸດ |
+| 1 | > 180 | 1 | (ທຽບກັບລູກຄ້າຄົນອື່ນ; ຍອດເທົ່າກັນ = ຄະແນນເທົ່າກັນ) |
 
 ກຸ່ມ (ກົດທຳອິດທີ່ກົງ):
 
@@ -51,7 +51,7 @@
 
 ### ລວມລູກຄ້າ
 
-`POST /customers/:id/merge { sourceId }` ລວມ source ເຂົ້າ target (`:id`) ໃນ transaction ດຽວ:
+`POST /crm/customers/:id/merge { sourceId }` ລວມ source ເຂົ້າ target (`:id`) ໃນ transaction ດຽວ:
 
 - ຍ້າຍ `Order`, `Conversation`, `PointEntry` ຂອງ source ໄປ target; `target.pointsBalance += source.pointsBalance`.
 - `phone`, `email`, `facebookUserId`, `note`: target ຮັບຄ່າຂອງ source ສະເພາະຊ່ອງທີ່ target ຍັງຫວ່າງ. ຖ້າທັງສອງມີເບີຕ່າງກັນ ເບີຂອງ source ຖືກຖິ້ມ (UI ເຕືອນກ່ອນຢືນຢັນ).
@@ -61,12 +61,14 @@
 
 ### API (`crm:read` / `crm:write`)
 
-- `GET /customers?q&tier&segment&sort&page&pageSize`: `q` ຄົ້ນຊື່/ເບີ; `sort` = `spent` \| `lastOrder` \| `points` \| `created` (ຄ່າເລີ່ມ `lastOrder`). ແຖວ: ຂໍ້ມູນ + ສະຖິຕິ + `segment` + `tier` + `pointsBalance`.
-- `GET /customers/segments`: ຈຳນວນລູກຄ້າຕໍ່ກຸ່ມ ແລະ ຕໍ່ລະດັບ.
-- `GET /customers/:id`: ຂໍ້ມູນ + ສະຖິຕິ + ຄະແນນ R/F/M + `segment` + `tier` + `spend12m` + `nextTier { tier, remaining } | null` + `hasPin`.
-- `GET /customers/:id/orders`, `GET /customers/:id/conversations`, `GET /customers/:id/points` (ແບ່ງໜ້າ, ໃໝ່ສຸດກ່ອນ).
-- `PATCH /customers/:id { name?, phone?, email?, note? }`: ເບີຊ້ຳ → `409 CUSTOMER_PHONE_TAKEN` (ພ້ອມ `customerId` ຂອງເຈົ້າຂອງເບີ ເພື່ອສະເໜີລວມ).
-- `POST /customers/:id/merge`.
+ຢູ່ໃຕ້ `/crm/customers` ເພາະ `GET /customers` ມີຢູ່ແລ້ວ ເປັນຕົວຄົ້ນລູກຄ້າຂອງຟອມເປີດບິນ (`orders:read`) ແລະ ບໍ່ຖືກແຕະ.
+
+- `GET /crm/customers?q&tier&segment&sort&page&pageSize`: `q` ຄົ້ນຊື່/ເບີ; `sort` = `spent` \| `lastOrder` \| `points` \| `created` (ຄ່າເລີ່ມ `lastOrder`). ແຖວ: ຂໍ້ມູນ + ສະຖິຕິ + `segment` + `tier` + `pointsBalance`.
+- `GET /crm/customers/segments`: ຈຳນວນລູກຄ້າຕໍ່ກຸ່ມ ແລະ ຕໍ່ລະດັບ.
+- `GET /crm/customers/:id`: ຂໍ້ມູນ + ສະຖິຕິ + ຄະແນນ R/F/M + `segment` + `tier` + `spend12m` + `nextTier { tier, remaining } | null` + `hasPin`.
+- `GET /crm/customers/:id/orders`, `GET /crm/customers/:id/conversations`, `GET /crm/customers/:id/points` (ແບ່ງໜ້າ, ໃໝ່ສຸດກ່ອນ).
+- `PATCH /crm/customers/:id { name?, phone?, email?, note? }`: ເບີຊ້ຳ → `409 CUSTOMER_PHONE_TAKEN` (ພ້ອມ `customerId` ຂອງເຈົ້າຂອງເບີ ເພື່ອສະເໜີລວມ).
+- `POST /crm/customers/:id/merge`.
 
 ### UI admin
 
@@ -124,7 +126,7 @@
 ### API
 
 - ການຕັ້ງຄ່າຮ້ານ (endpoint ເດີມ): ເພີ່ມ 5 ຊ່ອງຂ້າງເທິງ.
-- `POST /customers/:id/points/adjust { points, note }` (`crm:write`): `points` ≠ 0, `note` ບັງຄັບ; ຍອດຈະຕິດລົບ → `409 POINTS_INVALID (INSUFFICIENT)`; ບັນທຶກ audit.
+- `POST /crm/customers/:id/points/adjust { points, note }` (`crm:write`): `points` ≠ 0, `note` ບັງຄັບ; ຍອດຈະຕິດລົບ → `409 POINTS_INVALID (INSUFFICIENT)`; ບັນທຶກ audit.
 - `POST /orders`: ຮັບ `pointsToRedeem?`. `GET /orders/:id`: `pointsRedeemed`, `pointsDiscount`, `pointsEarned`.
 
 ### UI admin
@@ -145,7 +147,7 @@
 - **ຕັ້ງ PIN ໄດ້ສະເພາະຜ່ານລິ້ງລັບຂອງບິນເວັບ** ຂອງລູກຄ້າຄົນນັ້ນ ແລະ ສະເພາະເມື່ອຍັງບໍ່ມີ PIN. ການຮູ້ເບີຢ່າງດຽວຕັ້ງ PIN ບໍ່ໄດ້. ລູກຄ້າທີ່ຊື້ຜ່ານແຊັດຢ່າງດຽວ ຕ້ອງສັ່ງເວັບ 1 ບິນກ່ອນຈຶ່ງມີບັນຊີ (ແຕ້ມສະສົມຢູ່ແລ້ວ ເພາະຜູກດ້ວຍເບີ).
 - ເຂົ້າລະບົບຜິດ 5 ຄັ້ງຕິດກັນ → ລັອກ 15 ນາທີ (`429 MEMBER_LOCKED` + `retryAfterSeconds`). ສຳເລັດ = ລ້າງຕົວນັບ. ເບີບໍ່ມີ/ບໍ່ມີ PIN/PIN ຜິດ ຕອບຄືກັນ (`401 MEMBER_LOGIN_FAILED`). ມີ `StoreRateLimiter` ຕໍ່ IP ຕື່ມ.
 - Session: JWT (HS256, `MEMBER_JWT_SECRET`, 30 ວັນ) `{ sub: customerId, pv: pinVersion }`. API ກວດ `pv` ກັບຄ່າປັດຈຸບັນ. Route handler ຂອງ storefront ເກັບເປັນ cookie `oca_member` (httpOnly, SameSite=Lax, Secure ໃນ production) ແລະ ແນບເປັນ `Authorization: Bearer` ຕອນສົ່ງຕໍ່ຫາ API; browser ບໍ່ເຫັນ token.
-- ແອດມິນ reset PIN (`POST /customers/:id/pin/reset`, `crm:write`): ລ້າງ `pinHash` + ຕົວນັບ/ລັອກ, `pinVersion + 1` (session ເກົ່າໃຊ້ບໍ່ໄດ້), ບັນທຶກ audit. ລູກຄ້າຕັ້ງໃໝ່ຈາກລິ້ງບິນເວັບໃດກໍໄດ້ຂອງຕົນ.
+- ແອດມິນ reset PIN (`POST /crm/customers/:id/pin/reset`, `crm:write`): ລ້າງ `pinHash` + ຕົວນັບ/ລັອກ, `pinVersion + 1` (session ເກົ່າໃຊ້ບໍ່ໄດ້), ບັນທຶກ audit. ລູກຄ້າຕັ້ງໃໝ່ຈາກລິ້ງບິນເວັບໃດກໍໄດ້ຂອງຕົນ.
 - ແລກແຕ້ມເທິງເວັບ: ຕ້ອງມີ session ແລະ ເບີໃນຟອມ checkout ຕ້ອງກົງກັບເບີຂອງສະມາຊິກ (ບໍ່ກົງ → `POINTS_INVALID (PHONE_MISMATCH)`; ບໍ່ມີ session → `401`).
 
 ### API `/store/*`
