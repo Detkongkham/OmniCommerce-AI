@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { MEMBER_TIERS } from "../loyalty";
 
 /** ກຸ່ມ RFM (ລຳດັບ = ລຳດັບການສະແດງ). ກົດການຈັດກຸ່ມຢູ່ໃນ SQL ຂອງ API (customer-stats.sql.ts) */
 export const RFM_SEGMENTS = ["CHAMPION", "LOYAL", "NEW", "AT_RISK", "LOST", "REGULAR"] as const;
 export type RfmSegment = (typeof RFM_SEGMENTS)[number];
 
-export const CRM_CUSTOMER_SORTS = ["lastOrder", "spent", "created"] as const;
+export const CRM_CUSTOMER_SORTS = ["lastOrder", "spent", "points", "created"] as const;
 export type CrmCustomerSort = (typeof CRM_CUSTOMER_SORTS)[number];
 
 const pageShape = {
@@ -16,6 +17,7 @@ export const crmCustomerListQuerySchema = z.object({
   ...pageShape,
   q: z.string().trim().max(100).optional(),
   segment: z.enum(RFM_SEGMENTS).optional(),
+  tier: z.enum(MEMBER_TIERS).optional(),
   sort: z.enum(CRM_CUSTOMER_SORTS).default("lastOrder"),
 });
 export type CrmCustomerListQuery = z.infer<typeof crmCustomerListQuerySchema>;
@@ -49,3 +51,15 @@ export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
 
 export const mergeCustomerSchema = z.strictObject({ sourceId: z.string().min(1) });
 export type MergeCustomerInput = z.infer<typeof mergeCustomerSchema>;
+
+export const adjustPointsSchema = z.strictObject({
+  /** ບວກ = ເພີ່ມ, ລົບ = ຫັກ */
+  points: z
+    .number()
+    .int()
+    .min(-10_000_000)
+    .max(10_000_000)
+    .refine((value) => value !== 0, "ຕ້ອງບໍ່ແມ່ນ 0"),
+  note: z.string().trim().min(1).max(200),
+});
+export type AdjustPointsInput = z.infer<typeof adjustPointsSchema>;

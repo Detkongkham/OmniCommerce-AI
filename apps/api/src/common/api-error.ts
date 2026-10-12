@@ -70,6 +70,7 @@ const STATUS_BY_CODE: Record<ErrorCode, HttpStatus> = {
   FLASH_SALE_OVERLAP: HttpStatus.CONFLICT,
   FLASH_SALE_PRICE_INVALID: HttpStatus.CONFLICT,
   CUSTOMER_PHONE_TAKEN: HttpStatus.CONFLICT,
+  POINTS_INVALID: HttpStatus.CONFLICT,
 };
 
 export function statusOfCode(code: ErrorCode): HttpStatus {

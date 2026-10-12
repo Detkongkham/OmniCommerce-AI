@@ -77,6 +77,7 @@ export const ERROR_CODES = [
   "FLASH_SALE_PRICE_INVALID",
   // crm
   "CUSTOMER_PHONE_TAKEN",
+  "POINTS_INVALID",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

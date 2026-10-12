@@ -1,6 +1,7 @@
 import { Decimal } from "decimal.js";
 import { z } from "zod";
 import { STORE_UTC_OFFSET } from "../constants";
+import { loyaltyAmountSchema, tierRulesSchema } from "../loyalty";
 import { SLUG_PATTERN } from "../slug";
 import { MAX_PAYMENT_REMINDER_MINUTES } from "../payment-reminder";
 import { receivingAccountsSchema } from "./slips";
@@ -459,6 +460,8 @@ export const createOrderSchema = z
     reservationMinutes: reservationMinutesSchema.optional(),
     /** ໂຄດສ່ວນຫຼຸດ (ບິນລະ 1 ໂຄດ); server ກວດ ແລະ ຄິດສ່ວນຫຼຸດເອງ */
     couponCode: orderCouponCodeSchema.optional(),
+    /** ແຕ້ມທີ່ລູກຄ້າໃຊ້ຫັກໃນບິນນີ້; server ກວດຍອດແຕ້ມ ແລະ ເພດານເອງ */
+    pointsToRedeem: z.number().int().min(1).max(100_000_000).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.customerId !== undefined && value.customer !== undefined) {
@@ -488,6 +491,12 @@ export const updateStoreSettingsSchema = z
     reservationMinutes: reservationMinutesSchema.optional(),
     /** minutes before the reservation expires to send the Messenger payment reminder; null = off */
     paymentReminderMinutes: z.number().int().min(1).max(MAX_PAYMENT_REMINDER_MINUTES).nullable().optional(),
+    // ແຕ້ມ ແລະ ລະດັບສະມາຊິກ (3d)
+    loyaltyEnabled: z.boolean().optional(),
+    pointsEarnPer: loyaltyAmountSchema.optional(),
+    pointValue: loyaltyAmountSchema.optional(),
+    pointsMaxRedeemPercent: z.number().int().min(1).max(100).optional(),
+    tierRules: tierRulesSchema.optional(),
     receivingAccounts: receivingAccountsSchema.optional(),
     // transform ຢູ່ກ່ອນ nullable/optional: ໃຫ້ key ຍັງເປັນ optional ໃນ type ຂາອອກ (ວ່າງ = null)
     paymentInstructions: z

@@ -5,6 +5,7 @@ export * from "./schemas/role";
 export * from "./schemas/staff";
 export * from "./order-totals";
 export * from "./slug";
+export * from "./loyalty";
 export * from "./schemas/inventory";
 export * from "./error-codes";
 export * from "./schemas/inbox";
