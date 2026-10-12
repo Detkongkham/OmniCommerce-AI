@@ -17,7 +17,7 @@ import {
 } from "@oca/ui";
 import { AlertCircle, ArrowLeft, Combine, MessageSquare, Pencil } from "lucide-react";
 import Link from "next/link";
-import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { ServerPager } from "@/components/common/server-pager";
 import { OrderStatusPill } from "@/components/orders/order-status";
@@ -238,11 +238,11 @@ function OrdersPanel({ customerId, onTotal }: { customerId: string; onTotal: (to
   const rows = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
 
-  const [seenTotal, setSeenTotal] = useState<number | null>(null);
-  if (query.data && seenTotal !== total) {
-    setSeenTotal(total);
-    onTotal(total);
-  }
+  // ບອກຈຳນວນບິນຈິງໃຫ້ປ້າຍແຖບ (state ຂອງ component ແມ່: ຕ້ອງຢູ່ໃນ effect ບໍ່ແມ່ນລະຫວ່າງ render)
+  const loadedTotal = query.data?.total;
+  useEffect(() => {
+    if (loadedTotal !== undefined) onTotal(loadedTotal);
+  }, [loadedTotal, onTotal]);
 
   if (query.isError) {
     return (

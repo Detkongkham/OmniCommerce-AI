@@ -136,3 +136,8 @@ pnpm --filter @oca/database db:deploy     # ລັນ migration (production)
 | `AuditLog` | ບັນທຶກແບບເພີ່ມຢ່າງດຽວ: action, entity, before/after (JSON), ip |
 
 Seed (`pnpm db:seed`) ສ້າງ role OWNER (ລະບົບ), MANAGER, CHAT_ADMIN, WAREHOUSE, ACCOUNTANT ແລະ ຜູ້ໃຊ້ OWNER ຈາກ `SEED_OWNER_EMAIL` / `SEED_OWNER_PASSWORD`. Run ຊ້ຳໄດ້: sync permission ຂອງ OWNER ທຸກຄັ້ງ, ບໍ່ຂຽນທັບ role ອື່ນ ຫຼື ລະຫັດຜ່ານທີ່ມີຢູ່ແລ້ວ.
+
+## CRM (Phase 3d)
+
+* `Customer.note`: ບັນທຶກພາຍໃນຂອງແອດມິນ. ລູກຄ້າໜຶ່ງຄົນຖືກລະບຸດ້ວຍ `phone` (ເວັບ, ແຊັດ) ຫຼື `facebookUserId` (CF); ລູກຄ້າຊ້ຳລວມໄດ້ທີ່ໜ້າ `/customers` (ຍ້າຍ `Order` ແລະ `Conversation` ແລ້ວລຶບແຖວທີ່ຊ້ຳ).
+* ສະຖິຕິການຊື້ ແລະ ກຸ່ມ RFM **ບໍ່ເກັບລົງຕາຕະລາງ**: ຄິດສົດຈາກ `Order` ທີ່ສະຖານະ `PAID`/`PACKING`/`SHIPPED`/`COMPLETED` (ມູນຄ່າ = `subtotal`) ດ້ວຍ CTE ດຽວໃນ `apps/api/src/modules/crm/customer-stats.sql.ts`.
