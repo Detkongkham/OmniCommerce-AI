@@ -14,13 +14,14 @@ export type PointEntryType = (typeof POINT_ENTRY_TYPES)[number];
 export const POINTS_REJECT_REASONS = ["DISABLED", "NO_CUSTOMER", "INSUFFICIENT", "OVER_CAP", "PHONE_MISMATCH"] as const;
 export type PointsRejectReason = (typeof POINTS_REJECT_REASONS)[number];
 
-export interface TierRule {
+// type (ບໍ່ແມ່ນ interface): ໃຫ້ໃຊ້ເປັນຄ່າ JSON ຂອງ Prisma ໄດ້ໂດຍບໍ່ຕ້ອງ cast
+export type TierRule = {
   tier: MemberTier;
   /** ຍອດຊື້ 12 ເດືອນຂັ້ນຕ່ຳ (baseCurrency) */
   minSpend: string;
   /** ຕົວຄູນແຕ້ມ 1–10 */
   multiplier: string;
-}
+};
 
 export const DEFAULT_TIER_RULES: readonly TierRule[] = [
   { tier: "BRONZE", minSpend: "0", multiplier: "1" },

@@ -1,9 +1,11 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import {
+  type AdjustPointsInput,
   type CrmCustomerListQuery,
   type CrmPageQuery,
   type MergeCustomerInput,
   type UpdateCustomerInput,
+  adjustPointsSchema,
   crmCustomerListQuerySchema,
   crmPageQuerySchema,
   mergeCustomerSchema,
@@ -48,6 +50,24 @@ export class CrmCustomersController {
   @RequirePermissions("crm:read")
   conversations(@Param("id") id: string) {
     return this.customers.conversations(id);
+  }
+
+  @Get(":id/points")
+  @RequirePermissions("crm:read")
+  points(@Param("id") id: string, @Query(new ZodValidationPipe(crmPageQuerySchema)) query: CrmPageQuery) {
+    return this.customers.points(id, query);
+  }
+
+  @Post(":id/points/adjust")
+  @HttpCode(200)
+  @RequirePermissions("crm:write")
+  adjustPoints(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(adjustPointsSchema)) body: AdjustPointsInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.customers.adjustPoints(id, body, actor, req.ip);
   }
 
   @Patch(":id")

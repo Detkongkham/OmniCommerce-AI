@@ -97,11 +97,11 @@ describe("crm customers (e2e)", () => {
     it("ຈຳນວນຕໍ່ກຸ່ມ + ຄົນທີ່ຍັງບໍ່ເຄີຍຊື້", async () => {
       await seedSegments();
       const res = await request(server()).get("/crm/customers/segments").set(manager).expect(200);
-      expect(res.body).toEqual({ total: 7, noOrders: 1, segments: { CHAMPION: 1, LOYAL: 1, NEW: 1, AT_RISK: 1, LOST: 1, REGULAR: 1 } });
+      expect(res.body).toEqual({ total: 7, noOrders: 1, segments: { CHAMPION: 1, LOYAL: 1, NEW: 1, AT_RISK: 1, LOST: 1, REGULAR: 1 }, tiers: { BRONZE: 7, SILVER: 0, GOLD: 0, PLATINUM: 0 } });
     });
     it("ບໍ່ມີລູກຄ້າ: ທຸກຄ່າເປັນ 0", async () => {
       const res = await request(server()).get("/crm/customers/segments").set(manager).expect(200);
-      expect(res.body).toEqual({ total: 0, noOrders: 0, segments: { CHAMPION: 0, LOYAL: 0, NEW: 0, AT_RISK: 0, LOST: 0, REGULAR: 0 } });
+      expect(res.body).toEqual({ total: 0, noOrders: 0, segments: { CHAMPION: 0, LOYAL: 0, NEW: 0, AT_RISK: 0, LOST: 0, REGULAR: 0 }, tiers: { BRONZE: 0, SILVER: 0, GOLD: 0, PLATINUM: 0 } });
     });
   });
 

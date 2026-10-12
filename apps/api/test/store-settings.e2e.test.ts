@@ -37,6 +37,16 @@ describe("store settings (e2e)", () => {
       pricesIncludeVat: true,
       reservationMinutes: 30,
       paymentReminderMinutes: null,
+      loyaltyEnabled: false,
+      pointsEarnPer: "10000.00",
+      pointValue: "100.00",
+      pointsMaxRedeemPercent: 50,
+      tierRules: [
+        { tier: "BRONZE", minSpend: "0", multiplier: "1" },
+        { tier: "SILVER", minSpend: "2000000", multiplier: "1.25" },
+        { tier: "GOLD", minSpend: "5000000", multiplier: "1.5" },
+        { tier: "PLATINUM", minSpend: "10000000", multiplier: "2" },
+      ],
       paymentInstructions: null,
       receivingAccounts: [],
     });

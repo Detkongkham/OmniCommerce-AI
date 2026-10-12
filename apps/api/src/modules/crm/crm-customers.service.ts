@@ -1,18 +1,23 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { type Customer, Prisma, type PrismaClient } from "@oca/database";
+import { type Customer, Prisma, type PrismaClient, adjustPoints, customerSpend12m, loadLoyaltyConfig, recomputeTier } from "@oca/database";
 import {
+  type AdjustPointsInput,
   type CrmCustomerListQuery,
   type CrmPageQuery,
+  MEMBER_TIERS,
+  type MemberTier,
   type MergeCustomerInput,
   RFM_SEGMENTS,
   type RfmSegment,
   type UpdateCustomerInput,
+  nextTier,
 } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import { apiError } from "../../common/api-error";
 import type { AuthUser } from "../../common/auth-types";
 import { money } from "../../common/money";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
+import { pointsRejection } from "../../common/points-error";
 import { isUniqueViolation } from "../../common/prisma-errors";
 import { PRISMA } from "../../prisma/prisma.module";
 import { customerStatsCte } from "./customer-stats.sql";
@@ -29,12 +34,15 @@ export interface CrmCustomerListItemDto {
   lastPaidAt: Date | null;
   /** null = ຍັງບໍ່ເຄີຍຊື້ */
   segment: RfmSegment | null;
+  tier: MemberTier;
+  pointsBalance: number;
 }
 
 export interface CrmSegmentSummaryDto {
   total: number;
   noOrders: number;
   segments: Record<RfmSegment, number>;
+  tiers: Record<MemberTier, number>;
 }
 
 export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
@@ -48,6 +56,22 @@ export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
   conversationCount: number;
   /** ຄະແນນ 1–5; null = ຍັງບໍ່ເຄີຍຊື້ */
   rfm: { recency: number; frequency: number; monetary: number } | null;
+  /** ຍອດຊື້ 12 ເດືອນຫຼ້າສຸດ (ຕົວກຳນົດລະດັບ) */
+  spend12m: string;
+  /** ລະດັບຖັດໄປ ແລະ ຍອດທີ່ຕ້ອງຊື້ຕື່ມ; null = ລະດັບສູງສຸດແລ້ວ */
+  nextTier: { tier: MemberTier; remaining: string } | null;
+}
+
+export interface CrmPointEntryDto {
+  id: string;
+  type: string;
+  /** ມີເຄື່ອງໝາຍ: ບວກ = ໄດ້, ລົບ = ໃຊ້ */
+  points: number;
+  balanceAfter: number;
+  note: string | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  createdAt: Date;
 }
 
 export interface CrmCustomerOrderDto {
@@ -89,6 +113,8 @@ interface ListRow {
   totalSpent: Prisma.Decimal | null;
   lastPaidAt: Date | null;
   segment: RfmSegment | null;
+  tier: MemberTier;
+  pointsBalance: number;
 }
 
 const ZERO = new Prisma.Decimal(0);
@@ -96,6 +122,7 @@ const ZERO = new Prisma.Decimal(0);
 const ORDER_BY: Record<CrmCustomerListQuery["sort"], Prisma.Sql> = {
   lastOrder: Prisma.sql`r."lastPaidAt" DESC NULLS LAST, c."createdAt" DESC, c.id`,
   spent: Prisma.sql`COALESCE(r."totalSpent", 0) DESC, c."createdAt" DESC, c.id`,
+  points: Prisma.sql`c."pointsBalance" DESC, c."createdAt" DESC, c.id`,
   created: Prisma.sql`c."createdAt" DESC, c.id`,
 };
 
@@ -110,6 +137,8 @@ function toListItem(row: ListRow): CrmCustomerListItemDto {
     totalSpent: money(row.totalSpent ?? ZERO),
     lastPaidAt: row.lastPaidAt,
     segment: row.segment,
+    tier: row.tier,
+    pointsBalance: row.pointsBalance,
   };
 }
 
@@ -128,6 +157,7 @@ export class CrmCustomersService {
       conditions.push(Prisma.sql`(position(lower(${query.q}) in lower(c."name")) > 0 OR position(${query.q} in COALESCE(c."phone", '')) > 0)`);
     }
     if (query.segment) conditions.push(Prisma.sql`r.segment = ${query.segment}`);
+    if (query.tier) conditions.push(Prisma.sql`c."tier" = ${query.tier}::"MemberTier"`);
     const where = conditions.length > 0 ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}` : Prisma.empty;
     const cte = customerStatsCte(new Date());
     const { skip, take } = pageArgs(query.page, query.pageSize);
@@ -135,7 +165,7 @@ export class CrmCustomersService {
     const [rows, counted] = await Promise.all([
       this.prisma.$queryRaw<ListRow[]>(Prisma.sql`
         ${cte}
-        SELECT c.id, c."name", c."phone", c."email", c."createdAt",
+        SELECT c.id, c."name", c."phone", c."email", c."createdAt", c."tier"::text AS "tier", c."pointsBalance",
                r."orderCount", r."totalSpent", r."lastPaidAt", r.segment
         FROM "Customer" c LEFT JOIN rfm r ON r.id = c.id
         ${where}
@@ -149,27 +179,32 @@ export class CrmCustomersService {
   }
 
   async segments(): Promise<CrmSegmentSummaryDto> {
-    const [rows, total] = await Promise.all([
+    const [rows, total, tierRows] = await Promise.all([
       this.prisma.$queryRaw<{ segment: RfmSegment; count: number }[]>(Prisma.sql`
         ${customerStatsCte(new Date())}
         SELECT segment, COUNT(*)::int AS count FROM rfm GROUP BY segment`),
       this.prisma.customer.count(),
+      this.prisma.customer.groupBy({ by: ["tier"], _count: { _all: true } }),
     ]);
+    const tiers = Object.fromEntries(MEMBER_TIERS.map((tier) => [tier, 0])) as Record<MemberTier, number>;
+    for (const row of tierRows) tiers[row.tier] = row._count._all;
     const segments = Object.fromEntries(RFM_SEGMENTS.map((segment) => [segment, 0])) as Record<RfmSegment, number>;
     for (const row of rows) segments[row.segment] = row.count;
     const withOrders = rows.reduce((sum, row) => sum + row.count, 0);
-    return { total, noOrders: total - withOrders, segments };
+    return { total, noOrders: total - withOrders, segments, tiers };
   }
 
   async get(id: string): Promise<CrmCustomerDetailDto> {
     const customer = await this.prisma.customer.findUnique({ where: { id } });
     if (!customer) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
-    const [stats, openOrderCount, conversationCount] = await Promise.all([
+    const [stats, openOrderCount, conversationCount, spend12m, loyalty] = await Promise.all([
       this.prisma.$queryRaw<StatsRow[]>(Prisma.sql`
         ${customerStatsCte(new Date())}
         SELECT "orderCount", "totalSpent", "firstPaidAt", "lastPaidAt", r, f, m, segment FROM rfm WHERE id = ${id}`),
       this.prisma.order.count({ where: { customerId: id, status: "PENDING_PAYMENT" } }),
       this.prisma.conversation.count({ where: { customerId: id } }),
+      customerSpend12m(this.prisma, id),
+      loadLoyaltyConfig(this.prisma),
     ]);
     const row = stats[0];
     return {
@@ -189,6 +224,10 @@ export class CrmCustomersService {
       conversationCount,
       segment: row?.segment ?? null,
       rfm: row ? { recency: row.r, frequency: row.f, monetary: row.m } : null,
+      tier: customer.tier,
+      pointsBalance: customer.pointsBalance,
+      spend12m,
+      nextTier: nextTier(loyalty.tierRules, spend12m),
     };
   }
 
@@ -220,6 +259,54 @@ export class CrmCustomersService {
       orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }],
       take: 50,
     });
+  }
+
+  async points(id: string, query: CrmPageQuery): Promise<Page<CrmPointEntryDto>> {
+    await this.requireCustomer(id);
+    const where = { customerId: id };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.pointEntry.findMany({
+        where,
+        include: { order: { select: { orderNumber: true } } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        ...pageArgs(query.page, query.pageSize),
+      }),
+      this.prisma.pointEntry.count({ where }),
+    ]);
+    return toPage(
+      rows.map((row) => ({
+        id: row.id,
+        type: row.type,
+        points: row.points,
+        balanceAfter: row.balanceAfter,
+        note: row.note,
+        orderId: row.orderId,
+        orderNumber: row.order?.orderNumber ?? null,
+        createdAt: row.createdAt,
+      })),
+      total,
+      query.page,
+      query.pageSize,
+    );
+  }
+
+  async adjustPoints(id: string, input: AdjustPointsInput, actor: AuthUser, ip: string | undefined): Promise<CrmCustomerDetailDto> {
+    let balance: number | null;
+    try {
+      balance = await this.prisma.$transaction((tx) => adjustPoints(tx, { customerId: id, points: input.points, note: input.note, actorId: actor.id }));
+    } catch (error) {
+      throw pointsRejection(error);
+    }
+    if (balance === null) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
+    await this.audit.record({
+      userId: actor.id,
+      action: "customer.points.adjust",
+      entity: "Customer",
+      entityId: id,
+      after: { points: input.points, balance, note: input.note },
+      ip,
+    });
+    return this.get(id);
   }
 
   private async requireCustomer(id: string): Promise<void> {
@@ -254,7 +341,7 @@ export class CrmCustomersService {
     return this.get(id);
   }
 
-  /** ລວມ source ເຂົ້າ target: ຍ້າຍບິນ + ແຊັດ, ເຕີມຊ່ອງທີ່ target ຍັງຫວ່າງ, ລຶບ source (spec 3d §2) */
+  /** ລວມ source ເຂົ້າ target: ຍ້າຍບິນ + ແຊັດ + ແຕ້ມ, ເຕີມຊ່ອງທີ່ target ຍັງຫວ່າງ, ລຶບ source (spec 3d §2) */
   async merge(targetId: string, input: MergeCustomerInput, actor: AuthUser, ip: string | undefined): Promise<CrmCustomerDetailDto> {
     if (input.sourceId === targetId) throw new BadRequestException("Cannot merge a customer into itself");
     const result = await this.prisma.$transaction(async (tx) => {
@@ -266,6 +353,7 @@ export class CrmCustomersService {
 
       const orders = await tx.order.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
       const conversations = await tx.conversation.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
+      await tx.pointEntry.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
       // ລຶບ source ກ່ອນ ເພື່ອປ່ອຍ unique (phone, facebookUserId) ໃຫ້ target ຮັບໄດ້
       await tx.customer.delete({ where: { id: source.id } });
       await tx.customer.update({
@@ -275,8 +363,11 @@ export class CrmCustomersService {
           email: target.email ?? source.email,
           facebookUserId: target.facebookUserId ?? source.facebookUserId,
           note: target.note ?? source.note,
+          pointsBalance: target.pointsBalance + source.pointsBalance,
         },
       });
+      // ບິນທີ່ຍ້າຍມາປ່ຽນຍອດຊື້ 12 ເດືອນຂອງ target
+      await recomputeTier(tx, target.id, await loadLoyaltyConfig(tx));
       return { source, movedOrders: orders.count, movedConversations: conversations.count };
     });
     await this.audit.record({
@@ -285,7 +376,7 @@ export class CrmCustomersService {
       entity: "Customer",
       entityId: targetId,
       before: { source: { id: result.source.id, ...auditOf(result.source), facebookUserId: result.source.facebookUserId } },
-      after: { movedOrders: result.movedOrders, movedConversations: result.movedConversations },
+      after: { movedOrders: result.movedOrders, movedConversations: result.movedConversations, movedPoints: result.source.pointsBalance },
       ip,
     });
     return this.get(targetId);

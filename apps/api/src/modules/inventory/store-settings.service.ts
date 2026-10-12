@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Prisma, type PrismaClient } from "@oca/database";
-import { type ReceivingAccount, type UpdateStoreSettingsInput, receivingAccountSchema } from "@oca/shared";
+import { type ReceivingAccount, type TierRule, type UpdateStoreSettingsInput, parseTierRules, receivingAccountSchema } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import type { AuthUser } from "../../common/auth-types";
 import { PRISMA } from "../../prisma/prisma.module";
@@ -15,6 +15,14 @@ export interface StoreSettingsDto {
   reservationMinutes: number;
   /** null = payment reminders off */
   paymentReminderMinutes: number | null;
+  /** ແຕ້ມ ແລະ ລະດັບສະມາຊິກ: ປິດ = ບໍ່ໃຫ້ແຕ້ມ ແລະ ແລກບໍ່ໄດ້ (ແຕ້ມທີ່ມີຢູ່ບໍ່ຫາຍ) */
+  loyaltyEnabled: boolean;
+  /** ກີບຕໍ່ 1 ແຕ້ມທີ່ໄດ້ */
+  pointsEarnPer: string;
+  /** ກີບຕໍ່ 1 ແຕ້ມຕອນແລກ */
+  pointValue: string;
+  pointsMaxRedeemPercent: number;
+  tierRules: TierRule[];
   paymentInstructions: string | null;
   receivingAccounts: ReceivingAccount[];
 }
@@ -36,6 +44,11 @@ export function toStoreSettingsDto(row: StoreSettingRow): StoreSettingsDto {
     pricesIncludeVat: row.pricesIncludeVat,
     reservationMinutes: row.reservationMinutes,
     paymentReminderMinutes: row.paymentReminderMinutes,
+    loyaltyEnabled: row.loyaltyEnabled,
+    pointsEarnPer: row.pointsEarnPer.toFixed(2),
+    pointValue: row.pointValue.toFixed(2),
+    pointsMaxRedeemPercent: row.pointsMaxRedeemPercent,
+    tierRules: parseTierRules(row.tierRules),
     paymentInstructions: row.paymentInstructions,
     receivingAccounts: parseReceivingAccounts(row.receivingAccounts),
   };
@@ -63,6 +76,11 @@ export class StoreSettingsService {
         pricesIncludeVat: input.pricesIncludeVat,
         reservationMinutes: input.reservationMinutes,
         paymentReminderMinutes: input.paymentReminderMinutes,
+        loyaltyEnabled: input.loyaltyEnabled,
+        pointsEarnPer: input.pointsEarnPer,
+        pointValue: input.pointValue,
+        pointsMaxRedeemPercent: input.pointsMaxRedeemPercent,
+        tierRules: input.tierRules as Prisma.InputJsonValue | undefined,
         paymentInstructions: input.paymentInstructions,
         receivingAccounts: input.receivingAccounts as Prisma.InputJsonValue | undefined,
       },
