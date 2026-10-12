@@ -186,4 +186,84 @@ describe("crm customers (e2e)", () => {
       await request(server()).get("/crm/customers/nope/conversations").set(manager).expect(404);
     });
   });
+
+  describe("PATCH /crm/customers/:id", () => {
+    it("ແກ້ຊື່/ເບີ/ອີເມວ/ບັນທຶກ + audit; ຄ່າເປົ່າ = ລ້າງ", async () => {
+      const row = await db.customer.create({ data: { name: "Old", phone: "02011111111", email: "old@x.co" } });
+      const res = await request(server())
+        .patch(`/crm/customers/${row.id}`)
+        .set(manager)
+        .send({ name: " ມະລິ ", phone: "02022222222", email: "", note: "ລູກຄ້າປະຈຳ" })
+        .expect(200);
+      expect(res.body).toMatchObject({ id: row.id, name: "ມະລິ", phone: "02022222222", email: null, note: "ລູກຄ້າປະຈຳ" });
+      const audit = await db.auditLog.findFirstOrThrow({ where: { action: "customer.update", entityId: row.id } });
+      expect(audit.before).toMatchObject({ name: "Old", phone: "02011111111" });
+      expect(audit.after).toMatchObject({ name: "ມະລິ", phone: "02022222222" });
+    });
+
+    it("ເບີຊ້ຳກັບຄົນອື່ນ → 409 CUSTOMER_PHONE_TAKEN ພ້ອມ customerId; ເບີເດີມຂອງຕົນເອງ ຜ່ານ", async () => {
+      const owner = await db.customer.create({ data: { name: "Owner", phone: "02033333333" } });
+      const other = await db.customer.create({ data: { name: "Other", phone: "02044444444" } });
+      const res = await request(server()).patch(`/crm/customers/${other.id}`).set(manager).send({ phone: "02033333333" }).expect(409);
+      expect(res.body).toMatchObject({ code: "CUSTOMER_PHONE_TAKEN", customerId: owner.id });
+      await request(server()).patch(`/crm/customers/${other.id}`).set(manager).send({ phone: "02044444444", name: "Other 2" }).expect(200);
+    });
+
+    it("body ຜິດ → 400; ບໍ່ພົບ → 404; crm:read ຢ່າງດຽວ → 403", async () => {
+      const row = await db.customer.create({ data: { name: "X" } });
+      await request(server()).patch(`/crm/customers/${row.id}`).set(manager).send({}).expect(400);
+      await request(server()).patch(`/crm/customers/${row.id}`).set(manager).send({ phone: "abc" }).expect(400);
+      await request(server()).patch("/crm/customers/nope").set(manager).send({ name: "Y" }).expect(404);
+      await request(server()).patch(`/crm/customers/${row.id}`).set(chat).send({ name: "Y" }).expect(403);
+    });
+  });
+
+  describe("POST /crm/customers/:id/merge", () => {
+    it("ຍ້າຍບິນ + ແຊັດ, ເຕີມຊ່ອງທີ່ຫວ່າງຂອງ target, ລຶບ source, audit", async () => {
+      const target = await db.customer.create({ data: { name: "ມະລິ (ເວັບ)", phone: "02055550001" } });
+      const source = await db.customer.create({ data: { name: "Mali FB", facebookUserId: "FB_1", email: "mali@x.co", note: "ຈາກ Live" } });
+      await seedCustomerOrders(db, target.id, 1, 3, "100.00");
+      await seedCustomerOrders(db, source.id, 2, 5, "200.00");
+      const conversation = await seedConversation(db, { customerId: source.id });
+
+      const res = await request(server()).post(`/crm/customers/${target.id}/merge`).set(manager).send({ sourceId: source.id }).expect(200);
+      expect(res.body).toMatchObject({
+        id: target.id,
+        name: "ມະລິ (ເວັບ)",
+        phone: "02055550001",
+        email: "mali@x.co",
+        note: "ຈາກ Live",
+        facebookLinked: true,
+        orderCount: 3,
+        totalSpent: "500.00",
+        conversationCount: 1,
+      });
+      expect(await db.customer.findUnique({ where: { id: source.id } })).toBeNull();
+      expect(await db.order.count({ where: { customerId: target.id } })).toBe(3);
+      expect((await db.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).customerId).toBe(target.id);
+      const audit = await db.auditLog.findFirstOrThrow({ where: { action: "customer.merge", entityId: target.id } });
+      expect(audit.before).toMatchObject({ source: { id: source.id, name: "Mali FB", facebookUserId: "FB_1" } });
+      expect(audit.after).toMatchObject({ movedOrders: 2, movedConversations: 1 });
+    });
+
+    it("ທັງສອງມີເບີ/Facebook: target ຮັກສາຂອງຕົນ, ຂອງ source ຖືກຖິ້ມ", async () => {
+      const target = await db.customer.create({ data: { name: "T", phone: "02011111111", facebookUserId: "FB_T", note: "T note" } });
+      const source = await db.customer.create({ data: { name: "S", phone: "02022222222", facebookUserId: "FB_S", note: "S note" } });
+      const res = await request(server()).post(`/crm/customers/${target.id}/merge`).set(manager).send({ sourceId: source.id }).expect(200);
+      expect(res.body).toMatchObject({ phone: "02011111111", note: "T note" });
+      expect((await db.customer.findUniqueOrThrow({ where: { id: target.id } })).facebookUserId).toBe("FB_T");
+      // ເບີທີ່ຖືກຖິ້ມ ວ່າງໃຫ້ລູກຄ້າໃໝ່ໃຊ້ໄດ້
+      expect(await db.customer.findUnique({ where: { phone: "02022222222" } })).toBeNull();
+    });
+
+    it("ລວມເຂົ້າຕົວເອງ → 400; ບໍ່ພົບ → 404; crm:read ຢ່າງດຽວ → 403; ລົ້ມ = ບໍ່ມີຫຍັງປ່ຽນ", async () => {
+      const target = await db.customer.create({ data: { name: "T" } });
+      await request(server()).post(`/crm/customers/${target.id}/merge`).set(manager).send({ sourceId: target.id }).expect(400);
+      await request(server()).post(`/crm/customers/${target.id}/merge`).set(manager).send({ sourceId: "nope" }).expect(404);
+      await request(server()).post("/crm/customers/nope/merge").set(manager).send({ sourceId: target.id }).expect(404);
+      await request(server()).post(`/crm/customers/${target.id}/merge`).set(chat).send({ sourceId: "x" }).expect(403);
+      expect(await db.customer.count()).toBe(1);
+      expect(await db.auditLog.count({ where: { action: "customer.merge" } })).toBe(0);
+    });
+  });
 });

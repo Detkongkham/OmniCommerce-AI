@@ -3,6 +3,7 @@ import {
   BarChart3,
   Boxes,
   ClipboardList,
+  Contact,
   FolderTree,
   Gauge,
   type LucideIcon,
@@ -57,6 +58,11 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "live",
     labelKey: "nav.group.live",
     items: [{ href: "/live", labelKey: "nav.live", icon: Radio, permission: "live-cf:read" }],
+  },
+  {
+    id: "customers",
+    labelKey: "nav.group.customers",
+    items: [{ href: "/customers", labelKey: "nav.customers", icon: Contact, permission: "crm:read" }],
   },
   {
     id: "marketing",

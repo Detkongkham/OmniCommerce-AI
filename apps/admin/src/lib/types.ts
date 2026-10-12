@@ -7,6 +7,7 @@ import type {
   MessageDirection,
   MessageStatus,
   OrderStatus,
+  RfmSegment,
   Permission,
   ShipmentNotifyStatus,
   ProductStatus,
@@ -572,4 +573,53 @@ export interface FlashSaleDto {
   isActive: boolean;
   items: FlashSaleItemDto[];
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// CRM
+// ---------------------------------------------------------------------------
+export interface CrmCustomerListItemDto {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  createdAt: string;
+  orderCount: number;
+  totalSpent: string;
+  lastPaidAt: string | null;
+  segment: RfmSegment | null;
+}
+
+export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
+  note: string | null;
+  facebookLinked: boolean;
+  averageOrder: string;
+  firstPaidAt: string | null;
+  openOrderCount: number;
+  conversationCount: number;
+  rfm: { recency: number; frequency: number; monetary: number } | null;
+}
+
+export interface CrmSegmentSummaryDto {
+  total: number;
+  noOrders: number;
+  segments: Record<RfmSegment, number>;
+}
+
+export interface CrmCustomerOrderDto {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  channel: SalesChannel;
+  total: string;
+  createdAt: string;
+}
+
+export interface CrmCustomerConversationDto {
+  id: string;
+  channel: SalesChannel;
+  displayName: string;
+  status: ConversationStatus;
+  lastMessageAt: string;
+  lastMessagePreview: string | null;
 }

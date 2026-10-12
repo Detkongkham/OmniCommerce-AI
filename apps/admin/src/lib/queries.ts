@@ -28,6 +28,9 @@ import type {
   TransferStockInput,
   UpdateCategoryInput,
   UpdateConversationInput,
+  UpdateCustomerInput,
+  CrmCustomerSort,
+  RfmSegment,
   UpdateProductInput,
   UpdateStaffInput,
   UpdateStoreSettingsInput,
@@ -56,6 +59,11 @@ import type {
   CategoryDto,
   CfCommentDto,
   CouponDto,
+  CrmCustomerConversationDto,
+  CrmCustomerDetailDto,
+  CrmCustomerListItemDto,
+  CrmCustomerOrderDto,
+  CrmSegmentSummaryDto,
   FlashSaleDto,
   CourierDto,
   FulfillmentDetailDto,
@@ -98,6 +106,7 @@ export const queryKeys = {
   variants: ["variants"] as const,
   orders: ["orders"] as const,
   customers: ["customers"] as const,
+  crmCustomers: ["crm-customers"] as const,
   conversations: ["conversations"] as const,
   assignees: ["inbox-assignees"] as const,
   liveSessions: ["live-sessions"] as const,
@@ -1050,5 +1059,72 @@ export function useAuditFacets() {
     queryKey: [...reportKeys.auditLogs, "facets"],
     queryFn: () => apiFetch<{ actions: string[]; entities: string[] }>("/audit-logs/facets"),
     staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CRM
+// ---------------------------------------------------------------------------
+export interface CrmCustomerListParams {
+  q?: string;
+  segment?: RfmSegment | "";
+  sort?: CrmCustomerSort;
+  page: number;
+  pageSize: number;
+}
+
+export function useCrmCustomers(params: CrmCustomerListParams, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: [...queryKeys.crmCustomers, "list", params],
+    queryFn: () => apiFetch<Page<CrmCustomerListItemDto>>(`/crm/customers${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+    enabled: options.enabled ?? true,
+  });
+}
+
+export function useCrmSegments() {
+  return useQuery({ queryKey: [...queryKeys.crmCustomers, "segments"], queryFn: () => apiFetch<CrmSegmentSummaryDto>("/crm/customers/segments") });
+}
+
+export function useCrmCustomer(id: string) {
+  return useQuery({
+    queryKey: [...queryKeys.crmCustomers, "detail", id],
+    queryFn: () => apiFetch<CrmCustomerDetailDto>(`/crm/customers/${encodeURIComponent(id)}`),
+    retry: false,
+  });
+}
+
+export function useCrmCustomerOrders(id: string, params: { page: number; pageSize: number }) {
+  return useQuery({
+    queryKey: [...queryKeys.crmCustomers, "orders", id, params],
+    queryFn: () => apiFetch<Page<CrmCustomerOrderDto>>(`/crm/customers/${encodeURIComponent(id)}/orders${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useCrmCustomerConversations(id: string, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: [...queryKeys.crmCustomers, "conversations", id],
+    queryFn: () => apiFetch<CrmCustomerConversationDto[]>(`/crm/customers/${encodeURIComponent(id)}/conversations`),
+    enabled: options.enabled ?? true,
+  });
+}
+
+/** ຊື່/ເບີຂອງລູກຄ້າຢູ່ໃນບິນ, ແຊັດ ແລະ ຕົວຄົ້ນລູກຄ້າ → invalidate ທັງໝົດ */
+export function useUpdateCrmCustomer() {
+  const invalidate = useInvalidate(queryKeys.crmCustomers, queryKeys.customers, queryKeys.orders, queryKeys.conversations);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateCustomerInput }) =>
+      apiFetch<CrmCustomerDetailDto>(`/crm/customers/${encodeURIComponent(id)}`, { method: "PATCH", body: input }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useMergeCrmCustomer() {
+  const invalidate = useInvalidate(queryKeys.crmCustomers, queryKeys.customers, queryKeys.orders, queryKeys.conversations);
+  return useMutation({
+    mutationFn: ({ targetId, sourceId }: { targetId: string; sourceId: string }) =>
+      apiFetch<CrmCustomerDetailDto>(`/crm/customers/${encodeURIComponent(targetId)}/merge`, { method: "POST", body: { sourceId } }),
+    onSuccess: invalidate,
   });
 }

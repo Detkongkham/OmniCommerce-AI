@@ -1,7 +1,9 @@
+import { crmEn, crmLo } from "./crm-dictionary";
 import { postsEn, postsLo } from "./posts-dictionary";
 
 const lo = {
   ...postsLo,
+  ...crmLo,
   "app.name": "OmniCommerce AI",
 
   "nav.home": "ໜ້າຫຼັກ",
@@ -1258,6 +1260,7 @@ export type Translate = (key: TranslationKey, params?: TranslateParams) => strin
 
 const en: Record<TranslationKey, string> = {
   ...postsEn,
+  ...crmEn,
   "app.name": "OmniCommerce AI",
 
   "nav.home": "Home",

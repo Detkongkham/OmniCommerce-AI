@@ -36,7 +36,13 @@ describe("visibleNavGroups", () => {
 
   it("ບໍ່ມີສິດ: ບໍ່ມີກຸ່ມເລີຍ (ກຸ່ມທີ່ບໍ່ມີລາຍການບໍ່ຖືກ render)", () => {
     expect(visibleNavGroups([])).toEqual([]);
-    expect(visibleNavGroups(["crm:read"])).toEqual([]);
+    expect(visibleNavGroups(["payments:read"])).toEqual([]);
+  });
+
+  it("crm:read ເຫັນກຸ່ມລູກຄ້າ", () => {
+    const groups = visibleNavGroups(["crm:read"]);
+    expect(groups.map((group) => group.id)).toEqual(["customers"]);
+    expect(groups[0]?.items.map((item) => item.href)).toEqual(["/customers"]);
   });
 
   it("ຜູ້ມີ inbox:read ເຫັນກຸ່ມສົນທະນາ (/inbox) ແຕ່ landing ຫຼັງ login ຍັງເປັນໜ້າທຳອິດຂອງກຸ່ມທຳອິດ", () => {
@@ -124,6 +130,6 @@ describe("firstAllowedHref (ໜ້າຫຼັງ login)", () => {
 
   it("ບໍ່ມີສິດທີ່ເຫັນໃນເມນູເລີຍ: null", () => {
     expect(firstAllowedHref([])).toBeNull();
-    expect(firstAllowedHref(["crm:read", "payments:read"])).toBeNull();
+    expect(firstAllowedHref(["payments:read", "costs:read"])).toBeNull();
   });
 });

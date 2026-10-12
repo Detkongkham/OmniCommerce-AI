@@ -1,6 +1,17 @@
-import { Controller, Get, Inject, Param, Query } from "@nestjs/common";
-import { type CrmCustomerListQuery, type CrmPageQuery, crmCustomerListQuerySchema, crmPageQuerySchema } from "@oca/shared";
-import { RequirePermissions } from "../../common/decorators";
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, Req } from "@nestjs/common";
+import {
+  type CrmCustomerListQuery,
+  type CrmPageQuery,
+  type MergeCustomerInput,
+  type UpdateCustomerInput,
+  crmCustomerListQuerySchema,
+  crmPageQuerySchema,
+  mergeCustomerSchema,
+  updateCustomerSchema,
+} from "@oca/shared";
+import type { Request } from "express";
+import type { AuthUser } from "../../common/auth-types";
+import { CurrentUser, RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { CrmCustomersService } from "./crm-customers.service";
 
@@ -37,5 +48,28 @@ export class CrmCustomersController {
   @RequirePermissions("crm:read")
   conversations(@Param("id") id: string) {
     return this.customers.conversations(id);
+  }
+
+  @Patch(":id")
+  @RequirePermissions("crm:write")
+  update(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateCustomerSchema)) body: UpdateCustomerInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.customers.update(id, body, actor, req.ip);
+  }
+
+  @Post(":id/merge")
+  @HttpCode(200)
+  @RequirePermissions("crm:write")
+  merge(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(mergeCustomerSchema)) body: MergeCustomerInput,
+    @CurrentUser() actor: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.customers.merge(id, body, actor, req.ip);
   }
 }
