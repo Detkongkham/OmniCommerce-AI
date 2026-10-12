@@ -11,10 +11,10 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 const items: CrmCustomerListItemDto[] = [
-  { id: "c1", name: "Mali", phone: "02055550001", email: null, createdAt: "2026-09-01T00:00:00.000Z", orderCount: 12, totalSpent: "1250000.00", lastPaidAt: "2026-10-05T05:30:00.000Z", segment: "CHAMPION" },
-  { id: "c2", name: "Kham", phone: null, email: null, createdAt: "2026-10-01T00:00:00.000Z", orderCount: 0, totalSpent: "0.00", lastPaidAt: null, segment: null },
+  { id: "c1", name: "Mali", phone: "02055550001", email: null, createdAt: "2026-09-01T00:00:00.000Z", orderCount: 12, totalSpent: "1250000.00", lastPaidAt: "2026-10-05T05:30:00.000Z", segment: "CHAMPION", tier: "GOLD", pointsBalance: 1320 },
+  { id: "c2", name: "Kham", phone: null, email: null, createdAt: "2026-10-01T00:00:00.000Z", orderCount: 0, totalSpent: "0.00", lastPaidAt: null, segment: null, tier: "BRONZE", pointsBalance: 0 },
 ];
-const summary: CrmSegmentSummaryDto = { total: 9, noOrders: 2, segments: { CHAMPION: 1, LOYAL: 2, NEW: 1, AT_RISK: 3, LOST: 0, REGULAR: 0 } };
+const summary: CrmSegmentSummaryDto = { total: 9, noOrders: 2, segments: { CHAMPION: 1, LOYAL: 2, NEW: 1, AT_RISK: 3, LOST: 0, REGULAR: 0 }, tiers: { BRONZE: 6, SILVER: 2, GOLD: 1, PLATINUM: 0 } };
 
 function mockApi(page: Page<CrmCustomerListItemDto> = { items, total: 2, page: 1, pageSize: 10 }) {
   vi.mocked(apiFetch).mockImplementation((async (path: string) => (path.startsWith("/crm/customers/segments") ? summary : page)) as typeof apiFetch);
@@ -76,5 +76,18 @@ describe("CustomerList", () => {
     vi.mocked(apiFetch).mockRejectedValue(new Error("down"));
     renderWithProviders(<CustomerList />);
     expect(await screen.findByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+
+  it("ລະດັບ ແລະ ແຕ້ມ ໃນຕາຕະລາງ; ກັ່ນຕອງຕາມລະດັບ ກັບໄປໜ້າ 1", async () => {
+    const { user } = renderWithProviders(<CustomerList />);
+    const first = await screen.findByTestId("row-customer-c1");
+    expect(within(first).getByText("Gold")).toBeInTheDocument();
+    expect(within(first).getByText("1,320")).toBeInTheDocument();
+    expect(within(screen.getByTestId("row-customer-c2")).getByText("Bronze")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Filter by tier"), "GOLD");
+    await waitFor(() => expect(listUrls().at(-1)).toBe("/crm/customers?tier=GOLD&sort=lastOrder&page=1&pageSize=10"));
+    await user.selectOptions(screen.getByLabelText("Sort by"), "points");
+    await waitFor(() => expect(listUrls().at(-1)).toBe("/crm/customers?tier=GOLD&sort=points&page=1&pageSize=10"));
   });
 });

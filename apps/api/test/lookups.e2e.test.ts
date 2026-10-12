@@ -129,7 +129,7 @@ describe("lookups: variant search, customers, date filters (e2e)", () => {
     it("ຮຽງຕາມຊື່; q ຄົ້ນຊື່ / ໂທ / email (ບໍ່ສົນຕົວພິມ); pagination", async () => {
       const all = await request(server()).get("/customers").set(reader).expect(200);
       expect(all.body.total).toBe(3);
-      expect(all.body.items[0]).toEqual({ id: expect.any(String), name: "Anna", phone: null, email: "anna@example.com" });
+      expect(all.body.items[0]).toEqual({ id: expect.any(String), name: "Anna", phone: null, email: "anna@example.com", pointsBalance: 0 });
       const names = async (q: string) =>
         (await request(server()).get(`/customers?q=${encodeURIComponent(q)}`).set(reader).expect(200)).body.items.map(
           (c: { name: string }) => c.name,

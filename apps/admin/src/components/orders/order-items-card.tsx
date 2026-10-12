@@ -1,7 +1,7 @@
 "use client";
 
 import { Card, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@oca/ui";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatQuantity } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
 import type { OrderDetailDto } from "@/lib/types";
 
@@ -56,6 +56,12 @@ export function OrderItemsCard({ order, showCost }: { order: OrderDetailDto; sho
             <dd className="tabular-nums">{formatMoney(order.couponDiscount)}</dd>
           </div>
         ) : null}
+        {(order.pointsRedeemed ?? 0) > 0 ? (
+          <div className="flex justify-between text-xs text-ink-secondary">
+            <dt>{t("orders.summary.points", { points: formatQuantity(order.pointsRedeemed) })}</dt>
+            <dd className="tabular-nums">{formatMoney(order.pointsDiscount)}</dd>
+          </div>
+        ) : null}
         <div className="flex justify-between">
           <dt className="text-ink-secondary">{t("orders.summary.shipping")}</dt>
           <dd className="tabular-nums">{formatMoney(order.shippingFee)}</dd>
@@ -70,6 +76,12 @@ export function OrderItemsCard({ order, showCost }: { order: OrderDetailDto; sho
             {formatMoney(order.total)} {order.currency}
           </dd>
         </div>
+        {(order.pointsEarned ?? 0) > 0 ? (
+          <div className="flex justify-between text-xs text-success-ink">
+            <dt>{t("orders.summary.pointsEarned")}</dt>
+            <dd className="tabular-nums">+{formatQuantity(order.pointsEarned)}</dd>
+          </div>
+        ) : null}
       </dl>
     </Card>
   );

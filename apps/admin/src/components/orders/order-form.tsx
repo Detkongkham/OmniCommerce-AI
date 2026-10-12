@@ -1,13 +1,15 @@
 "use client";
 
-import { COUPON_CODE_PATTERN } from "@oca/shared";
+import { COUPON_CODE_PATTERN, POINTS_REJECT_REASONS, type PointsRejectReason, maxRedeemablePoints, pointsDiscount } from "@oca/shared";
 import { Button, Card, Field, Input, PageHeader, Select, toast } from "@oca/ui";
 import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { VariantPicker } from "@/components/common/variant-picker";
+import { ApiError } from "@/lib/api";
 import { errorMessage, extractShortages, shortageLines } from "@/lib/errors";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatQuantity } from "@/lib/format";
+import type { Translate } from "@/lib/i18n/dictionary";
 import { useT } from "@/lib/i18n/language-provider";
 import {
   type CustomerMode,
@@ -23,8 +25,8 @@ import {
   shortageKeys,
   validateOrderForm,
 } from "@/lib/order-form";
-import { useCreateOrder, usePreviewCoupon, useStoreSettings, useWarehouses } from "@/lib/queries";
-import type { ConversationDto, OrderDetailDto, Shortage, VariantSearchItemDto } from "@/lib/types";
+import { useCreateOrder, useCustomers, usePreviewCoupon, useStoreSettings, useWarehouses } from "@/lib/queries";
+import type { ConversationDto, CustomerDto, OrderDetailDto, Shortage, StoreSettingsDto, VariantSearchItemDto } from "@/lib/types";
 import { CustomerPicker } from "./customer-picker";
 
 const ERRORS_ID = "order-form-errors";
@@ -35,6 +37,17 @@ const NO_ISSUES: FormIssues = { messages: [], fields: [] };
 
 const qtyId = (variantId: string) => `line-qty-${variantId}`;
 const lineMessageId = (variantId: string) => `line-msg-${variantId}`;
+
+/** 409 POINTS_INVALID → ຂໍ້ຄວາມຕາມເຫດຜົນ (ພ້ອມຍອດແຕ້ມ/ເພດານທີ່ API ບອກ); error ອື່ນ = null */
+function pointsMessage(error: unknown, t: Translate): string | null {
+  if (!(error instanceof ApiError) || error.code !== "POINTS_INVALID") return null;
+  const reason = error.body?.reason;
+  if (typeof reason !== "string" || !(POINTS_REJECT_REASONS as readonly string[]).includes(reason)) return null;
+  return t(`orders.points.reason.${reason as PointsRejectReason}`, {
+    balance: formatQuantity(Number(error.body?.balance ?? 0)),
+    maxPoints: formatQuantity(Number(error.body?.maxPoints ?? 0)),
+  });
+}
 
 /** ລວມ id ສຳລັບ aria-describedby (ຕັດຄ່າວ່າງ); ບໍ່ມີ = undefined */
 function describe(ids: (string | false | null | undefined)[]): string | undefined {
@@ -175,7 +188,8 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
     } catch (error) {
       if (mounted.current) {
         setShortages(extractShortages(error));
-        setIssues({ messages: [errorMessage(error, t), ...shortageLines(error, t)], fields: [] });
+        const pointsError = pointsMessage(error, t);
+        setIssues({ messages: [pointsError ?? errorMessage(error, t), ...shortageLines(error, t)], fields: pointsError ? ["points"] : [] });
         setAlertTick((tick) => tick + 1);
       }
     } finally {
@@ -416,7 +430,7 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
                     name="customer-mode"
                     className="accent-[var(--color-brand)]"
                     checked={form.customerMode === option.value}
-                    onChange={() => patch({ customerMode: option.value })}
+                    onChange={() => patch({ customerMode: option.value, pointsToRedeem: "" })}
                   />
                   {option.label}
                 </label>
@@ -427,7 +441,7 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
             ) : null}
             {form.customerMode === "existing" ? (
               <div className="max-w-md">
-                <CustomerPicker value={form.customer} onSelect={(customer) => patch({ customer })} />
+                <CustomerPicker value={form.customer} onSelect={(customer) => patch({ customer, pointsToRedeem: "" })} />
               </div>
             ) : null}
             {form.customerMode === "new" ? (
@@ -549,6 +563,19 @@ export function OrderForm({ chat }: { chat?: OrderFormChat } = {}) {
             phone={form.customerMode === "existing" ? (form.customer?.phone ?? undefined) : form.customerMode === "new" ? form.newCustomer.phone.trim() || undefined : undefined}
             onChange={(couponCode) => patch({ couponCode })}
           />
+          {settings.data?.loyaltyEnabled && form.customerMode === "existing" && form.customer ? (
+            <PointsField
+              // key: ປ່ຽນລູກຄ້າ = ເລີ່ມໃໝ່
+              key={form.customer.id}
+              customer={form.customer}
+              settings={settings.data}
+              merchandise={totals?.subtotal ?? null}
+              value={form.pointsToRedeem}
+              invalid={invalid("points")}
+              describedBy={errorsRef("points")}
+              onChange={(pointsToRedeem) => patch({ pointsToRedeem })}
+            />
+          ) : null}
         </Card>
 
         {chat ? (
@@ -626,6 +653,72 @@ function CouponField({
       {result ? (
         <p role="status" className={`mt-2 text-xs font-semibold ${result.ok ? "text-success-ink" : "text-danger-ink"}`}>
           {result.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * ຊ່ອງ "ໃຊ້ແຕ້ມ" ຂອງຟອມເປີດບິນ (ສະເພາະລູກຄ້າທີ່ເລືອກຈາກລະບົບ ແລະ ເມື່ອຮ້ານເປີດລະບົບແຕ້ມ).
+ * ຍອດແຕ້ມອ່ານສົດຜ່ານຕົວຄົ້ນລູກຄ້າ; ເພດານທີ່ສະແດງເປັນຄ່າປະມານ (ຍັງບໍ່ຫັກໂຄດ): API ກວດຈິງຕອນສ້າງບິນ.
+ */
+function PointsField({
+  customer,
+  settings,
+  merchandise,
+  value,
+  invalid,
+  describedBy,
+  onChange,
+}: {
+  customer: CustomerDto;
+  settings: StoreSettingsDto;
+  merchandise: string | null;
+  value: string;
+  invalid: boolean;
+  describedBy: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useT();
+  const lookup = useCustomers({ q: customer.phone ?? customer.name });
+  const balance = lookup.data?.items.find((item) => item.id === customer.id)?.pointsBalance ?? customer.pointsBalance;
+  if (balance === undefined) return null;
+
+  const pointValue = settings.pointValue ?? "0";
+  const max = maxRedeemablePoints({
+    merchandise: merchandise ?? "0",
+    balance,
+    pointValue,
+    maxPercent: settings.pointsMaxRedeemPercent ?? 0,
+  });
+  const points = lineQuantity(value);
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <Field label={t("orders.points.label")} htmlFor="order-points">
+        <div className="flex gap-2">
+          <Input
+            id="order-points"
+            inputMode="numeric"
+            autoComplete="off"
+            className="tabular-nums"
+            disabled={balance === 0}
+            value={value}
+            invalid={invalid}
+            aria-describedby={describe(["order-points-hint", describedBy])}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <Button type="button" variant="outlinePrimary" className="shrink-0 rounded-xl" disabled={max === 0} onClick={() => onChange(String(max))}>
+            {t("orders.points.max", { max: formatQuantity(max) })}
+          </Button>
+        </div>
+      </Field>
+      <p id="order-points-hint" className="mt-2 text-xs text-ink-muted">
+        {t("orders.points.balance", { balance: formatQuantity(balance), value: formatMoney(pointValue) })}
+      </p>
+      {points !== null && points > 0 ? (
+        <p role="status" className="mt-1 text-xs font-semibold text-success-ink">
+          {t("orders.points.discount", { amount: formatMoney(pointsDiscount(points, pointValue)) })}
         </p>
       ) : null}
     </div>

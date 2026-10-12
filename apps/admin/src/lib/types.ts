@@ -6,8 +6,11 @@ import type {
   LiveSessionStatus,
   MessageDirection,
   MessageStatus,
+  MemberTier,
   OrderStatus,
+  PointEntryType,
   RfmSegment,
+  TierRule,
   Permission,
   ShipmentNotifyStatus,
   ProductStatus,
@@ -73,6 +76,12 @@ export interface StoreSettingsDto {
   reservationMinutes: number;
   /** minutes before the reservation expires to send the Messenger reminder; null = off */
   paymentReminderMinutes: number | null;
+  /** ແຕ້ມ ແລະ ລະດັບສະມາຊິກ (optional ເພື່ອບໍ່ແຕະ fixture ເກົ່າ; API ສົ່ງສະເໝີ) */
+  loyaltyEnabled?: boolean;
+  pointsEarnPer?: string;
+  pointValue?: string;
+  pointsMaxRedeemPercent?: number;
+  tierRules?: TierRule[];
   /** ບັນຊີຮັບເງິນຂອງຮ້ານ (ໃຊ້ກວດບັນຊີປາຍທາງຂອງສະລິບ) */
   receivingAccounts: ReceivingAccount[];
   /** ຂໍ້ມູນໂອນທີ່ແນບທ້າຍສະຫຼຸບບິນ CF (null = ບໍ່ມີ) */
@@ -192,6 +201,8 @@ export interface CustomerDto {
   name: string;
   phone: string | null;
   email: string | null;
+  /** ຍອດແຕ້ມ (optional: ລູກຄ້າທີ່ prefill ຈາກເຄສແຊັດຍັງບໍ່ຮູ້ຍອດ) */
+  pointsBalance?: number;
 }
 
 export interface OrderListItemDto {
@@ -250,6 +261,10 @@ export interface OrderDetailDto {
   /** ໂຄດສ່ວນຫຼຸດຂອງບິນ ແລະ ຍອດທີ່ຫຼຸດ ("0.00" ຖ້າບໍ່ມີ); ລວມຢູ່ໃນ discountTotal ແລ້ວ */
   couponCode: string | null;
   couponDiscount: string;
+  /** ແຕ້ມທີ່ໃຊ້ຫັກໃນບິນ + ຍອດທີ່ຫັກ, ແຕ້ມທີ່ໄດ້ເມື່ອຈ່າຍ (optional ເພື່ອບໍ່ແຕະ fixture ເກົ່າ; API ສົ່ງສະເໝີ) */
+  pointsRedeemed?: number;
+  pointsDiscount?: string;
+  pointsEarned?: number;
   shippingFee: string;
   vatRate: string;
   vatAmount: string;
@@ -588,6 +603,8 @@ export interface CrmCustomerListItemDto {
   totalSpent: string;
   lastPaidAt: string | null;
   segment: RfmSegment | null;
+  tier: MemberTier;
+  pointsBalance: number;
 }
 
 export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
@@ -598,12 +615,26 @@ export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
   openOrderCount: number;
   conversationCount: number;
   rfm: { recency: number; frequency: number; monetary: number } | null;
+  spend12m: string;
+  nextTier: { tier: MemberTier; remaining: string } | null;
+}
+
+export interface CrmPointEntryDto {
+  id: string;
+  type: PointEntryType;
+  points: number;
+  balanceAfter: number;
+  note: string | null;
+  orderId: string | null;
+  orderNumber: string | null;
+  createdAt: string;
 }
 
 export interface CrmSegmentSummaryDto {
   total: number;
   noOrders: number;
   segments: Record<RfmSegment, number>;
+  tiers: Record<MemberTier, number>;
 }
 
 export interface CrmCustomerOrderDto {

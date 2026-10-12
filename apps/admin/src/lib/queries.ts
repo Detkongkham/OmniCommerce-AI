@@ -29,7 +29,9 @@ import type {
   UpdateCategoryInput,
   UpdateConversationInput,
   UpdateCustomerInput,
+  AdjustPointsInput,
   CrmCustomerSort,
+  MemberTier,
   RfmSegment,
   UpdateProductInput,
   UpdateStaffInput,
@@ -63,6 +65,7 @@ import type {
   CrmCustomerDetailDto,
   CrmCustomerListItemDto,
   CrmCustomerOrderDto,
+  CrmPointEntryDto,
   CrmSegmentSummaryDto,
   FlashSaleDto,
   CourierDto,
@@ -461,7 +464,7 @@ export function useOrderSnapshot(id: string) {
 
 /** ບິນໃໝ່ຈອງສະຕ໋ອກ ແລະ ອາດສ້າງລູກຄ້າໃໝ່ → invalidate orders/stock/products/variants/customers */
 export function useCreateOrder() {
-  const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants, queryKeys.customers);
+  const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants, queryKeys.customers, queryKeys.crmCustomers);
   return useMutation({
     // idempotencyKey: ຄີດຽວກັນ + body ດຽວກັນ = API ຄືນບິນເດີມ (ລອງໃໝ່ຫຼັງ network ລົ້ມໄດ້ໂດຍບໍ່ສ້າງບິນຊ້ຳ)
     mutationFn: ({ input, idempotencyKey }: { input: CreateOrderInput; idempotencyKey: string }) =>
@@ -473,7 +476,8 @@ export function useCreateOrder() {
 export type OrderAction = "pay" | "pack" | "ship" | "complete" | "cancel";
 
 export function useOrderAction() {
-  const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants);
+  // ຈ່າຍ/ຍົກເລີກ ປ່ຽນແຕ້ມ ແລະ ລະດັບຂອງລູກຄ້າ
+  const invalidate = useInvalidate(queryKeys.orders, queryKeys.stock, queryKeys.products, queryKeys.variants, queryKeys.customers, queryKeys.crmCustomers);
   return useMutation({
     mutationFn: ({ id, action, reason }: { id: string; action: OrderAction; reason?: string }) =>
       apiFetch<OrderDetailDto>(
@@ -1068,6 +1072,7 @@ export function useAuditFacets() {
 export interface CrmCustomerListParams {
   q?: string;
   segment?: RfmSegment | "";
+  tier?: MemberTier | "";
   sort?: CrmCustomerSort;
   page: number;
   pageSize: number;
@@ -1125,6 +1130,24 @@ export function useMergeCrmCustomer() {
   return useMutation({
     mutationFn: ({ targetId, sourceId }: { targetId: string; sourceId: string }) =>
       apiFetch<CrmCustomerDetailDto>(`/crm/customers/${encodeURIComponent(targetId)}/merge`, { method: "POST", body: { sourceId } }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCrmCustomerPoints(id: string, params: { page: number; pageSize: number }) {
+  return useQuery({
+    queryKey: [...queryKeys.crmCustomers, "points", id, params],
+    queryFn: () => apiFetch<Page<CrmPointEntryDto>>(`/crm/customers/${encodeURIComponent(id)}/points${toQueryString({ ...params })}`),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** ຍອດແຕ້ມຢູ່ໃນຕົວຄົ້ນລູກຄ້າຂອງຟອມເປີດບິນນຳ → invalidate customers */
+export function useAdjustCrmPoints() {
+  const invalidate = useInvalidate(queryKeys.crmCustomers, queryKeys.customers);
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: AdjustPointsInput }) =>
+      apiFetch<CrmCustomerDetailDto>(`/crm/customers/${encodeURIComponent(id)}/points/adjust`, { method: "POST", body: input }),
     onSuccess: invalidate,
   });
 }

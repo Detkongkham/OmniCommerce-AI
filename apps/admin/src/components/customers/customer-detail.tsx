@@ -15,22 +15,24 @@ import {
   TableSkeletonRows,
   cn,
 } from "@oca/ui";
-import { AlertCircle, ArrowLeft, Combine, MessageSquare, Pencil } from "lucide-react";
+import { AlertCircle, ArrowLeft, Coins, Combine, MessageSquare, Pencil } from "lucide-react";
 import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { ServerPager } from "@/components/common/server-pager";
 import { OrderStatusPill } from "@/components/orders/order-status";
 import { ApiError } from "@/lib/api";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
-import { useCrmCustomer, useCrmCustomerConversations, useCrmCustomerOrders } from "@/lib/queries";
+import { useCrmCustomer, useCrmCustomerConversations, useCrmCustomerOrders, useCrmCustomerPoints } from "@/lib/queries";
 import type { CrmCustomerDetailDto } from "@/lib/types";
+import { AdjustPointsDialog } from "./adjust-points-dialog";
 import { CustomerEditDialog } from "./customer-edit-dialog";
 import { MergeCustomerDialog } from "./merge-customer-dialog";
 import { SEGMENT_TONE } from "./segment";
+import { TIER_TONE } from "./tier";
 
-const TAB_IDS = ["orders", "conversations"] as const;
+const TAB_IDS = ["orders", "conversations", "points"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 /** Customer 360: ຂໍ້ມູນ, ສະຖິຕິ, RFM, ບິນ ແລະ ແຊັດ ຂອງລູກຄ້າຄົນດຽວ */
@@ -40,6 +42,7 @@ export function CustomerDetail({ id }: { id: string }) {
   const query = useCrmCustomer(id);
   const [editOpen, setEditOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
   const back = (
     <Link href="/customers" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-ink hover:underline">
       <ArrowLeft className="size-4" aria-hidden="true" />
@@ -106,7 +109,7 @@ export function CustomerDetail({ id }: { id: string }) {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 2xl:grid-cols-4">
           <Section id="customer-profile" title={t("customers.detail.profile")}>
             <dl className="space-y-2 text-sm">
               <Row label={t("customers.detail.phone")} value={customer.phone} />
@@ -115,6 +118,29 @@ export function CustomerDetail({ id }: { id: string }) {
               <Row label={t("customers.detail.note")} value={customer.note} />
             </dl>
             {customer.facebookLinked ? <p className="mt-3 text-xs font-medium text-ink-secondary">{t("customers.detail.facebook")}</p> : null}
+          </Section>
+          <Section id="customer-membership" title={t("customers.detail.membership")}>
+            <dl className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-ink-secondary">{t("customers.detail.tier")}</dt>
+                <dd>
+                  <StatusPill tone={TIER_TONE[customer.tier]}>{t(`customers.tier.${customer.tier}`)}</StatusPill>
+                </dd>
+              </div>
+              <Row label={t("customers.detail.points")} value={formatQuantity(customer.pointsBalance)} strong />
+              <Row label={t("customers.detail.spend12m")} value={formatMoney(customer.spend12m)} />
+            </dl>
+            <p className="mt-3 text-xs text-ink-muted">
+              {customer.nextTier
+                ? t("customers.detail.nextTier", { amount: formatMoney(customer.nextTier.remaining), tier: t(`customers.tier.${customer.nextTier.tier}`) })
+                : t("customers.detail.topTier")}
+            </p>
+            {canWrite ? (
+              <Button variant="outlinePrimary" className="mt-3 rounded-lg" onClick={() => setAdjustOpen(true)}>
+                <Coins aria-hidden="true" />
+                {t("customers.adjust")}
+              </Button>
+            ) : null}
           </Section>
           <Section id="customer-stats" title={t("customers.detail.stats")}>
             <dl className="space-y-2 text-sm">
@@ -148,6 +174,7 @@ export function CustomerDetail({ id }: { id: string }) {
         <>
           <CustomerEditDialog customer={customer} open={editOpen} onOpenChange={setEditOpen} />
           <MergeCustomerDialog target={customer} open={mergeOpen} onOpenChange={setMergeOpen} />
+          <AdjustPointsDialog customer={customer} open={adjustOpen} onOpenChange={setAdjustOpen} />
         </>
       ) : null}
     </div>
@@ -183,7 +210,7 @@ function HistoryTabs({ customer }: { customer: CrmCustomerDetailDto }) {
   const tabRefs = useRef<Partial<Record<TabId, HTMLButtonElement | null>>>({});
   // ຈຳນວນບິນທັງໝົດ (ທຸກສະຖານະ) ມາຈາກ response ຂອງແຖບບິນ; ກ່ອນໂຫຼດແລ້ວໃຊ້ຈຳນວນທີ່ຮູ້
   const [orderTotal, setOrderTotal] = useState<number | null>(null);
-  const counts: Record<TabId, number> = { orders: orderTotal ?? customer.orderCount + customer.openOrderCount, conversations: customer.conversationCount };
+  const counts: Record<TabId, number> = { orders: orderTotal ?? customer.orderCount + customer.openOrderCount, conversations: customer.conversationCount, points: 0 };
 
   function onKeyDown(event: KeyboardEvent, index: number) {
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
@@ -222,7 +249,13 @@ function HistoryTabs({ customer }: { customer: CrmCustomerDetailDto }) {
       </div>
       {TAB_IDS.map((id) => (
         <div key={id} role="tabpanel" id={`customer-panel-${id}`} aria-labelledby={`customer-tab-${id}`} hidden={tab !== id}>
-          {tab === id ? id === "orders" ? <OrdersPanel customerId={customer.id} onTotal={setOrderTotal} /> : <ConversationsPanel customerId={customer.id} /> : null}
+          {tab !== id ? null : id === "orders" ? (
+            <OrdersPanel customerId={customer.id} onTotal={setOrderTotal} />
+          ) : id === "conversations" ? (
+            <ConversationsPanel customerId={customer.id} />
+          ) : (
+            <PointsPanel customerId={customer.id} />
+          )}
         </div>
       ))}
     </Card>
@@ -364,5 +397,92 @@ function ConversationsPanel({ customerId }: { customerId: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function PointsPanel({ customerId }: { customerId: string }) {
+  const { t } = useT();
+  const canOpenOrder = useCan("orders:read");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const query = useCrmCustomerPoints(customerId, { page, pageSize });
+  const rows = query.data?.items ?? [];
+
+  if (query.isError) {
+    return (
+      <EmptyState
+        icon={AlertCircle}
+        title={t("common.error.load")}
+        action={
+          <Button variant="outlinePrimary" className="rounded-lg" onClick={() => void query.refetch()}>
+            {t("common.retry")}
+          </Button>
+        }
+      />
+    );
+  }
+  return (
+    <>
+      <Table aria-label={t("customers.points.table")} aria-busy={query.isPending}>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead scope="col">{t("customers.points.col.date")}</TableHead>
+            <TableHead scope="col">{t("customers.points.col.type")}</TableHead>
+            <TableHead scope="col" className="text-right">
+              {t("customers.points.col.points")}
+            </TableHead>
+            <TableHead scope="col" className="text-right">
+              {t("customers.points.col.balance")}
+            </TableHead>
+            <TableHead scope="col">{t("customers.points.col.note")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {query.isPending ? <TableSkeletonRows columns={5} /> : null}
+          {rows.map((entry) => (
+            <TableRow key={entry.id} data-testid={`row-point-${entry.id}`}>
+              <TableCell className="whitespace-nowrap tabular-nums text-ink-secondary">{formatDateTime(entry.createdAt)}</TableCell>
+              <th scope="row" className="px-4 py-3 text-left font-medium text-ink">
+                {t(`customers.points.type.${entry.type}`)}
+              </th>
+              {/* ເຄື່ອງໝາຍ + / − ບອກທິດທາງ (ບໍ່ອາໄສສີຢ່າງດຽວ) */}
+              <TableCell className={cn("text-right font-semibold tabular-nums", entry.points < 0 ? "text-danger-ink" : "text-success-ink")}>
+                {entry.points > 0 ? "+" : entry.points < 0 ? "−" : ""}
+                {formatQuantity(Math.abs(entry.points))}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{formatQuantity(entry.balanceAfter)}</TableCell>
+              <TableCell className="text-ink-secondary">
+                {entry.orderId && entry.orderNumber ? (
+                  canOpenOrder ? (
+                    <Link href={`/orders/${entry.orderId}`} className="font-mono text-brand-ink hover:underline">
+                      {entry.orderNumber}
+                    </Link>
+                  ) : (
+                    <span className="font-mono">{entry.orderNumber}</span>
+                  )
+                ) : (
+                  (entry.note ?? t("customers.detail.none"))
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {!query.isPending && rows.length === 0 ? (
+        <div role="status">
+          <EmptyState icon={Coins} title={t("customers.points.empty")} />
+        </div>
+      ) : null}
+      <ServerPager
+        page={page}
+        pageSize={pageSize}
+        total={query.data?.total ?? 0}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
+    </>
   );
 }

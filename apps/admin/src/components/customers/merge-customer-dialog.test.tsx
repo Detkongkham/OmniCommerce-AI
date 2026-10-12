@@ -26,6 +26,8 @@ const row = (patch: Partial<CrmCustomerListItemDto>): CrmCustomerListItemDto => 
   totalSpent: "400.00",
   lastPaidAt: null,
   segment: "REGULAR",
+  tier: "BRONZE",
+  pointsBalance: 0,
   ...patch,
 });
 const results = [row({}), row({ id: "c1", name: "Mali" }), row({ id: "c3", name: "Mali Shop", phone: "02099990000", orderCount: 5 })];

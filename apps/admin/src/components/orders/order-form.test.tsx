@@ -491,3 +491,59 @@ describe("OrderForm: ໂຄດສ່ວນຫຼຸດ", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("This code has been fully used");
   });
 });
+
+describe("OrderForm: ໃຊ້ແຕ້ມ", () => {
+  const loyalty = { ...settings, loyaltyEnabled: true, pointValue: "1.00", pointsMaxRedeemPercent: 50 };
+  const balanceLookup = "/customers?q=02055550001&page=1&pageSize=8";
+  const withPoints = { items: [{ ...mali, pointsBalance: 80 }], total: 1, page: 1, pageSize: 8 };
+
+  async function pickMali(user: User) {
+    await user.click(screen.getByRole("radio", { name: "Pick an existing customer" }));
+    await user.type(screen.getByLabelText("Search name or phone"), "mal");
+    await user.click(await screen.findByRole("option", { name: /Mali/ }));
+  }
+
+  it("ຮ້ານປິດລະບົບແຕ້ມ ຫຼື ຍັງບໍ່ເລືອກລູກຄ້າ: ບໍ່ມີຊ່ອງໃຊ້ແຕ້ມ", async () => {
+    mockApi({ "/settings/store": loyalty });
+    const { user, unmount } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    expect(screen.queryByLabelText("Use points")).toBeNull();
+    unmount();
+    mockApi();
+    const second = renderWithProviders(<OrderForm />);
+    await addTee(second.user);
+    await pickMali(second.user);
+    expect(screen.queryByLabelText("Use points")).toBeNull();
+  });
+
+  it("ສະແດງຍອດແຕ້ມ, 'ໃຊ້ສູງສຸດ' ຕາມເພດານ 50% ແລະ ສົ່ງ pointsToRedeem", async () => {
+    mockApi({ "/settings/store": loyalty, [balanceLookup]: withPoints });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await pickMali(user);
+    expect(await screen.findByText("Customer has 80 points (1 point = 1.00 LAK)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Use max 50" }));
+    expect(screen.getByLabelText("Use points")).toHaveValue("50");
+    expect(screen.getByText("Discount 50.00 (not yet in the summary above)")).toBeInTheDocument();
+    await user.click(submitButton());
+    await waitFor(() => expect(orderCalls()).toHaveLength(1));
+    expect((orderCalls()[0]?.[1] as { body: Record<string, unknown> }).body).toMatchObject({ customerId: "c1", pointsToRedeem: 50 });
+  });
+
+  it("ຈຳນວນແຕ້ມຜິດ: ແຈ້ງເຕືອນ ບໍ່ສົ່ງ API; API ປະຕິເສດ → ຂໍ້ຄວາມຕາມເຫດຜົນ", async () => {
+    mockApi({ "/settings/store": loyalty, [balanceLookup]: withPoints, "/orders": new ApiError(409, "x", [], "POINTS_INVALID", { reason: "OVER_CAP", maxPoints: 40 }) });
+    const { user } = renderWithProviders(<OrderForm />);
+    await addTee(user);
+    await pickMali(user);
+    const input = await screen.findByLabelText("Use points");
+    await user.type(input, "abc");
+    await user.click(submitButton());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Points must be a whole number greater than 0");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(orderCalls()).toHaveLength(0);
+    await user.clear(input);
+    await user.type(input, "45");
+    await user.click(submitButton());
+    expect(await screen.findByRole("alert")).toHaveTextContent("This order can use at most 40 points");
+  });
+});

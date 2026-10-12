@@ -132,6 +132,20 @@ describe("OrderDetail: ສະແດງຂໍ້ມູນ", () => {
     expect(screen.getByText("7.00")).toBeInTheDocument();
   });
 
+  it("ບິນທີ່ໃຊ້ແຕ້ມ ແລະ ໄດ້ແຕ້ມ: ສະແດງແຕ້ມທີ່ໃຊ້ + ຍອດທີ່ຫັກ ແລະ ແຕ້ມທີ່ໄດ້ຮັບ; ບິນທຳມະດາບໍ່ມີແຖວເຫຼົ່ານີ້", async () => {
+    const { unmount } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.queryByText(/Points used/)).toBeNull();
+    expect(screen.queryByText("Points earned")).toBeNull();
+    unmount();
+    mockOrder({ ...base, status: "PAID", secondsUntilExpiry: null, pointsRedeemed: 1200, pointsDiscount: "12.00", pointsEarned: 18 });
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByText("Points used (1,200)")).toBeInTheDocument();
+    expect(screen.getByText("12.00")).toBeInTheDocument();
+    expect(screen.getByText("Points earned").nextElementSibling).toHaveTextContent("+18");
+  });
+
   it("ບິນຈາກເວັບ: ສະແດງ courier ແລະ ສາຂາປາຍທາງທີ່ລູກຄ້າເລືອກ", async () => {
     mockOrder({ ...base, channel: "STOREFRONT", preferredCourier: { id: "c1", name: "Anousith", isActive: true }, shippingBranch: "Phonthan" });
     renderWithProviders(<OrderDetail id="o1" />);

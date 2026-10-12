@@ -38,7 +38,8 @@ export const loyaltyAmountSchema = z
   .string()
   .trim()
   .regex(AMOUNT, "ຈຳນວນເງິນບໍ່ຖືກຕ້ອງ")
-  .refine((value) => new D(value).greaterThan(0), "ຕ້ອງຫຼາຍກວ່າ 0");
+  // refine ຍັງແລ່ນເຖິງ regex ບໍ່ຜ່ານ: ກວດຮູບແບບກ່ອນສົ່ງເຂົ້າ Decimal (ບໍ່ດັ່ງນັ້ນ throw)
+  .refine((value) => !AMOUNT.test(value) || new D(value).greaterThan(0), "ຕ້ອງຫຼາຍກວ່າ 0");
 
 export const tierRulesSchema = z
   .array(
@@ -49,7 +50,7 @@ export const tierRulesSchema = z
         .string()
         .trim()
         .regex(MULTIPLIER, "ຕົວຄູນບໍ່ຖືກຕ້ອງ")
-        .refine((value) => new D(value).greaterThanOrEqualTo(1) && new D(value).lessThanOrEqualTo(10), "ຕົວຄູນຕ້ອງຢູ່ລະຫວ່າງ 1–10"),
+        .refine((value) => !MULTIPLIER.test(value) || (new D(value).greaterThanOrEqualTo(1) && new D(value).lessThanOrEqualTo(10)), "ຕົວຄູນຕ້ອງຢູ່ລະຫວ່າງ 1–10"),
     }),
   )
   .length(MEMBER_TIERS.length)

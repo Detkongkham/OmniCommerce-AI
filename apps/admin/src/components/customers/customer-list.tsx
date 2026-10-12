@@ -1,6 +1,6 @@
 "use client";
 
-import { CRM_CUSTOMER_SORTS, type CrmCustomerSort, RFM_SEGMENTS, type RfmSegment } from "@oca/shared";
+import { CRM_CUSTOMER_SORTS, type CrmCustomerSort, MEMBER_TIERS, type MemberTier, RFM_SEGMENTS, type RfmSegment } from "@oca/shared";
 import {
   Button,
   Card,
@@ -21,13 +21,14 @@ import { AlertCircle, Contact, Search } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ServerPager } from "@/components/common/server-pager";
-import { formatDateTime, formatMoney } from "@/lib/format";
+import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
 import { useCrmCustomers, useCrmSegments } from "@/lib/queries";
 import { useDebounced } from "@/lib/use-debounced";
 import { SEGMENT_TONE } from "./segment";
+import { TIER_TONE } from "./tier";
 
-const COLUMNS = 5;
+const COLUMNS = 7;
 const CHIP_CLASS =
   "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -36,6 +37,7 @@ export function CustomerList() {
   const { t } = useT();
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<RfmSegment | "">("");
+  const [tier, setTier] = useState<MemberTier | "">("");
   const [sort, setSort] = useState<CrmCustomerSort>("lastOrder");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -50,10 +52,10 @@ export function CustomerList() {
   }
 
   const summary = useCrmSegments();
-  const query = useCrmCustomers({ q, segment, sort, page, pageSize });
+  const query = useCrmCustomers({ q, segment, tier, sort, page, pageSize });
   const rows = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
-  const filtered = q !== "" || segment !== "";
+  const filtered = q !== "" || segment !== "" || tier !== "";
   const busy = query.isPending || query.isPlaceholderData;
   const isEmpty = !busy && rows.length === 0 && total === 0;
 
@@ -70,6 +72,7 @@ export function CustomerList() {
   const clearFilters = () => {
     setSearch("");
     setSegment("");
+    setTier("");
     setPage(1);
   };
   const chip = (value: RfmSegment | "", label: string, count: number | undefined) => (
@@ -112,6 +115,22 @@ export function CustomerList() {
               />
             </div>
             <Select
+              aria-label={t("customers.filter.tier")}
+              className="w-40"
+              value={tier}
+              onChange={(event) => {
+                setTier(event.target.value as MemberTier | "");
+                setPage(1);
+              }}
+            >
+              <option value="">{t("customers.filter.allTiers")}</option>
+              {MEMBER_TIERS.map((value) => (
+                <option key={value} value={value}>
+                  {t(`customers.tier.${value}`)}
+                </option>
+              ))}
+            </Select>
+            <Select
               aria-label={t("customers.sort")}
               className="w-48"
               value={sort}
@@ -147,12 +166,16 @@ export function CustomerList() {
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead scope="col">{t("customers.col.customer")}</TableHead>
+                    <TableHead scope="col">{t("customers.col.tier")}</TableHead>
                     <TableHead scope="col">{t("customers.col.segment")}</TableHead>
                     <TableHead scope="col" className="text-right">
                       {t("customers.col.orders")}
                     </TableHead>
                     <TableHead scope="col" className="text-right">
                       {t("customers.col.spent")}
+                    </TableHead>
+                    <TableHead scope="col" className="text-right">
+                      {t("customers.col.points")}
                     </TableHead>
                     <TableHead scope="col">{t("customers.col.lastOrder")}</TableHead>
                   </TableRow>
@@ -168,6 +191,9 @@ export function CustomerList() {
                         <p className="text-xs text-ink-muted">{customer.phone ?? t("customers.noPhone")}</p>
                       </th>
                       <TableCell>
+                        <StatusPill tone={TIER_TONE[customer.tier]}>{t(`customers.tier.${customer.tier}`)}</StatusPill>
+                      </TableCell>
+                      <TableCell>
                         {customer.segment ? (
                           <StatusPill tone={SEGMENT_TONE[customer.segment]}>{t(`customers.segment.${customer.segment}`)}</StatusPill>
                         ) : (
@@ -176,6 +202,7 @@ export function CustomerList() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{customer.orderCount}</TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">{formatMoney(customer.totalSpent)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatQuantity(customer.pointsBalance)}</TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums text-ink-secondary">
                         {customer.lastPaidAt ? formatDateTime(customer.lastPaidAt) : t("customers.never")}
                       </TableCell>

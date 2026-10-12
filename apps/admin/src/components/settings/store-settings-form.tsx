@@ -33,6 +33,7 @@ import type { Translate } from "@/lib/i18n/dictionary";
 import { useT } from "@/lib/i18n/language-provider";
 import { useStoreSettings, useUpdateStoreSettings } from "@/lib/queries";
 import type { StoreSettingsDto } from "@/lib/types";
+import { LoyaltySettingsCard } from "./loyalty-settings-card";
 
 const PAYMENT_MAX = 500;
 
@@ -112,9 +113,15 @@ export function StoreSettingsForm() {
             </div>
           )}
         </Card>
+        {query.data ? <LoyaltySettingsCard key={loyaltyKey(query.data)} settings={query.data} /> : null}
       </div>
     </div>
   );
+}
+
+/** ຄ່າແຕ້ມຈາກ server ປ່ຽນ (ຫຼັງບັນທຶກ/refetch) → ຟອມແຕ້ມເລີ່ມໃໝ່ */
+function loyaltyKey(settings: StoreSettingsDto): string {
+  return JSON.stringify([settings.loyaltyEnabled, settings.pointsEarnPer, settings.pointValue, settings.pointsMaxRedeemPercent, settings.tierRules]);
 }
 
 /** ແປງບັນຊີຈາກ server ເປັນຄ່າຟອມ (accountName ບໍ່ມີ = ສະຕຣິງວ່າງ) */

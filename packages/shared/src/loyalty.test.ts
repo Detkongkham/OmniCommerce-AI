@@ -67,6 +67,8 @@ describe("ລະດັບ", () => {
     expect(tierRulesSchema.safeParse(patch(1, { multiplier: "0.5" })).success).toBe(false);
     expect(tierRulesSchema.safeParse(patch(1, { multiplier: "11" })).success).toBe(false);
     expect(tierRulesSchema.safeParse(patch(1, { minSpend: "abc" })).success).toBe(false);
+    expect(tierRulesSchema.safeParse(patch(1, { multiplier: "" })).success).toBe(false);
+    expect(tierRulesSchema.safeParse(patch(1, { multiplier: "x2" })).success).toBe(false);
     expect(tierRulesSchema.safeParse([rules[1], rules[0], rules[2], rules[3]]).success).toBe(false);
   });
   it("parseTierRules: ຄ່າທີ່ຜິດ/ຫວ່າງ (ຄ່າເລີ່ມຂອງ DB ຄື []) = ຄ່າເລີ່ມຕົ້ນ", () => {
@@ -88,7 +90,7 @@ describe("schema ທີ່ກ່ຽວກັບແຕ້ມ", () => {
       loyaltyEnabled: true,
       pointsMaxRedeemPercent: 30,
     });
-    for (const body of [{ pointsEarnPer: "0" }, { pointValue: "-1" }, { pointsMaxRedeemPercent: 0 }, { pointsMaxRedeemPercent: 101 }, { tierRules: [] }]) {
+    for (const body of [{ pointsEarnPer: "0" }, { pointsEarnPer: "" }, { pointsEarnPer: "abc" }, { pointValue: "-1" }, { pointsMaxRedeemPercent: 0 }, { pointsMaxRedeemPercent: 101 }, { tierRules: [] }]) {
       expect(updateStoreSettingsSchema.safeParse(body).success).toBe(false);
     }
   });

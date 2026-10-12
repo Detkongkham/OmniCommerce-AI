@@ -32,6 +32,8 @@ export interface OrderFormState {
   reservationMinutes: string;
   /** ໂຄດສ່ວນຫຼຸດ (server ກວດ ແລະ ຄິດສ່ວນຫຼຸດຕອນສ້າງບິນ) */
   couponCode: string;
+  /** ແຕ້ມທີ່ລູກຄ້າ (ທີ່ເລືອກຈາກລະບົບ) ໃຊ້ຫັກໃນບິນ; "" = ບໍ່ໃຊ້ */
+  pointsToRedeem: string;
 }
 
 export function emptyOrderForm(): OrderFormState {
@@ -47,6 +49,7 @@ export function emptyOrderForm(): OrderFormState {
     note: "",
     reservationMinutes: "",
     couponCode: "",
+    pointsToRedeem: "",
   };
 }
 
@@ -150,6 +153,8 @@ export function toCreateOrderInput(state: OrderFormState): unknown {
     // ຜິດ → 0 ເພື່ອໃຫ້ schema ປະຕິເສດ
     ...(minutes ? { reservationMinutes: lineQuantity(minutes) ?? 0 } : {}),
     ...(state.couponCode.trim() ? { couponCode: state.couponCode.trim().toUpperCase() } : {}),
+    // ຜິດ → 0 ເພື່ອໃຫ້ schema ປະຕິເສດ; ໃຊ້ແຕ້ມໄດ້ສະເພາະລູກຄ້າທີ່ມີຢູ່ໃນລະບົບ
+    ...(state.customerMode === "existing" && state.pointsToRedeem.trim() ? { pointsToRedeem: lineQuantity(state.pointsToRedeem) ?? 0 } : {}),
   };
 }
 
@@ -167,7 +172,7 @@ export function newIdempotencyKey(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** ຊ່ອງທີ່ຜິດ: ຕໍ່ແຖວ `qty:<variantId>`/`discount:<variantId>`/`warehouse:<variantId>`; ອື່ນໆ items, customer, newName, newPhone, newEmail, fee, reservation, form */
+/** ຊ່ອງທີ່ຜິດ: ຕໍ່ແຖວ `qty:<variantId>`/`discount:<variantId>`/`warehouse:<variantId>`; ອື່ນໆ items, customer, newName, newPhone, newEmail, fee, reservation, points, form */
 export interface FormIssues {
   messages: string[];
   fields: string[];
@@ -208,6 +213,7 @@ export function validateOrderForm(state: OrderFormState, ctx: OrderValidationCon
       } else if (head === "items") mark("items", t("orders.err.items"));
       else if (head === "shippingFee") mark("fee", invalidText(t("orders.shipping.fee")));
       else if (head === "reservationMinutes") mark("reservation", invalidText(t("orders.reservation")));
+      else if (head === "pointsToRedeem") mark("points", t("orders.points.invalid"));
       else if (head === "customerId") mark("customer", t("orders.err.customer"));
       else if (head === "customer") {
         if (index === "name") mark("newName", invalidText(t("orders.customer.name")));

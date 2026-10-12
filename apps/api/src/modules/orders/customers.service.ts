@@ -9,6 +9,8 @@ export interface CustomerDto {
   name: string;
   phone: string | null;
   email: string | null;
+  /** ຍອດແຕ້ມ (ຟອມເປີດບິນໃຊ້ສະແດງ ແລະ ຈຳກັດການໃຊ້ແຕ້ມ) */
+  pointsBalance: number;
 }
 
 /** ຄົ້ນຫາລູກຄ້າຢ່າງດຽວ ສຳລັບຟອມສ້າງບິນ. ການຈັດການລູກຄ້າເຕັມ (CRM) ເປັນໂມດູນແຍກ. */
@@ -29,7 +31,7 @@ export class CustomersService {
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.customer.findMany({
         where,
-        select: { id: true, name: true, phone: true, email: true },
+        select: { id: true, name: true, phone: true, email: true, pointsBalance: true },
         orderBy: [{ name: "asc" }, { id: "asc" }],
         ...pageArgs(query.page, query.pageSize),
       }),

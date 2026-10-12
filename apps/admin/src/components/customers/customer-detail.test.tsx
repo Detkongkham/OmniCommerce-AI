@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { toast } from "@oca/ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch } from "@/lib/api";
-import type { CrmCustomerConversationDto, CrmCustomerDetailDto, CrmCustomerOrderDto, Page } from "@/lib/types";
+import type { CrmCustomerConversationDto, CrmCustomerDetailDto, CrmCustomerOrderDto, CrmPointEntryDto, Page } from "@/lib/types";
 import { renderWithProviders } from "@/test/render";
 import { CustomerDetail } from "./customer-detail";
 
@@ -36,6 +36,10 @@ const customer: CrmCustomerDetailDto = {
   conversationCount: 1,
   segment: "CHAMPION",
   rfm: { recency: 5, frequency: 5, monetary: 4 },
+  tier: "SILVER",
+  pointsBalance: 320,
+  spend12m: "2500000.00",
+  nextTier: { tier: "GOLD", remaining: "2500000.00" },
 };
 const orders: Page<CrmCustomerOrderDto> = {
   items: [{ id: "o1", orderNumber: "SO-000001", status: "PAID", channel: "FACEBOOK", total: "195.00", createdAt: "2026-10-05T05:30:00.000Z" }],
@@ -47,9 +51,21 @@ const conversations: CrmCustomerConversationDto[] = [
   { id: "cv1", channel: "FACEBOOK", displayName: "Mali FB", status: "OPEN", lastMessageAt: "2026-10-06T05:30:00.000Z", lastMessagePreview: "ສະບາຍດີ" },
 ];
 
+const ledger: Page<CrmPointEntryDto> = {
+  items: [
+    { id: "p2", type: "ADJUST", points: -20, balanceAfter: 320, note: "Correction", orderId: null, orderNumber: null, createdAt: "2026-10-06T05:30:00.000Z" },
+    { id: "p1", type: "EARN", points: 340, balanceAfter: 340, note: null, orderId: "o1", orderNumber: "SO-000001", createdAt: "2026-10-05T05:30:00.000Z" },
+  ],
+  total: 2,
+  page: 1,
+  pageSize: 10,
+};
+
 function mockApi(detail: CrmCustomerDetailDto | Error = customer) {
   vi.mocked(apiFetch).mockImplementation((async (path: string, options?: { method?: string }) => {
     if (options?.method === "PATCH") return { ...customer, name: "Mali 2" };
+    if (options?.method === "POST") return { ...customer, pointsBalance: 370 };
+    if (path.includes("/points")) return ledger;
     if (path.includes("/orders")) return orders;
     if (path.includes("/conversations")) return conversations;
     if (detail instanceof Error) throw detail;
@@ -148,5 +164,57 @@ describe("CustomerDetail", () => {
     renderWithProviders(<CustomerDetail id="zz" />);
     expect(await screen.findByText(/Customer not found/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to customers" })).toHaveAttribute("href", "/customers");
+  });
+
+
+  it("ບັດສະມາຊິກ: ລະດັບ, ແຕ້ມ, ຍອດ 12 ເດືອນ ແລະ ລະດັບຖັດໄປ", async () => {
+    renderWithProviders(<CustomerDetail id="c1" />);
+    const card = await screen.findByRole("region", { name: "Membership" });
+    expect(within(card).getByText("Silver")).toBeInTheDocument();
+    expect(within(card).getByText("320")).toBeInTheDocument();
+    expect(within(card).getByText("2,500,000.00")).toBeInTheDocument();
+    expect(within(card).getByText("2,500,000.00 more to reach Gold")).toBeInTheDocument();
+  });
+
+  it("ແຖບແຕ້ມ: ສະໝຸດພ້ອມເຄື່ອງໝາຍ, ລິ້ງບິນ ຫຼື ໝາຍເຫດ", async () => {
+    const { user } = renderWithProviders(<CustomerDetail id="c1" />);
+    await user.click(await screen.findByRole("tab", { name: "Points" }));
+    const earned = await screen.findByTestId("row-point-p1");
+    expect(within(earned).getByRole("rowheader", { name: "Earned" })).toBeInTheDocument();
+    expect(within(earned).getByText("+340")).toBeInTheDocument();
+    expect(within(earned).getByRole("link", { name: "SO-000001" })).toHaveAttribute("href", "/orders/o1");
+    const adjusted = screen.getByTestId("row-point-p2");
+    expect(within(adjusted).getByText("−20")).toBeInTheDocument();
+    expect(within(adjusted).getByText("Correction")).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Points ledger" })).toBeInTheDocument();
+  });
+
+  it("ປັບແຕ້ມ: ກວດຟອມ → POST → toast; ຫັກເກີນຍອດສະແດງຍອດທີ່ມີ", async () => {
+    const { user } = renderWithProviders(<CustomerDetail id="c1" />);
+    await user.click(await screen.findByRole("button", { name: "Adjust points" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/Current balance 320 points/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(within(dialog).getByText("Enter a whole number other than 0")).toBeInTheDocument();
+    expect(within(dialog).getByText("Enter a reason")).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText(/Points/), "50");
+    await user.type(within(dialog).getByLabelText(/Reason/), "Late delivery");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Points adjusted"));
+    const post = vi.mocked(apiFetch).mock.calls.find((call) => call[1]?.method === "POST");
+    expect(post?.[0]).toBe("/crm/customers/c1/points/adjust");
+    expect(post?.[1]?.body).toEqual({ points: 50, note: "Late delivery" });
+
+    vi.mocked(apiFetch).mockImplementation((async (path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") throw new ApiError(409, "no", [], "POINTS_INVALID", { reason: "INSUFFICIENT", balance: 320 });
+      if (path.includes("/orders")) return orders;
+      return customer;
+    }) as typeof apiFetch);
+    await user.click(screen.getByRole("button", { name: "Adjust points" }));
+    const again = screen.getByRole("dialog");
+    await user.type(within(again).getByLabelText(/Points/), "-999");
+    await user.type(within(again).getByLabelText(/Reason/), "Mistake");
+    await user.click(within(again).getByRole("button", { name: "Save" }));
+    expect(await within(again).findByText("Cannot deduct more than the balance (320 points)")).toBeInTheDocument();
   });
 });
