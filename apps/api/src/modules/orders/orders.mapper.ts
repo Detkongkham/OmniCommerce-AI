@@ -69,6 +69,10 @@ export interface OrderDetailDto {
   /** ໂຄດສ່ວນຫຼຸດຂອງບິນ (snapshot) ແລະ ຍອດທີ່ໂຄດຫຼຸດ ("0.00" ຖ້າບໍ່ມີ) */
   couponCode: string | null;
   couponDiscount: string;
+  /** ແຕ້ມທີ່ລູກຄ້າໃຊ້ຫັກໃນບິນ ແລະ ຍອດທີ່ຫັກ; pointsEarned = ແຕ້ມທີ່ໄດ້ເມື່ອຈ່າຍ (0 ຖ້າຍັງບໍ່ຈ່າຍ) */
+  pointsRedeemed: number;
+  pointsDiscount: string;
+  pointsEarned: number;
   shippingFee: string;
   vatRate: string;
   vatAmount: string;
@@ -141,6 +145,9 @@ export function toOrderDetail(row: OrderDetailRow, now: Date = new Date()): Orde
     discountTotal: money(row.discountTotal),
     couponCode: row.couponCode,
     couponDiscount: money(row.couponDiscount),
+    pointsRedeemed: row.pointsRedeemed,
+    pointsDiscount: money(row.pointsDiscount),
+    pointsEarned: row.pointsEarned,
     shippingFee: money(row.shippingFee),
     vatRate: money(row.vatRate),
     vatAmount: money(row.vatAmount),

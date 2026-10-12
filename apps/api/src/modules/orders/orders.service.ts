@@ -5,12 +5,19 @@ import {
   type OrderSource,
   Prisma,
   type PrismaClient,
+  type Redemption,
   activeFlashPrices,
+  awardPointsForOrder,
   effectivePrice,
   evaluateCoupon,
+  evaluateRedemption,
+  loadLoyaltyConfig,
   lockCoupon,
+  loyaltyConfigOf,
+  recordRedemption,
   releaseCfClaims,
   releaseMany,
+  releaseOrderPoints,
   reserveMany,
   shipMany,
 } from "@oca/database";
@@ -41,6 +48,7 @@ import {
 } from "./orders.mapper";
 import { apiError } from "../../common/api-error";
 import { couponRejection } from "../../common/coupon-error";
+import { pointsRejection } from "../../common/points-error";
 
 /** ສ່ວນເພີ່ມຂອງບິນຈາກໜ້າຮ້ານສາທາລະນະ */
 export interface WebOrderExtras {
@@ -325,6 +333,7 @@ export class OrdersService {
       };
       let totals: ReturnType<typeof calculateOrderTotals>;
       let coupon: CouponEvaluation | null = null;
+      let redemption: Redemption | null = null;
       try {
         totals = calculateOrderTotals(totalsInput);
         if (input.couponCode !== undefined) {
@@ -333,9 +342,19 @@ export class OrdersService {
           coupon = await evaluateCoupon(tx, { code: input.couponCode, merchandiseSubtotal: totals.subtotal, phone: customerPhone });
           totals = calculateOrderTotals({ ...totalsInput, orderDiscount: coupon.discount });
         }
+        if (input.pointsToRedeem !== undefined) {
+          // ລັອກລູກຄ້າຈົນ commit: ກວດຍອດແຕ້ມ ແລະ ຫັກ (ຫຼັງສ້າງບິນ) ເປັນ atomic ຕໍ່ລູກຄ້າ
+          redemption = await evaluateRedemption(tx, loyaltyConfigOf(settings), {
+            customerId,
+            points: input.pointsToRedeem,
+            merchandise: totals.subtotal,
+          });
+          const orderDiscount = new Prisma.Decimal(coupon?.discount ?? 0).plus(redemption.discount).toFixed(2);
+          totals = calculateOrderTotals({ ...totalsInput, orderDiscount });
+        }
       } catch (error) {
         if (error instanceof RangeError) throw new BadRequestException(error.message);
-        throw couponRejection(error);
+        throw pointsRejection(couponRejection(error));
       }
 
       if (origin?.web && !new Prisma.Decimal(origin.web.expectedTotal).equals(totals.total)) {
@@ -363,6 +382,8 @@ export class OrdersService {
           couponId: coupon?.couponId,
           couponCode: coupon?.code,
           couponDiscount: coupon?.discount ?? 0,
+          pointsRedeemed: redemption?.points ?? 0,
+          pointsDiscount: redemption?.discount ?? 0,
           shippingFee: input.shippingFee,
           vatRate: settings.vatRate,
           vatAmount: totals.vatAmount,
@@ -402,6 +423,8 @@ export class OrdersService {
         resolved.map((item) => ({ variantId: item.variantId, warehouseId: item.warehouseId, quantity: item.quantity })),
         { orderId: order.id, actorId },
       );
+      // 7) ຫັກແຕ້ມ (lock ຂອງລູກຄ້າຖືມາຕັ້ງແຕ່ evaluateRedemption)
+      if (redemption && customerId) await recordRedemption(tx, { customerId, orderId: order.id, points: redemption.points });
       return order.id;
     };
     return outerTx ? run(outerTx) : this.prisma.$transaction(run);
@@ -477,7 +500,7 @@ export class OrdersService {
         ],
         shippingFee: order.shippingFee.toFixed(2),
         // ສ່ວນຫຼຸດຂອງໂຄດຄົງເດີມ (ບໍ່ຄິດໃໝ່ຈາກຍອດທີ່ເພີ່ມ)
-        orderDiscount: order.couponDiscount.toFixed(2),
+        orderDiscount: order.couponDiscount.plus(order.pointsDiscount).toFixed(2),
         vatRate: order.vatRate.toString(),
         // ອ່ານຈາກ settings ປັດຈຸບັນ (ບໍ່ແມ່ນຄ່າ ຕອນສ້າງບິນ)
         pricesIncludeVat: settings.pricesIncludeVat,
@@ -624,6 +647,10 @@ export class OrdersService {
       data: { status: options.to, ...options.data },
     });
     if (count === 0) return false;
+
+    // ແຕ້ມ: ໄດ້ເມື່ອຈ່າຍ, ຄືນ/ດຶງຄືນເມື່ອຍົກເລີກ (transaction ດຽວກັບການປ່ຽນສະຖານະ)
+    if (options.to === "PAID") await awardPointsForOrder(tx, id, await loadLoyaltyConfig(tx));
+    else if (options.to === "CANCELLED") await releaseOrderPoints(tx, id, await loadLoyaltyConfig(tx));
 
     if (options.stock) {
       const items = await tx.orderItem.findMany({
