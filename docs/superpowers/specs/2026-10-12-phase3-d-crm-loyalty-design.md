@@ -174,4 +174,6 @@
 
 ## 6. ການແບ່ງແຜນ
 
+ການລວມລູກຄ້າຂອງ D1 ຍ້າຍສະເພາະບິນ ແລະ ແຊັດ; D2 ເພີ່ມການຍ້າຍແຕ້ມ + ຄິດລະດັບໃໝ່, D3 ເພີ່ມກົດ PIN. ແຖບ "ແຕ້ມ" ແລະ ບັດລະດັບຂອງໜ້າລູກຄ້າມາໃນ D2; `hasPin` ແລະ ປຸ່ມ reset PIN ມາໃນ D3.
+
 D1 (schema + API + admin `/customers`) → D2 (loyalty engine + API + settings + ຟອມເປີດບິນ + worker job) → D3 (PIN/session + API ເວັບ + UI ເວັບ) → ອັບເດດ `ROADMAP.md`, `DATABASE.md`, `DEPLOYMENT-NOTES.md` (`MEMBER_JWT_SECRET`).
