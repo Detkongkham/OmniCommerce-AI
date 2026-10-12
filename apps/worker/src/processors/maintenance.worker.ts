@@ -4,9 +4,10 @@ import { type Job, Queue, Worker } from "bullmq";
 import type { Redis } from "ioredis";
 import { ENV, type Env } from "../config/env";
 import { PRISMA } from "../prisma/prisma.module";
-import { JOB_CLEANUP_REFRESH_TOKENS, QUEUE_MAINTENANCE } from "../queues/names";
+import { JOB_CLEANUP_REFRESH_TOKENS, JOB_RECOMPUTE_MEMBER_TIERS, QUEUE_MAINTENANCE } from "../queues/names";
 import { REDIS } from "../redis/redis.module";
 import { cleanupRefreshTokens } from "./cleanup-refresh-tokens.processor";
+import { recomputeMemberTiersJob } from "./recompute-member-tiers.processor";
 
 @Injectable()
 export class MaintenanceWorker implements OnModuleInit, OnModuleDestroy {
@@ -41,6 +42,12 @@ export class MaintenanceWorker implements OnModuleInit, OnModuleDestroy {
       { pattern: "0 3 * * *" },
       { name: JOB_CLEANUP_REFRESH_TOKENS },
     );
+    // Daily at 03:30: re-rank member tiers on rolling 12-month spend.
+    await this.queue.upsertJobScheduler(
+      JOB_RECOMPUTE_MEMBER_TIERS,
+      { pattern: "30 3 * * *" },
+      { name: JOB_RECOMPUTE_MEMBER_TIERS },
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -53,6 +60,11 @@ export class MaintenanceWorker implements OnModuleInit, OnModuleDestroy {
       case JOB_CLEANUP_REFRESH_TOKENS: {
         const result = await cleanupRefreshTokens(this.prisma);
         this.logger.log(`Deleted ${result.deleted} stale refresh tokens`);
+        return result;
+      }
+      case JOB_RECOMPUTE_MEMBER_TIERS: {
+        const result = await recomputeMemberTiersJob(this.prisma);
+        this.logger.log(result.skipped ? "Member tiers skipped: loyalty is off" : `Member tiers: checked ${result.checked}, changed ${result.changed}`);
         return result;
       }
       default:

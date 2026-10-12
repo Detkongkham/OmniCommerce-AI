@@ -7,6 +7,7 @@ export const QUEUE_INVENTORY = "inventory";
 export const JOB_PING = "ping";
 export const JOB_CLEANUP_REFRESH_TOKENS = "cleanup-refresh-tokens";
 export const JOB_EXPIRE_RESERVATIONS = "expire-reservations";
+export const JOB_RECOMPUTE_MEMBER_TIERS = "recompute-member-tiers";
 
 export interface PingData {
   message?: string;
