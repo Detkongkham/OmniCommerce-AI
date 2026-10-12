@@ -1,11 +1,17 @@
 import { type ActiveFlashPrice, type EffectivePrice, Prisma, effectivePrice } from "@oca/database";
 import {
+  type MemberTier,
   type OrderStatus,
+  type PointEntryType,
+  type SalesChannel,
   type StoreSlipStatus,
   type StoreStock,
   type StoreStockStatus,
+  type TierRule,
   buildTrackingUrl,
+  nextTier,
   storeStock,
+  tierMultiplier,
 } from "@oca/shared";
 import { money } from "../../common/money";
 
@@ -244,5 +250,109 @@ export function toStoreOrder(row: StoreOrderRow, now: Date = new Date()): StoreO
           url: buildTrackingUrl(row.shipment?.courier?.trackingUrlTemplate, trackingNumber),
         }
       : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ສະມາຊິກ (ເບີ + PIN): ບໍ່ມີ id ຂອງລູກຄ້າ, pinHash ຫຼື ບັນທຶກພາຍໃນຂອງແອດມິນ
+// ---------------------------------------------------------------------------
+export const storeMemberSelect = {
+  id: true,
+  name: true,
+  phone: true,
+  pointsBalance: true,
+  tier: true,
+} as const satisfies Prisma.CustomerSelect;
+
+/** ລູກຄ້າຂອງ session ສະມາຊິກ (ໃຊ້ພາຍໃນ API; `id` ບໍ່ອອກໄປຫາ client) */
+export type StoreMemberRow = Prisma.CustomerGetPayload<{ select: typeof storeMemberSelect }>;
+
+export interface StoreMemberDto {
+  name: string;
+  phone: string | null;
+  pointsBalance: number;
+  tier: MemberTier;
+  /** ຍອດຊື້ 12 ເດືອນຫຼ້າສຸດ (ຕົວກຳນົດລະດັບ) */
+  spend12m: string;
+  /** ລະດັບຖັດໄປ, ເກນຂອງມັນ ແລະ ຍອດທີ່ຕ້ອງຊື້ຕື່ມ; null = ລະດັບສູງສຸດແລ້ວ */
+  nextTier: { tier: MemberTier; minSpend: string; remaining: string } | null;
+  /** ຕົວຄູນແຕ້ມຂອງລະດັບປັດຈຸບັນ ເຊັ່ນ "1.25" */
+  pointsMultiplier: string;
+}
+
+export function toStoreMember(row: StoreMemberRow, spend12m: string, rules: readonly TierRule[]): StoreMemberDto {
+  const next = nextTier(rules, spend12m);
+  const nextRule = next ? rules.find((rule) => rule.tier === next.tier) : undefined;
+  return {
+    name: row.name,
+    phone: row.phone,
+    pointsBalance: row.pointsBalance,
+    tier: row.tier,
+    spend12m,
+    nextTier: next && nextRule ? { tier: next.tier, minSpend: money(new Prisma.Decimal(nextRule.minSpend)), remaining: next.remaining } : null,
+    pointsMultiplier: tierMultiplier(rules, row.tier),
+  };
+}
+
+export const storeMemberOrderSelect = {
+  orderNumber: true,
+  createdAt: true,
+  status: true,
+  reservedUntil: true,
+  total: true,
+  channel: true,
+  publicToken: true,
+} as const satisfies Prisma.OrderSelect;
+
+type StoreMemberOrderRow = Prisma.OrderGetPayload<{ select: typeof storeMemberOrderSelect }>;
+
+export interface StoreMemberOrderDto {
+  orderNumber: string;
+  createdAt: Date;
+  status: OrderStatus;
+  total: string;
+  channel: SalesChannel;
+  /** ລິ້ງຕິດຕາມບິນ (/orders/:token) ສະເພາະບິນຂອງເວັບ; ຊ່ອງທາງອື່ນ = null */
+  token: string | null;
+}
+
+export function toStoreMemberOrder(row: StoreMemberOrderRow, now: Date = new Date()): StoreMemberOrderDto {
+  return {
+    orderNumber: row.orderNumber,
+    createdAt: row.createdAt,
+    status: isReservationExpired(row, now) ? "EXPIRED" : row.status,
+    total: money(row.total),
+    channel: row.channel,
+    token: row.channel === "STOREFRONT" ? row.publicToken : null,
+  };
+}
+
+/** ບໍ່ select `note`/`actorId`: note ຂອງ ADJUST ແມ່ນບັນທຶກຂອງພະນັກງານ (ບໍ່ມີເຫດຜົນແຍກສຳລັບລູກຄ້າ) */
+export const storeMemberPointSelect = {
+  createdAt: true,
+  type: true,
+  points: true,
+  balanceAfter: true,
+  order: { select: { orderNumber: true } },
+} as const satisfies Prisma.PointEntrySelect;
+
+type StoreMemberPointRow = Prisma.PointEntryGetPayload<{ select: typeof storeMemberPointSelect }>;
+
+export interface StoreMemberPointDto {
+  createdAt: Date;
+  type: PointEntryType;
+  /** ມີເຄື່ອງໝາຍ: ບວກ = ໄດ້, ລົບ = ໃຊ້ */
+  points: number;
+  balanceAfter: number;
+  orderNumber: string | null;
+}
+
+export function toStoreMemberPoint(row: StoreMemberPointRow): StoreMemberPointDto {
+  return {
+    createdAt: row.createdAt,
+    type: row.type,
+    points: row.points,
+    balanceAfter: row.balanceAfter,
+    orderNumber: row.order?.orderNumber ?? null,
   };
 }
