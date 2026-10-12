@@ -107,6 +107,7 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
   const canLogistics = useCan("logistics:write");
   const canCancel = useCan("orders:write");
   const canCosts = useCan("costs:read");
+  const canOpenCustomer = useCan("crm:read");
   const act = useOrderAction();
   const snapshot = useOrderSnapshot(order.id);
   const inFlight = useRef(false);
@@ -327,7 +328,13 @@ function OrderDetailBody({ order, fetchedAt, stale, refreshing, onRetry, onClien
             <h2 className="mb-3 text-base font-bold text-ink">{t("orders.detail.customer")}</h2>
             {order.customer ? (
               <div className="space-y-1 text-sm">
-                <p className="font-medium text-ink">{order.customer.name}</p>
+                {canOpenCustomer ? (
+                  <Link href={`/customers/${order.customer.id}`} className="font-medium text-brand-ink hover:underline">
+                    {order.customer.name}
+                  </Link>
+                ) : (
+                  <p className="font-medium text-ink">{order.customer.name}</p>
+                )}
                 {order.customer.phone ? <p className="text-ink-secondary">{order.customer.phone}</p> : null}
                 {order.customer.email ? <p className="text-ink-secondary">{order.customer.email}</p> : null}
               </div>

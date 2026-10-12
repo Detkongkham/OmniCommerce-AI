@@ -63,6 +63,7 @@ export const crmLo = {
 
   "customers.edit": "ແກ້ໄຂຂໍ້ມູນ",
   "customers.edit.title": "ແກ້ໄຂຂໍ້ມູນລູກຄ້າ",
+  "customers.edit.description": "ຊື່ ແລະ ເບີ ຈະປ່ຽນໃນບິນ ແລະ ແຊັດ ຂອງລູກຄ້ານີ້ນຳ",
   "customers.edit.name": "ຊື່",
   "customers.edit.nameRequired": "ກະລຸນາໃສ່ຊື່",
   "customers.edit.phoneInvalid": "ເບີໂທຕ້ອງເປັນຕົວເລກ 6–15 ຫຼັກ",
@@ -149,6 +150,7 @@ export const crmEn: Record<keyof typeof crmLo, string> = {
 
   "customers.edit": "Edit profile",
   "customers.edit.title": "Edit customer",
+  "customers.edit.description": "The name and phone also change on this customer's orders and chats",
   "customers.edit.name": "Name",
   "customers.edit.nameRequired": "Enter a name",
   "customers.edit.phoneInvalid": "Phone must be 6–15 digits",

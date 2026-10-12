@@ -140,6 +140,17 @@ describe("OrderDetail: ສະແດງຂໍ້ມູນ", () => {
     expect(screen.getByText("Destination branch: Phonthan")).toBeInTheDocument();
   });
 
+  it("ຊື່ລູກຄ້າເປັນລິ້ງໄປ /customers/:id ສະເພາະຜູ້ມີ crm:read", async () => {
+    const { unmount } = renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.queryByRole("link", { name: "Mali" })).toBeNull();
+    unmount();
+    auth.perms = new Set([...ALL, "crm:read"]);
+    renderWithProviders(<OrderDetail id="o1" />);
+    await heading();
+    expect(screen.getByRole("link", { name: "Mali" })).toHaveAttribute("href", "/customers/c1");
+  });
+
   it("ລູກຄ້າໜ້າຮ້ານ (null), ບໍ່ມີທີ່ຢູ່/ໝາຍເຫດ: ຂໍ້ຄວາມ fallback ແປແລ້ວ", async () => {
     mockOrder({ ...base, customer: null, shippingName: null, shippingPhone: null, shippingAddress: null, note: null });
     renderWithProviders(<OrderDetail id="o1" />);

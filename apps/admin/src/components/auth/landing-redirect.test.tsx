@@ -49,7 +49,7 @@ describe("LandingRedirect (ໜ້າ /)", () => {
   });
 
   it("ບໍ່ມີສິດທີ່ເຫັນໃນເມນູ: ສະແດງໜ້າ 'ບໍ່ມີສິດ' + ປຸ່ມອອກຈາກລະບົບ ແລະ ບໍ່ redirect (ບໍ່ວົນ loop)", async () => {
-    as(["crm:read"]);
+    as(["payments:read"]);
     const { user } = renderWithProviders(<LandingRedirect />);
     expect(screen.getByRole("heading", { name: "No access" })).toBeInTheDocument();
     expect(router.replace).not.toHaveBeenCalled();
