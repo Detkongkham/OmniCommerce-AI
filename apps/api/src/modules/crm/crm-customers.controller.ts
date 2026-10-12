@@ -1,5 +1,5 @@
-import { Controller, Get, Inject, Query } from "@nestjs/common";
-import { type CrmCustomerListQuery, crmCustomerListQuerySchema } from "@oca/shared";
+import { Controller, Get, Inject, Param, Query } from "@nestjs/common";
+import { type CrmCustomerListQuery, type CrmPageQuery, crmCustomerListQuerySchema, crmPageQuerySchema } from "@oca/shared";
 import { RequirePermissions } from "../../common/decorators";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { CrmCustomersService } from "./crm-customers.service";
@@ -19,5 +19,23 @@ export class CrmCustomersController {
   @RequirePermissions("crm:read")
   segments() {
     return this.customers.segments();
+  }
+
+  @Get(":id")
+  @RequirePermissions("crm:read")
+  get(@Param("id") id: string) {
+    return this.customers.get(id);
+  }
+
+  @Get(":id/orders")
+  @RequirePermissions("crm:read")
+  orders(@Param("id") id: string, @Query(new ZodValidationPipe(crmPageQuerySchema)) query: CrmPageQuery) {
+    return this.customers.orders(id, query);
+  }
+
+  @Get(":id/conversations")
+  @RequirePermissions("crm:read")
+  conversations(@Param("id") id: string) {
+    return this.customers.conversations(id);
   }
 }

@@ -1,7 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { Prisma, type PrismaClient } from "@oca/database";
-import { type CrmCustomerListQuery, RFM_SEGMENTS, type RfmSegment } from "@oca/shared";
+import { type CrmCustomerListQuery, type CrmPageQuery, RFM_SEGMENTS, type RfmSegment } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
+import { apiError } from "../../common/api-error";
 import { money } from "../../common/money";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { PRISMA } from "../../prisma/prisma.module";
@@ -25,6 +26,48 @@ export interface CrmSegmentSummaryDto {
   total: number;
   noOrders: number;
   segments: Record<RfmSegment, number>;
+}
+
+export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
+  note: string | null;
+  /** ຜູກກັບບັນຊີ Facebook (ລູກຄ້າຈາກ CF) */
+  facebookLinked: boolean;
+  averageOrder: string;
+  firstPaidAt: Date | null;
+  /** ບິນ PENDING_PAYMENT */
+  openOrderCount: number;
+  conversationCount: number;
+  /** ຄະແນນ 1–5; null = ຍັງບໍ່ເຄີຍຊື້ */
+  rfm: { recency: number; frequency: number; monetary: number } | null;
+}
+
+export interface CrmCustomerOrderDto {
+  id: string;
+  orderNumber: string;
+  status: string;
+  channel: string;
+  total: string;
+  createdAt: Date;
+}
+
+export interface CrmCustomerConversationDto {
+  id: string;
+  channel: string;
+  displayName: string;
+  status: string;
+  lastMessageAt: Date;
+  lastMessagePreview: string | null;
+}
+
+interface StatsRow {
+  orderCount: number;
+  totalSpent: Prisma.Decimal;
+  firstPaidAt: Date;
+  lastPaidAt: Date;
+  r: number;
+  f: number;
+  m: number;
+  segment: RfmSegment;
 }
 
 interface ListRow {
@@ -107,5 +150,71 @@ export class CrmCustomersService {
     for (const row of rows) segments[row.segment] = row.count;
     const withOrders = rows.reduce((sum, row) => sum + row.count, 0);
     return { total, noOrders: total - withOrders, segments };
+  }
+
+  async get(id: string): Promise<CrmCustomerDetailDto> {
+    const customer = await this.prisma.customer.findUnique({ where: { id } });
+    if (!customer) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
+    const [stats, openOrderCount, conversationCount] = await Promise.all([
+      this.prisma.$queryRaw<StatsRow[]>(Prisma.sql`
+        ${customerStatsCte(new Date())}
+        SELECT "orderCount", "totalSpent", "firstPaidAt", "lastPaidAt", r, f, m, segment FROM rfm WHERE id = ${id}`),
+      this.prisma.order.count({ where: { customerId: id, status: "PENDING_PAYMENT" } }),
+      this.prisma.conversation.count({ where: { customerId: id } }),
+    ]);
+    const row = stats[0];
+    return {
+      id: customer.id,
+      name: customer.name,
+      phone: customer.phone,
+      email: customer.email,
+      createdAt: customer.createdAt,
+      note: customer.note,
+      facebookLinked: customer.facebookUserId !== null,
+      orderCount: row?.orderCount ?? 0,
+      totalSpent: money(row?.totalSpent ?? ZERO),
+      averageOrder: money(row ? row.totalSpent.div(row.orderCount) : ZERO),
+      firstPaidAt: row?.firstPaidAt ?? null,
+      lastPaidAt: row?.lastPaidAt ?? null,
+      openOrderCount,
+      conversationCount,
+      segment: row?.segment ?? null,
+      rfm: row ? { recency: row.r, frequency: row.f, monetary: row.m } : null,
+    };
+  }
+
+  async orders(id: string, query: CrmPageQuery): Promise<Page<CrmCustomerOrderDto>> {
+    await this.requireCustomer(id);
+    const where = { customerId: id };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.order.findMany({
+        where,
+        select: { id: true, orderNumber: true, status: true, channel: true, total: true, createdAt: true },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        ...pageArgs(query.page, query.pageSize),
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return toPage(
+      rows.map((row) => ({ ...row, total: money(row.total) })),
+      total,
+      query.page,
+      query.pageSize,
+    );
+  }
+
+  async conversations(id: string): Promise<CrmCustomerConversationDto[]> {
+    await this.requireCustomer(id);
+    return this.prisma.conversation.findMany({
+      where: { customerId: id },
+      select: { id: true, channel: true, displayName: true, status: true, lastMessageAt: true, lastMessagePreview: true },
+      orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }],
+      take: 50,
+    });
+  }
+
+  private async requireCustomer(id: string): Promise<void> {
+    const found = await this.prisma.customer.findUnique({ where: { id }, select: { id: true } });
+    if (!found) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
   }
 }

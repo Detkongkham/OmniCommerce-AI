@@ -3,7 +3,7 @@ import type { PrismaClient } from "@oca/database";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { seedCustomerOrder, seedCustomerOrders } from "./crm-fixtures";
-import { bearerFor, createTestApp, resetDb, seedRoleUsers } from "./helpers";
+import { bearerFor, createTestApp, resetDb, seedConversation, seedRoleUsers } from "./helpers";
 
 describe("crm customers (e2e)", () => {
   let app: INestApplication;
@@ -111,6 +111,79 @@ describe("crm customers (e2e)", () => {
       await list("", warehouse).expect(403);
       await request(server()).get("/crm/customers").expect(401);
       await request(server()).get("/crm/customers/segments").set(warehouse).expect(403);
+    });
+  });
+
+  describe("GET /crm/customers/:id", () => {
+    it("ຂໍ້ມູນ + ສະຖິຕິ + ຄະແນນ R/F/M", async () => {
+      await seedSegments();
+      await db.customer.update({ where: { id: ids.A }, data: { note: "ມັກສີແດງ", facebookUserId: "FB_A" } });
+      await seedCustomerOrder(db, ids.A, { status: "PENDING_PAYMENT" });
+      await seedConversation(db, { customerId: ids.A });
+      const res = await request(server()).get(`/crm/customers/${ids.A}`).set(chat).expect(200);
+      expect(res.body).toMatchObject({
+        id: ids.A,
+        name: "Anou Champion",
+        phone: "02055550001",
+        email: null,
+        note: "ມັກສີແດງ",
+        facebookLinked: true,
+        orderCount: 10,
+        totalSpent: "10000.00",
+        averageOrder: "1000.00",
+        openOrderCount: 1,
+        conversationCount: 1,
+        segment: "CHAMPION",
+        rfm: { recency: 5, frequency: 5, monetary: 5 },
+      });
+      expect(new Date(res.body.firstPaidAt).getTime()).toBeLessThan(new Date(res.body.lastPaidAt).getTime());
+    });
+
+    it("ຍັງບໍ່ເຄີຍຊື້: ສະຖິຕິ 0, segment/rfm null", async () => {
+      await seedSegments();
+      const res = await request(server()).get(`/crm/customers/${ids.G}`).set(manager).expect(200);
+      expect(res.body).toMatchObject({ orderCount: 0, totalSpent: "0.00", averageOrder: "0.00", firstPaidAt: null, lastPaidAt: null, openOrderCount: 1, segment: null, rfm: null, facebookLinked: false });
+    });
+
+    it("ບໍ່ພົບ → 404 CUSTOMER_NOT_FOUND; ບໍ່ມີສິດ → 403", async () => {
+      const res = await request(server()).get("/crm/customers/nope").set(manager).expect(404);
+      expect(res.body.code).toBe("CUSTOMER_NOT_FOUND");
+      await request(server()).get("/crm/customers/nope").set(warehouse).expect(403);
+    });
+  });
+
+  describe("ແຖບຂອງລູກຄ້າ", () => {
+    it("orders: ທຸກສະຖານະ ໃໝ່ສຸດກ່ອນ ແບ່ງໜ້າ", async () => {
+      await seedSegments();
+      const res = await request(server()).get(`/crm/customers/${ids.G}/orders`).set(manager).expect(200);
+      expect(res.body).toMatchObject({ total: 2, page: 1, pageSize: 20 });
+      expect(res.body.items.map((row: { status: string }) => row.status).sort()).toEqual(["CANCELLED", "PENDING_PAYMENT"]);
+      expect(res.body.items[0]).toEqual({
+        id: expect.any(String),
+        orderNumber: expect.stringMatching(/^CRM-/),
+        status: expect.any(String),
+        channel: "OFFLINE",
+        total: "100.00",
+        createdAt: expect.any(String),
+      });
+      const paged = await request(server()).get(`/crm/customers/${ids.A}/orders?pageSize=4&page=3`).set(manager).expect(200);
+      expect(paged.body).toMatchObject({ total: 10, page: 3, pageSize: 4 });
+      expect(paged.body.items).toHaveLength(2);
+    });
+
+    it("conversations: ເຄສຂອງລູກຄ້າ ຫຼ້າສຸດກ່ອນ", async () => {
+      await seedSegments();
+      await seedConversation(db, { customerId: ids.B, displayName: "Old", lastMessageAt: new Date("2026-10-01T00:00:00Z") });
+      await seedConversation(db, { customerId: ids.B, displayName: "Recent", lastMessageAt: new Date("2026-10-10T00:00:00Z"), lastMessagePreview: "ສະບາຍດີ" });
+      await seedConversation(db, { customerId: ids.A });
+      const res = await request(server()).get(`/crm/customers/${ids.B}/conversations`).set(manager).expect(200);
+      expect(res.body.map((row: { displayName: string }) => row.displayName)).toEqual(["Recent", "Old"]);
+      expect(res.body[0]).toMatchObject({ channel: "FACEBOOK", status: "OPEN", lastMessagePreview: "ສະບາຍດີ" });
+    });
+
+    it("ລູກຄ້າບໍ່ພົບ → 404", async () => {
+      await request(server()).get("/crm/customers/nope/orders").set(manager).expect(404);
+      await request(server()).get("/crm/customers/nope/conversations").set(manager).expect(404);
     });
   });
 });
