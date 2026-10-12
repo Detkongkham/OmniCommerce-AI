@@ -57,6 +57,10 @@ const envSchema = z
     STORE_ORDER_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(5)),
     STORE_SLIP_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(10)),
     STORE_CHECK_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(60)),
+    // ເຂົ້າລະບົບ/ຕັ້ງ PIN ຂອງສະມາຊິກ ຕໍ່ IP ຕໍ່ 10 ນາທີ
+    STORE_LOGIN_RATE_LIMIT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(20)),
+    // ກະແຈເຊັນ session ຂອງສະມາຊິກເທິງເວັບ; ບໍ່ຕັ້ງ = ແຕກມາຈາກ JWT_ACCESS_SECRET (ແຍກຈຸດປະສົງດ້ວຍ HMAC)
+    MEMBER_JWT_SECRET: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
   })
   .superRefine((env, ctx) => {
     if (

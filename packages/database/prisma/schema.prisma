@@ -329,6 +329,11 @@ model Customer {
   pointsBalance  Int            @default(0) // = ຜົນລວມ PointEntry.points
   tier           MemberTier     @default(BRONZE) // ຈາກຍອດຊື້ 12 ເດືອນ (StoreSetting.tierRules)
   pointEntries   PointEntry[]
+  // ບັນຊີສະມາຊິກເທິງເວັບ: ເບີ + PIN 6 ຕົວ (argon2id). pinVersion ເພີ່ມເມື່ອ reset → session ເກົ່າໃຊ້ບໍ່ໄດ້
+  pinHash        String?
+  pinFailedCount Int            @default(0)
+  pinLockedUntil DateTime?
+  pinVersion     Int            @default(0)
   orders         Order[]
   conversations  Conversation[]
   createdAt      DateTime       @default(now())

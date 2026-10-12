@@ -78,6 +78,11 @@ export const ERROR_CODES = [
   // crm
   "CUSTOMER_PHONE_TAKEN",
   "POINTS_INVALID",
+  // ສະມາຊິກເທິງເວັບ
+  "PIN_ALREADY_SET",
+  "MEMBER_LOGIN_FAILED",
+  "MEMBER_LOCKED",
+  "MEMBER_REQUIRED",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

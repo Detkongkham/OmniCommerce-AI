@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  MEMBER_PIN_PATTERN,
   STORE_MAX_LINES,
   STORE_MAX_QUANTITY,
   STORE_TOKEN_PATTERN,
   storeCartCheckSchema,
   storeCreateOrderSchema,
+  storeMemberLoginSchema,
+  storeMemberPageQuerySchema,
   storeProductListQuerySchema,
+  storeSetPinSchema,
   storeStock,
 } from "./storefront";
 
@@ -94,5 +98,26 @@ describe("STORE_TOKEN_PATTERN", () => {
     expect(STORE_TOKEN_PATTERN.test("A".repeat(43))).toBe(true);
     expect(STORE_TOKEN_PATTERN.test("A".repeat(42))).toBe(false);
     expect(STORE_TOKEN_PATTERN.test(`${"A".repeat(42)}/`)).toBe(false);
+  });
+});
+
+describe("ສະມາຊິກເທິງເວັບ", () => {
+  it("PIN ຕ້ອງເປັນຕົວເລກ 6 ຕົວພໍດີ", () => {
+    expect(storeSetPinSchema.parse({ pin: "012345" })).toEqual({ pin: "012345" });
+    for (const pin of ["12345", "1234567", "12345a", "", " 123456", 123456]) expect(storeSetPinSchema.safeParse({ pin }).success).toBe(false);
+    expect(MEMBER_PIN_PATTERN.test("000000")).toBe(true);
+  });
+  it("ເຂົ້າລະບົບຕ້ອງມີເບີ + PIN; field ແປກຖືກປະຕິເສດ", () => {
+    expect(storeMemberLoginSchema.parse({ phone: "02055550001", pin: "123456" })).toEqual({ phone: "02055550001", pin: "123456" });
+    expect(storeMemberLoginSchema.safeParse({ phone: "abc", pin: "123456" }).success).toBe(false);
+    expect(storeMemberLoginSchema.safeParse({ phone: "02055550001" }).success).toBe(false);
+    expect(storeMemberLoginSchema.safeParse({ phone: "02055550001", pin: "123456", remember: true }).success).toBe(false);
+  });
+  it("pointsToRedeem ໃນກວດກະຕ່າ ແລະ ສັ່ງຊື້: ຈຳນວນເຕັມ > 0", () => {
+    const items = [{ variantId: "v1", quantity: 1 }];
+    expect(storeCartCheckSchema.parse({ items, pointsToRedeem: 25 }).pointsToRedeem).toBe(25);
+    for (const value of [0, -1, 2.5, "5"]) expect(storeCartCheckSchema.safeParse({ items, pointsToRedeem: value }).success).toBe(false);
+    expect(storeMemberPageQuerySchema.parse({})).toEqual({ page: 1 });
+    expect(storeMemberPageQuerySchema.parse({ page: "3" })).toEqual({ page: 3 });
   });
 });
