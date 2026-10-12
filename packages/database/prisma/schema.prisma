@@ -319,6 +319,7 @@ model Customer {
   phone          String?        @unique
   email          String?
   facebookUserId String?        @unique // ລະຫັດຜູ້ຄອມເມັ້ນ (CF Engine)
+  note           String? // ບັນທຶກພາຍໃນຂອງແອດມິນ (CRM)
   orders         Order[]
   conversations  Conversation[]
   createdAt      DateTime       @default(now())

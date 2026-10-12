@@ -75,6 +75,8 @@ export const ERROR_CODES = [
   "FLASH_SALE_NOT_FOUND",
   "FLASH_SALE_OVERLAP",
   "FLASH_SALE_PRICE_INVALID",
+  // crm
+  "CUSTOMER_PHONE_TAKEN",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
