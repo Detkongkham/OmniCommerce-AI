@@ -1,9 +1,10 @@
 import type { PrismaClient } from "../generated/client";
+import { loadLoyaltyConfig, releaseOrderPoints } from "../loyalty";
 import { releaseCfClaims } from "./release-cf-claims";
 import { releaseMany } from "./stock-engine";
 
 /**
- * ປ່ຽນບິນ PENDING_PAYMENT ທີ່ເກີນ reservedUntil ເປັນ EXPIRED ແລະ ຄືນສະຕ໋ອກທີ່ຈອງ ໃນ transaction ດຽວ.
+ * ປ່ຽນບິນ PENDING_PAYMENT ທີ່ເກີນ reservedUntil ເປັນ EXPIRED, ຄືນສະຕ໋ອກທີ່ຈອງ ແລະ ແຕ້ມທີ່ໃຊ້ ໃນ transaction ດຽວ.
  * guard ໃນ WHERE (status + reservedUntil) ເຮັດໃຫ້ cancel / pay / expire ທີ່ແຂ່ງກັນ ມີຜູ້ຊະນະຄົນດຽວ:
  * ຜູ້ແພ້ໄດ້ 0 ແຖວ ແລະ ບໍ່ຄືນສະຕ໋ອກຊ້ຳ. ຄືນ true ຖ້າບິນນີ້ຖືກ expire ໂດຍການເອີ້ນນີ້.
  */
@@ -21,6 +22,7 @@ export async function expireOrder(db: PrismaClient, orderId: string, now: Date =
     });
     await releaseMany(tx, items, { orderId });
     await releaseCfClaims(tx, orderId);
+    await releaseOrderPoints(tx, orderId, await loadLoyaltyConfig(tx));
     return true;
   });
 }

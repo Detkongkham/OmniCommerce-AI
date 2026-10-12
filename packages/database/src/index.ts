@@ -5,6 +5,7 @@ export * from "./generated/client";
 export * from "./inventory";
 export * from "./slips";
 export * from "./promotion";
+export * from "./loyalty";
 export { ROLE_DEFINITIONS, type RoleDefinition } from "./seed/roles";
 
 export function createPrismaClient(connectionString: string | undefined = process.env.DATABASE_URL): PrismaClient {

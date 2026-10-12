@@ -139,6 +139,12 @@ model StoreSetting {
   paymentInstructions String? // ຂໍ້ຄວາມຂໍ້ມູນໂອນເງິນ ໃສ່ໃນສະຫຼຸບບິນ CF
   // minutes before reservedUntil to send the payment reminder; null = off
   paymentReminderMinutes Int?
+  // ແຕ້ມ ແລະ ລະດັບສະມາຊິກ (3d)
+  loyaltyEnabled         Boolean  @default(false)
+  pointsEarnPer          Decimal  @default(10000) @db.Decimal(18, 2) // ກີບຕໍ່ 1 ແຕ້ມ
+  pointValue             Decimal  @default(100) @db.Decimal(18, 2) // ກີບຕໍ່ 1 ແຕ້ມຕອນແລກ
+  pointsMaxRedeemPercent Int      @default(50) // ສ່ວນຫຼຸດຈາກແຕ້ມ ບໍ່ເກີນ % ນີ້ຂອງຄ່າສິນຄ້າ
+  tierRules              Json     @default("[]") // [] = DEFAULT_TIER_RULES ຂອງ @oca/shared
   receivingAccounts   Json     @default("[]") // [{ bank, accountNo, accountName? }] ບັນຊີຮັບເງິນຂອງຮ້ານ; [] = ບໍ່ກວດບັນຊີປາຍທາງ
   updatedAt           DateTime @updatedAt
 }
@@ -320,6 +326,9 @@ model Customer {
   email          String?
   facebookUserId String?        @unique // ລະຫັດຜູ້ຄອມເມັ້ນ (CF Engine)
   note           String? // ບັນທຶກພາຍໃນຂອງແອດມິນ (CRM)
+  pointsBalance  Int            @default(0) // = ຜົນລວມ PointEntry.points
+  tier           MemberTier     @default(BRONZE) // ຈາກຍອດຊື້ 12 ເດືອນ (StoreSetting.tierRules)
+  pointEntries   PointEntry[]
   orders         Order[]
   conversations  Conversation[]
   createdAt      DateTime       @default(now())
@@ -361,6 +370,10 @@ model Order {
   coupon         Coupon? @relation(fields: [couponId], references: [id], onDelete: Restrict)
   couponCode     String? // snapshot ຂອງລະຫັດ ນະ ເວລາສັ່ງ
   couponDiscount Decimal @default(0) @db.Decimal(18, 2)
+  // ແຕ້ມທີ່ລູກຄ້າໃຊ້ຫັກໃນບິນ: pointsDiscount ລວມຢູ່ໃນ discountTotal ແລ້ວ. pointsEarned = ແຕ້ມທີ່ໄດ້ເມື່ອຈ່າຍ
+  pointsRedeemed Int     @default(0)
+  pointsDiscount Decimal @default(0) @db.Decimal(18, 2)
+  pointsEarned   Int     @default(0)
   // ລິ້ງລັບຕິດຕາມບິນຂອງເວັບ (32 byte base64url); null = ບິນທີ່ບໍ່ໄດ້ມາຈາກເວັບ
   publicToken     String? @unique
   note            String?
@@ -392,6 +405,7 @@ model Order {
   items          OrderItem[]
   stockMovements StockMovement[]
   cfComments     CfComment[]
+  pointEntries   PointEntry[]
   shipment       Shipment?
 
   @@index([status, reservedUntil])
@@ -834,6 +848,40 @@ enum PaymentReminderStatus {
 enum CouponType {
   PERCENT
   FIXED
+}
+
+enum MemberTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum PointEntryType {
+  EARN // ບິນຈ່າຍແລ້ວ
+  EARN_REVERSAL // ບິນທີ່ຈ່າຍແລ້ວຖືກຍົກເລີກ
+  REDEEM // ໃຊ້ແຕ້ມຫັກໃນບິນ
+  REDEEM_REFUND // ບິນທີ່ໃຊ້ແຕ້ມ ຖືກຍົກເລີກ/ໝົດອາຍຸ
+  ADJUST // ແອດມິນປັບດ້ວຍມື
+}
+
+// ສະໝຸດແຕ້ມ (ເພີ່ມຢ່າງດຽວ). Customer.pointsBalance = ຜົນລວມ points ຂອງລູກຄ້າ, ອັບເດດໃນ transaction ດຽວກັນ
+model PointEntry {
+  id           String         @id @default(cuid())
+  customerId   String
+  customer     Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderId      String?
+  order        Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  type         PointEntryType
+  points       Int // ມີເຄື່ອງໝາຍ: ບວກ = ໄດ້, ລົບ = ໃຊ້
+  balanceAfter Int
+  note         String?
+  actorId      String? // ພະນັກງານ (ADJUST); null = ລະບົບ
+  createdAt    DateTime       @default(now())
+
+  // ບິນໜຶ່ງມີແຖວແຕ່ລະຊະນິດໄດ້ຄັ້ງດຽວ (ກັນໄດ້/ຄືນຊ້ຳ); orderId null (ADJUST) ບໍ່ຕິດ
+  @@unique([orderId, type])
+  @@index([customerId, createdAt])
 }
 
 // ໂຄດສ່ວນຫຼຸດ. ການໃຊ້ນັບຈາກ Order.couponId ຂອງບິນທີ່ບໍ່ແມ່ນ CANCELLED/EXPIRED (ບໍ່ມີຕົວນັບແຍກ)
