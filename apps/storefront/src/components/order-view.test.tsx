@@ -261,9 +261,22 @@ describe("OrderView", () => {
     expect(screen.getByRole("link", { name: "ເຂົ້າສູ່ລະບົບ" })).toHaveAttribute("href", "/account");
   });
 
-  it("AVAILABLE: ORDER_INVALID_STATE (ບິນເກົ່າກ່ອນຮ້ານ reset PIN) → ບອກໃຫ້ຕັ້ງ PIN ຈາກບິນໃໝ່ທີ່ຊຳລະແລ້ວ", async () => {
+  it.each([
+    [{ code: "ORDER_INVALID_STATE" }, "ບິນນີ້ຍັງຕັ້ງ PIN ບໍ່ໄດ້"],
+    [{ code: "ORDER_INVALID_STATE", reason: "OTHER" }, "ບິນນີ້ຍັງຕັ້ງ PIN ບໍ່ໄດ້"],
+  ])("AVAILABLE: ORDER_INVALID_STATE ທີ່ບໍ່ແມ່ນ PIN_RESET %# → ຂໍ້ຄວາມທົ່ວໄປ", async (body, message) => {
     const user = userEvent.setup();
-    setOrderPinMock.mockRejectedValue(new ClientApiError(409, "ORDER_INVALID_STATE"));
+    setOrderPinMock.mockRejectedValue(new ClientApiError(409, "ORDER_INVALID_STATE", body));
+    view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
+    await user.type(screen.getByLabelText(/PIN ໃໝ່/), "123456");
+    await user.type(screen.getByLabelText(/ຢືນຢັນ PIN/), "123456");
+    await user.click(screen.getByRole("button", { name: "ຕັ້ງ PIN" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+  });
+
+  it("AVAILABLE: ORDER_INVALID_STATE + reason PIN_RESET (ບິນເກົ່າກ່ອນຮ້ານ reset PIN) → ບອກໃຫ້ຕັ້ງ PIN ຈາກບິນໃໝ່ທີ່ຊຳລະແລ້ວ", async () => {
+    const user = userEvent.setup();
+    setOrderPinMock.mockRejectedValue(new ClientApiError(409, "ORDER_INVALID_STATE", { code: "ORDER_INVALID_STATE", reason: "PIN_RESET" }));
     view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
     await user.type(screen.getByLabelText(/PIN ໃໝ່/), "123456");
     await user.type(screen.getByLabelText(/ຢືນຢັນ PIN/), "123456");

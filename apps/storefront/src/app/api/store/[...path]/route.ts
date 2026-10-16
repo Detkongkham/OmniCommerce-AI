@@ -49,20 +49,38 @@ function clearMemberCookie(response: NextResponse): NextResponse {
 /**
  * ປະຕິເສດຄຳຂໍຂ້າມເວັບ (CSRF) ສຳລັບທຸກ method ທີ່ບໍ່ແມ່ນ GET/HEAD: ຖ້າບໍ່ກັນ, form ຈາກເວັບອື່ນທີ່ submit ເອງ
  * ຈະ login / ຕັ້ງ PIN ແລ້ວຝັງ cookie ບັນຊີຂອງຄົນອື່ນໃສ່ browser ລູກຄ້າໄດ້.
- * ມີ Sec-Fetch-Site → ເຊື່ອຄ່ານີ້ຢ່າງດຽວ (Host ອາດຖືກ reverse proxy ປ່ຽນ); ບໍ່ມີ → ທຽບ Origin ກັບ Host;
- * ບໍ່ມີທັງສອງ (client ທີ່ບໍ່ແມ່ນ browser) → ຜ່ານ.
+ * ມີ Sec-Fetch-Site → ເຊື່ອຄ່ານີ້ຢ່າງດຽວ (Host ອາດຖືກ reverse proxy ປ່ຽນ); ບໍ່ມີ (ເຊັ່ນ Safari ລຸ້ນເກົ່າ) → host ຂອງ
+ * Origin ຕ້ອງກົງກັບ Host, ຄ່າທຳອິດຂອງ X-Forwarded-Host ຫຼື host ຂອງ STOREFRONT_URL;
+ * ບໍ່ມີທັງສອງ header (client ທີ່ບໍ່ແມ່ນ browser) → ຜ່ານ.
  */
 function isCrossOrigin(request: Request): boolean {
   const site = request.headers.get("sec-fetch-site");
   if (site !== null) return site !== "same-origin" && site !== "none";
   const origin = request.headers.get("origin");
   if (origin === null) return false;
-  const host = request.headers.get("host") ?? new URL(request.url).host;
+  let originHost: string;
   try {
-    return new URL(origin).host !== host;
+    originHost = new URL(origin).host;
   } catch {
     return true;
   }
+  return !ownHosts(request).includes(originHost);
+}
+
+/** host ທີ່ນັບວ່າເປັນເວັບນີ້ເອງ */
+function ownHosts(request: Request): string[] {
+  const hosts = [request.headers.get("host") ?? new URL(request.url).host];
+  const forwarded = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  if (forwarded) hosts.push(forwarded.toLowerCase());
+  const publicUrl = process.env.STOREFRONT_URL;
+  if (publicUrl) {
+    try {
+      hosts.push(new URL(publicUrl).host);
+    } catch {
+      // STOREFRONT_URL ຜິດຮູບແບບ → ບໍ່ນັບ
+    }
+  }
+  return hosts;
 }
 
 /** body ທີ່ສົ່ງຕໍ່ໄດ້: JSON ແລະ multipart (ອັບສະລິບ). urlencoded / text/plain ແມ່ນສິ່ງທີ່ form ຂ້າມເວັບສົ່ງໄດ້ → ບໍ່ຮັບ */
@@ -71,6 +89,10 @@ const ALLOWED_BODY_TYPES = ["application/json", "multipart/form-data"];
 function isAllowedBodyType(contentType: string | null): boolean {
   const type = contentType?.split(";")[0]?.trim().toLowerCase();
   return type !== undefined && ALLOWED_BODY_TYPES.includes(type);
+}
+
+function unsupportedMediaType(): NextResponse {
+  return json(415, { statusCode: 415, code: "BAD_REQUEST", message: "Content-Type must be application/json or multipart/form-data" });
 }
 
 /** ອອກຈາກລະບົບຢູ່ເວັບເອງ (ບໍ່ເອີ້ນ API); ຄຳຂໍຂ້າມເວັບຖືກກັນໄວ້ກ່ອນຮອດນີ້ແລ້ວ */
@@ -119,17 +141,21 @@ async function proxy(request: Request, path: string[], lower: string[], memberTo
   if (memberToken) headers.set("authorization", `Bearer ${memberToken}`);
 
   let body: ArrayBuffer | undefined;
-  if (request.method !== "GET") {
-    if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_BODY_BYTES) {
       return json(413, { statusCode: 413, code: "BAD_REQUEST", message: "Request body is too large" });
+    }
+    const contentType = request.headers.get("content-type");
+    // ມີ body ແນ່ນອນ → ປະຕິເສດກ່ອນອ່ານ (ບໍ່ເສຍເວລາ/ໜ່ວຍຄວາມຈຳກັບ form ຂ້າມເວັບ)
+    if ((contentLength > 0 || request.headers.has("transfer-encoding")) && !isAllowedBodyType(contentType)) {
+      return unsupportedMediaType();
     }
     body = await request.arrayBuffer();
     if (body.byteLength > MAX_BODY_BYTES) {
       return json(413, { statusCode: 413, code: "BAD_REQUEST", message: "Request body is too large" });
     }
-    if (body.byteLength > 0 && !isAllowedBodyType(request.headers.get("content-type"))) {
-      return json(415, { statusCode: 415, code: "BAD_REQUEST", message: "Content-Type must be application/json or multipart/form-data" });
-    }
+    if (body.byteLength > 0 && !isAllowedBodyType(contentType)) return unsupportedMediaType();
   }
 
   let upstream: Response;

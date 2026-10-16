@@ -335,6 +335,70 @@ describe("/api/store/* proxy", () => {
       }
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
+
+    it("Origin ກົງກັບ X-Forwarded-Host (ຄ່າທຳອິດ) ຫຼື STOREFRONT_URL → ຜ່ານ (ຢູ່ຫຼັງ reverse proxy ທີ່ປ່ຽນ Host)", async () => {
+      fetchMock.mockImplementation(async () => upstream({}));
+      const behindProxy = { ...json, host: "127.0.0.1:3002", origin: "https://shop.example" };
+      expect((await post(["cart", "check"], { ...behindProxy, "x-forwarded-host": "shop.example, internal.lan" })).status).toBe(200);
+      vi.stubEnv("STOREFRONT_URL", "https://shop.example/");
+      expect((await post(["cart", "check"], behindProxy)).status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("Origin ບໍ່ກົງກັບ Host / X-Forwarded-Host / STOREFRONT_URL → 403", async () => {
+      vi.stubEnv("STOREFRONT_URL", "https://shop.example");
+      const cases: Record<string, string>[] = [
+        { host: "127.0.0.1:3002", origin: "https://evil.example" },
+        { host: "127.0.0.1:3002", origin: "https://evil.example", "x-forwarded-host": "internal.lan, evil.example" },
+      ];
+      for (const headers of cases) expect((await post(["member", "login"], { ...json, ...headers })).status).toBe(403);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("content-type ທີ່ບໍ່ອະນຸຍາດ + content-length/transfer-encoding → 415 ກ່ອນອ່ານ body", async () => {
+      const extras: Record<string, string>[] = [{ "content-length": "25" }, { "transfer-encoding": "chunked" }];
+      for (const extra of extras) {
+        const request = new Request("http://shop.test/api/store/member/login", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded", ...extra },
+          body: "phone=2055551234&pin=1234",
+        });
+        const read = vi.spyOn(request, "arrayBuffer");
+        const res = await POST(request, ctx("member", "login"));
+        expect(res.status).toBe(415);
+        expect(read).not.toHaveBeenCalled();
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("body ໃຫຍ່ເກີນ + content-type ຜິດ → 413 ມາກ່ອນ 415", async () => {
+      const res = await post(["orders", "t", "slips"], { "content-type": "text/plain", "content-length": String(20 * 1024 * 1024) }, "x");
+      expect(res.status).toBe(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("application/json-patch+json, multipart/form-dataX → 415", async () => {
+      for (const type of ["application/json-patch+json", "multipart/form-dataX; boundary=x"]) {
+        expect((await post(["cart", "check"], { "content-type": type })).status).toBe(415);
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("POST ທີ່ body ວ່າງ ແລະ ບໍ່ມີ content-type (path ອື່ນທີ່ບໍ່ແມ່ນ logout) → ສົ່ງຕໍ່", async () => {
+      fetchMock.mockResolvedValue(upstream({ ok: true }));
+      const res = await POST(new Request("http://shop.test/api/store/orders/t/cancel", { method: "POST" }), ctx("orders", "t", "cancel"));
+      expect(res.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("HEAD → ສົ່ງຕໍ່ໂດຍບໍ່ມີ body (ບໍ່ 502)", async () => {
+      fetchMock.mockResolvedValue(new Response(null, { status: 200, headers: { "content-type": "application/json" } }));
+      const res = await GET(new Request("http://shop.test/api/store/config", { method: "HEAD" }), ctx("config"));
+      expect(res.status).toBe(200);
+      const init = fetchMock.mock.calls[0]?.[1];
+      expect(init?.method).toBe("HEAD");
+      expect(init?.body).toBeUndefined();
+    });
   });
 
   it("API ຕິດຕໍ່ບໍ່ໄດ້ → 502 ພ້ອມ code ທີ່ເວັບເຂົ້າໃຈ", async () => {

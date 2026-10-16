@@ -77,9 +77,10 @@ export function OrderPinCard({ token, pinSetup }: { token: string; pinSetup: Sto
     } catch (error) {
       const code = error instanceof ClientApiError ? error.code : undefined;
       if (code === "PIN_ALREADY_SET") setOutcome({ kind: "already" });
-      // ORDER_INVALID_STATE: ສ່ວນຫຼາຍແມ່ນບິນທີ່ຊຳລະກ່ອນຮ້ານ reset PIN / ປ່ຽນເບີ → ຕ້ອງໃຊ້ບິນໃໝ່
-      else if (code === "ORDER_INVALID_STATE") setProblem("ບິນນີ້ໃຊ້ຕັ້ງ PIN ບໍ່ໄດ້ — ຕັ້ງ PIN ໄດ້ຈາກບິນເວັບທີ່ຊຳລະເງິນຫຼັງຈາກຮ້ານ reset PIN ໃຫ້ແລ້ວ");
-      else if (code === "ORDER_NOT_FOUND") setProblem("ບິນນີ້ຍັງຕັ້ງ PIN ບໍ່ໄດ້");
+      // reason PIN_RESET: ບິນຊຳລະກ່ອນຮ້ານ reset PIN / ປ່ຽນເບີ → ຕ້ອງໃຊ້ບິນໃໝ່
+      else if (code === "ORDER_INVALID_STATE" && error instanceof ClientApiError && error.body.reason === "PIN_RESET")
+        setProblem("ບິນນີ້ໃຊ້ຕັ້ງ PIN ບໍ່ໄດ້ — ຕັ້ງ PIN ໄດ້ຈາກບິນເວັບທີ່ຊຳລະເງິນຫຼັງຈາກຮ້ານ reset PIN ໃຫ້ແລ້ວ");
+      else if (code === "ORDER_INVALID_STATE" || code === "ORDER_NOT_FOUND") setProblem("ບິນນີ້ຍັງຕັ້ງ PIN ບໍ່ໄດ້");
       else setProblem(apiMessage(code, "ຕັ້ງ PIN ບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່"));
     } finally {
       setSubmitting(false);
