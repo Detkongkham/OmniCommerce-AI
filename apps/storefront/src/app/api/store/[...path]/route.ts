@@ -51,10 +51,11 @@ function logout(request: Request): NextResponse {
   const site = request.headers.get("sec-fetch-site");
   const origin = request.headers.get("origin");
   const host = request.headers.get("host") ?? new URL(request.url).host;
+  // ມີ Sec-Fetch-Site → ເຊື່ອຄ່ານີ້ຢ່າງດຽວ (Host ອາດຖືກ reverse proxy ປ່ຽນ); ບໍ່ມີ → ທຽບ Origin ກັບ Host
   let crossOrigin = site !== null && site !== "same-origin" && site !== "none";
-  if (origin !== null) {
+  if (site === null && origin !== null) {
     try {
-      crossOrigin ||= new URL(origin).host !== host;
+      crossOrigin = new URL(origin).host !== host;
     } catch {
       crossOrigin = true;
     }
@@ -83,8 +84,8 @@ async function forward(request: Request, context: Context): Promise<Response> {
   const cookie = new NextRequest(request.url, { headers: request.headers }).cookies.get(MEMBER_COOKIE)?.value;
   const memberToken = cookie && MEMBER_TOKEN_PATTERN.test(cookie) ? cookie : undefined;
   const response = await proxy(request, path, lower, memberToken);
-  // cookie ເສຍ → ເຮັດເປັນ guest ແລະ ລຶບຖິ້ມ
-  return cookie && !memberToken ? clearMemberCookie(response) : response;
+  // cookie ເສຍ → ເຮັດເປັນ guest ແລະ ລຶບຖິ້ມ (ເວັ້ນແຕ່ login / PIN ຫາກໍ່ຕັ້ງ cookie ໃໝ່ໃຫ້ແລ້ວ)
+  return cookie && !memberToken && !response.cookies.get(MEMBER_COOKIE) ? clearMemberCookie(response) : response;
 }
 
 async function proxy(request: Request, path: string[], lower: string[], memberToken: string | undefined): Promise<NextResponse> {

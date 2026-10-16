@@ -224,6 +224,13 @@ describe("/api/store/* proxy", () => {
       expect(res.headers.get("set-cookie")).toMatch(/^oca_member=;.*Max-Age=0/);
     });
 
+    it("cookie ຮູບແບບຜິດ + login ສຳເລັດ → ເກັບ cookie ໃໝ່ (ບໍ່ລຶບທັບ)", async () => {
+      fetchMock.mockResolvedValue(upstream({ memberToken: "tok", member }));
+      const res = await login(["member", "login"], { headers: { cookie: "oca_member=a%0D%0Ab" } });
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull();
+      expect(res.headers.get("set-cookie")).toMatch(/^oca_member=tok;/);
+    });
+
     it("logout ຈາກເວັບອື່ນ (Sec-Fetch-Site ຫຼື Origin ຕ່າງ) → 403, ບໍ່ລຶບ cookie", async () => {
       const crossSite: Record<string, string>[] = [{ "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "same-site" }, { origin: "http://evil.test" }];
       for (const headers of crossSite) {
@@ -235,7 +242,7 @@ describe("/api/store/* proxy", () => {
     });
 
     it("logout ຈາກເວັບດຽວກັນ (same-origin / none / Origin ກົງ) → 204", async () => {
-      const sameSite: Record<string, string>[] = [{ "sec-fetch-site": "same-origin", origin: "http://shop.test" }, { "sec-fetch-site": "none" }, { origin: "http://shop.test" }];
+      const sameSite: Record<string, string>[] = [{ "sec-fetch-site": "same-origin", origin: "http://public.example" }, { "sec-fetch-site": "none" }, { origin: "http://shop.test" }];
       for (const headers of sameSite) {
         const res = await login(["Member", "Logout"], { headers });
         expect(res.status).toBe(204);
