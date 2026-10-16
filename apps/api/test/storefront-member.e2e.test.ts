@@ -290,12 +290,12 @@ describe("storefront member (e2e)", () => {
       await get("/store/member/me", memberToken).expect(200);
     });
 
-    it("optionalMember: ບໍ່ມີ header = null; header ວ່າງ/ຜິດ → MEMBER_REQUIRED; token ຖືກ = ລູກຄ້າ", async () => {
+    it("optionalMember: ບໍ່ມີ header ຫຼື header ວ່າງ/ຜິດ = null (guest); token ຖືກ = ລູກຄ້າ", async () => {
       const { memberToken } = await member();
       const service = app().get(StoreMemberService);
       expect(await service.optionalMember(undefined)).toBeNull();
       for (const header of ["", "Bearer ", "Bearer not-a-jwt"]) {
-        await expect(service.optionalMember(header)).rejects.toMatchObject({ response: { code: "MEMBER_REQUIRED" } });
+        expect(await service.optionalMember(header)).toBeNull();
       }
       const me = await customer();
       expect(await service.optionalMember(`Bearer ${memberToken}`)).toEqual({ id: me.id, name: me.name, phone: PHONE, pointsBalance: 0, tier: "BRONZE" });

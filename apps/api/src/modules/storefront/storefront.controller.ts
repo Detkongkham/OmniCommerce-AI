@@ -99,7 +99,7 @@ export class StorefrontController {
     @Headers("authorization") authorization?: string,
   ) {
     this.limiter.hit(`check:${clientOf(req)}`, this.env.STORE_CHECK_RATE_LIMIT, MINUTE_MS);
-    // ໃຊ້ແຕ້ມຕ້ອງເຂົ້າລະບົບ; ບໍ່ໃຊ້ແຕ້ມ = session ບໍ່ບັງຄັບ (ມີ = ສະແດງຍອດແຕ້ມ)
+    // ໃຊ້ແຕ້ມຕ້ອງເຂົ້າລະບົບ; ບໍ່ໃຊ້ແຕ້ມ = session ບໍ່ບັງຄັບ (ໃຊ້ໄດ້ = ສະແດງຍອດແຕ້ມ, ໃຊ້ບໍ່ໄດ້ = guest)
     const member =
       body.pointsToRedeem !== undefined ? await this.members.requireMember(authorization) : await this.members.optionalMember(authorization);
     return this.catalog.cartCheck(body, member);

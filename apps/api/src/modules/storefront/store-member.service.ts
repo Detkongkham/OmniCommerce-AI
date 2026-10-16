@@ -159,28 +159,38 @@ export class StoreMemberService {
    * ບໍ່ມີ/ຜິດ/ໝົດອາຍຸ, ລູກຄ້າຖືກລຶບ, PIN ຖືກລຶບ ຫຼື pinVersion ປ່ຽນ (reset) → 401 MEMBER_REQUIRED.
    */
   async requireMember(authorization: string | undefined): Promise<StoreMemberRow> {
+    const member = await this.resolveMember(authorization);
+    if (!member) throw memberRequired();
+    return member;
+  }
+
+  /**
+   * session ທີ່ບໍ່ບັງຄັບ (ກວດກະຕ່າບໍ່ໃຊ້ແຕ້ມ): ບໍ່ມີ header ຫຼື session ໃຊ້ບໍ່ໄດ້ (ຜິດ/ໝົດອາຍຸ/ຖືກ reset) = null (guest).
+   * session ເກົ່າບໍ່ກີດຂວາງ guest ຄືກັບ POST /store/orders ທີ່ບໍ່ໃຊ້ແຕ້ມ; ໃຊ້ແຕ້ມຕ້ອງໃຊ້ requireMember
+   */
+  async optionalMember(authorization: string | undefined): Promise<StoreMemberRow | null> {
+    if (authorization === undefined) return null;
+    return this.resolveMember(authorization);
+  }
+
+  /** null = session ໃຊ້ບໍ່ໄດ້ (ເຫດຜົນໃດກໍ່ຕາມ) */
+  private async resolveMember(authorization: string | undefined): Promise<StoreMemberRow | null> {
     const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
     let payload: { sub?: unknown; pv?: unknown };
     try {
       payload = await this.jwt.verifyAsync(token, { secret: this.secret, algorithms: ["HS256"], audience: MEMBER_AUDIENCE });
     } catch {
-      throw memberRequired();
+      return null;
     }
-    if (typeof payload.sub !== "string" || typeof payload.pv !== "number") throw memberRequired();
+    if (typeof payload.sub !== "string" || typeof payload.pv !== "number") return null;
     const customer = await this.prisma.customer.findUnique({
       where: { id: payload.sub },
       select: { ...storeMemberSelect, pinHash: true, pinVersion: true },
     });
-    if (!customer) throw memberRequired();
+    if (!customer) return null;
     const { pinHash, pinVersion, ...member } = customer;
-    if (!pinHash || pinVersion !== payload.pv) throw memberRequired();
+    if (!pinHash || pinVersion !== payload.pv) return null;
     return member;
-  }
-
-  /** ບໍ່ມີ header (undefined) = null (guest); ມີ header ແຕ່ໃຊ້ບໍ່ໄດ້ ລວມທັງຄ່າວ່າງ → 401 MEMBER_REQUIRED (ບໍ່ຕົກເປັນ guest ແບບງຽບໆ) */
-  async optionalMember(authorization: string | undefined): Promise<StoreMemberRow | null> {
-    if (authorization === undefined) return null;
-    return this.requireMember(authorization);
   }
 
   /** DTO ຂອງ GET /store/member/me. ລະບົບແຕ້ມປິດ ກໍ່ຍັງຄືນຍອດ/ລະດັບ */

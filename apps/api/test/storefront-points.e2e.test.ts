@@ -88,9 +88,18 @@ describe("storefront loyalty points (e2e)", () => {
       expect(res.body).toMatchObject({ points: null, pointsError: null, total: "300.00" });
     });
 
-    it("guest ສົ່ງ pointsToRedeem / header ໃຊ້ບໍ່ໄດ້ → 401 MEMBER_REQUIRED", async () => {
+    it("guest ສົ່ງ pointsToRedeem (ບໍ່ມີ session ຫຼື session ໃຊ້ບໍ່ໄດ້) → 401 MEMBER_REQUIRED", async () => {
       expect((await check({ pointsToRedeem: 10 }).expect(401)).body.code).toBe("MEMBER_REQUIRED");
-      expect((await check({}, "not-a-token").expect(401)).body.code).toBe("MEMBER_REQUIRED");
+      expect((await check({ pointsToRedeem: 10 }, "not-a-token").expect(401)).body.code).toBe("MEMBER_REQUIRED");
+    });
+
+    it("ບໍ່ໃຊ້ແຕ້ມ + session ໃຊ້ບໍ່ໄດ້ (ຜິດ/ໝົດອາຍຸ/ຖືກ reset) → ກວດແບບ guest (points null)", async () => {
+      expect((await check({}, "not-a-token").expect(200)).body).toMatchObject({ points: null, pointsError: null, total: "300.00" });
+      const token = await member(500);
+      const row = await customer();
+      await db().customer.update({ where: { id: row.id }, data: { pinVersion: { increment: 1 } } });
+      expect((await check({}, token).expect(200)).body).toMatchObject({ points: null, total: "300.00" });
+      expect((await check({ pointsToRedeem: 10 }, token).expect(401)).body.code).toBe("MEMBER_REQUIRED");
     });
 
     it("ສະມາຊິກບໍ່ໃຊ້ແຕ້ມ: ຍອດແຕ້ມ ແລະ ແຕ້ມສູງສຸດທີ່ໃຊ້ໄດ້ (50% ຂອງ 300)", async () => {
