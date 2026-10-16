@@ -149,6 +149,19 @@ describe("storefront loyalty points (e2e)", () => {
       });
     });
 
+    it("ໂຄດໃຊ້ບໍ່ໄດ້ + ແຕ້ມ: couponError, ແຕ້ມຄິດຈາກຍອດທີ່ບໍ່ຫຼຸດດ້ວຍໂຄດ", async () => {
+      const token = await member(500);
+      const res = await check({ couponCode: "NOPE", pointsToRedeem: 100 }, token).expect(200);
+      expect(res.body).toMatchObject({
+        coupon: null,
+        couponError: { reason: "NOT_FOUND" },
+        points: { balance: 500, maxPoints: 150, redeemed: 100, discount: "100.00" },
+        pointsError: null,
+        subtotal: "200.00",
+        total: "200.00",
+      });
+    });
+
     it("ລະບົບແຕ້ມປິດ: points null; ສົ່ງ pointsToRedeem → pointsError DISABLED", async () => {
       const token = await member(500);
       await db().storeSetting.update({ where: { id: 1 }, data: { loyaltyEnabled: false } });
@@ -190,6 +203,49 @@ describe("storefront loyalty points (e2e)", () => {
         pinSetup: "NONE",
       });
       await expectLedgerMatches(db());
+    });
+
+    it("ໂຄດ + flash sale + ແຕ້ມ: total ຂອງ cart check ໃຊ້ເປັນ expectedTotal ໄດ້ ແລະ ບິນໄດ້ຍອດດຽວກັນ", async () => {
+      const token = await member(500);
+      const now = Date.now();
+      await db().flashSale.create({
+        data: {
+          name: "Flash",
+          startsAt: new Date(now - 60_000),
+          endsAt: new Date(now + 3_600_000),
+          items: { create: [{ variantId: state.f.v1.id, salePrice: "80" }] },
+        },
+      });
+      await db().coupon.create({ data: { code: "OFF40", type: "FIXED", value: "40" } });
+      // 3 x 80 = 240 → ໂຄດ 40 → 200 → ເພດານແຕ້ມ 100; ໃຊ້ 60 → 140
+      const cart = await check({ couponCode: "OFF40", pointsToRedeem: 60 }, token).expect(200);
+      expect(cart.body).toMatchObject({
+        coupon: { code: "OFF40", discount: "40.00" },
+        points: { balance: 500, maxPoints: 100, redeemed: 60, discount: "60.00" },
+        pointsError: null,
+        subtotal: "140.00",
+        total: "140.00",
+      });
+      expect(cart.body.items[0]).toMatchObject({ unitPrice: "80.00", lineTotal: "240.00" });
+
+      const res = await placeOrder({ couponCode: "OFF40", pointsToRedeem: 60, expectedTotal: cart.body.total }, token).expect(201);
+      const row = await db().order.findUniqueOrThrow({ where: { publicToken: res.body.token }, include: { items: true } });
+      expect(row.total.toFixed(2)).toBe(cart.body.total);
+      expect(row.couponDiscount.toFixed(2)).toBe("40.00");
+      expect(row.pointsDiscount.toFixed(2)).toBe("60.00");
+      expect(row.discountTotal.toFixed(2)).toBe("100.00");
+      expect(row.pointsRedeemed).toBe(60);
+      expect(row.items[0]?.unitPrice.toFixed(2)).toBe("80.00");
+      expect(row.items[0]?.flashSaleId).not.toBeNull();
+      const entries = await db().pointEntry.findMany({ where: { orderId: row.id } });
+      expect(entries.map((entry) => `${entry.type}:${entry.points}:${entry.balanceAfter}`)).toEqual(["REDEEM:-60:440"]);
+      expect((await customer()).pointsBalance).toBe(440);
+      expect((await getOrder(res.body.token)).body).toMatchObject({
+        subtotal: "140.00",
+        total: "140.00",
+        coupon: { code: "OFF40", discount: "40.00" },
+        points: { redeemed: 60, discount: "60.00" },
+      });
     });
 
     it("expectedTotal ທີ່ບໍ່ຫັກແຕ້ມ → 409 PRICE_CHANGED ພ້ອມຍອດຫຼັງຫັກ; ແຕ້ມບໍ່ຖືກຫັກ", async () => {

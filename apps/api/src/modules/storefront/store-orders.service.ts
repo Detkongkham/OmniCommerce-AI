@@ -41,6 +41,7 @@ export class StoreOrdersService {
     idempotencyKey: string,
   ): Promise<StoreOrderCreatedDto> {
     if (body.pointsToRedeem !== undefined) {
+      // ກັນໄວ້ເທົ່ານັ້ນ (defensive): controller ບັງຄັບ session ກ່ອນເອີ້ນແລ້ວ
       if (!member) throw apiError("MEMBER_REQUIRED", "Member sign-in required");
       // ແຕ້ມເປັນຂອງລູກຄ້າເບີນີ້: ບິນຖືກຜູກກັບລູກຄ້າຕາມເບີທີ່ພິມ (ບໍ່ normalize) ຈຶ່ງຕ້ອງຕົງກັນທຸກຕົວອັກສອນ
       if (member.phone !== body.phone) throw pointsRejection(new PointsRejectedError("PHONE_MISMATCH"));
