@@ -169,8 +169,8 @@ export const storeOrderInclude = {
   shipment: {
     select: { trackingNumber: true, courier: { select: { name: true, trackingUrlTemplate: true } } },
   },
-  // ໃຊ້ຄິດ pinSetup ເທົ່ານັ້ນ (DTO ບໍ່ມີ pinHash/id ຂອງລູກຄ້າ)
-  customer: { select: { pinHash: true } },
+  // ໃຊ້ຄິດ pinSetup ເທົ່ານັ້ນ (DTO ບໍ່ມີ pinHash/pinResetAt/id ຂອງລູກຄ້າ)
+  customer: { select: { pinHash: true, pinResetAt: true } },
 } as const satisfies Prisma.OrderInclude;
 
 export type StoreOrderRow = Prisma.OrderGetPayload<{ include: typeof storeOrderInclude }>;
@@ -222,13 +222,29 @@ export function isPaidOrderStatus(status: string): boolean {
   return (COUNTED_ORDER_STATUSES as readonly string[]).includes(status);
 }
 
+/**
+ * ຫຼັງພະນັກງານເຮັດໃຫ້ PIN ໃຊ້ບໍ່ໄດ້ (pinResetAt) ຕັ້ງ PIN ໄດ້ສະເພາະຈາກບິນທີ່ຈ່າຍຫຼັງເວລານັ້ນ:
+ * ລິ້ງບິນເກົ່າ (ລວມທັງບິນທີ່ຄົນອື່ນຈ່າຍໃສ່ເບີນີ້) ເອົາບັນຊີຄືນບໍ່ໄດ້. paidAt null (ຂໍ້ມູນເກົ່າ) = ບໍ່ຜ່ານ
+ */
+export function isPaidAfterPinReset(paidAt: Date | null, pinResetAt: Date | null): boolean {
+  return pinResetAt === null || (paidAt !== null && paidAt.getTime() > pinResetAt.getTime());
+}
+
 /** ເງື່ອນໄຂດຽວກັບ StoreMemberService.setPin: AVAILABLE = ຕັ້ງໄດ້ດຽວນີ້, AFTER_PAYMENT = ຕັ້ງໄດ້ເມື່ອຈ່າຍ */
 export function pinSetupOf(
-  order: { channel: string; customerId: string | null; status: string; reservedUntil: Date | null; customer: { pinHash: string | null } | null },
+  order: {
+    channel: string;
+    customerId: string | null;
+    status: string;
+    reservedUntil: Date | null;
+    paidAt: Date | null;
+    customer: { pinHash: string | null; pinResetAt: Date | null } | null;
+  },
   now: Date = new Date(),
 ): StorePinSetup {
   if (!isPinSetupOrder(order) || !order.customer || order.customer.pinHash) return "NONE";
-  if (isPaidOrderStatus(order.status)) return "AVAILABLE";
+  // ຈ່າຍແລ້ວ: ຕ້ອງຈ່າຍຫຼັງ reset. ຍັງລໍຈ່າຍ: ການຈ່າຍຈະເກີດຫຼັງ reset ສະເໝີ
+  if (isPaidOrderStatus(order.status)) return isPaidAfterPinReset(order.paidAt, order.customer.pinResetAt) ? "AVAILABLE" : "NONE";
   return order.status === "PENDING_PAYMENT" && !isReservationExpired(order, now) ? "AFTER_PAYMENT" : "NONE";
 }
 

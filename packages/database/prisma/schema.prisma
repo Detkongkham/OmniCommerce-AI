@@ -334,6 +334,8 @@ model Customer {
   pinFailedCount Int            @default(0)
   pinLockedUntil DateTime?
   pinVersion     Int            @default(0)
+  // ເວລາທີ່ພະນັກງານເຮັດໃຫ້ PIN ໃຊ້ບໍ່ໄດ້ (reset, ປ່ຽນເບີ, ລວມທີ່ຖິ້ມ PIN): ຫຼັງຈາກນີ້ ຕັ້ງ PIN ໄດ້ສະເພາະຈາກບິນເວັບທີ່ຈ່າຍຫຼັງເວລານີ້
+  pinResetAt     DateTime?
   orders         Order[]
   conversations  Conversation[]
   createdAt      DateTime       @default(now())

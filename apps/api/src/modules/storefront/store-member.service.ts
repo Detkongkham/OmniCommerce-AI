@@ -27,7 +27,7 @@ import {
   toStoreMemberOrder,
   toStoreMemberPoint,
 } from "./store-member.mapper";
-import { isPaidOrderStatus, isPinSetupOrder } from "./storefront.mapper";
+import { isPaidAfterPinReset, isPaidOrderStatus, isPinSetupOrder } from "./storefront.mapper";
 
 const MEMBER_AUDIENCE = "member";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -71,7 +71,13 @@ export class StoreMemberService {
     const order = STORE_TOKEN_PATTERN.test(token)
       ? await this.prisma.order.findUnique({
           where: { publicToken: token },
-          select: { channel: true, status: true, customerId: true, customer: { select: { id: true, pinHash: true } } },
+          select: {
+            channel: true,
+            status: true,
+            paidAt: true,
+            customerId: true,
+            customer: { select: { id: true, pinHash: true, pinResetAt: true } },
+          },
         })
       : null;
     if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
@@ -85,13 +91,23 @@ export class StoreMemberService {
     }
     // ຕອບກ່ອນ hash (argon2 ແພງ); UPDATE ມີເງື່ອນໄຂລຸ່ມນີ້ຍັງເປັນດ່ານຈິງຂອງຄຳຂໍພ້ອມກັນ
     if (customer.pinHash) throw alreadySet();
+    // ຫຼັງ reset/ປ່ຽນເບີ ໂດຍພະນັກງານ: ສະເພາະບິນທີ່ຈ່າຍຫຼັງຈາກນັ້ນ (ລິ້ງບິນເກົ່າເອົາບັນຊີຄືນບໍ່ໄດ້)
+    if (!isPaidAfterPinReset(order.paidAt, customer.pinResetAt)) throw paidBeforeReset();
     const pinHash = await this.passwords.hash(pin);
-    // ເງື່ອນໄຂ pinHash IS NULL ຢູ່ໃນ UPDATE ດຽວ: ສອງຄຳຂໍພ້ອມກັນ ສຳເລັດອັນດຽວ
+    // ເງື່ອນໄຂ pinHash IS NULL ແລະ pinResetAt ຢູ່ໃນ UPDATE ດຽວ: ສອງຄຳຂໍພ້ອມກັນ ສຳເລັດອັນດຽວ,
+    // ແລະ reset ທີ່ເກີດລະຫວ່າງອ່ານ ແລະ ບັນທຶກ ກໍ່ກັນບິນເກົ່ານີ້ໄດ້
     const { count } = await this.prisma.customer.updateMany({
-      where: { id: customer.id, pinHash: null },
+      where: {
+        id: customer.id,
+        pinHash: null,
+        OR: [{ pinResetAt: null }, ...(order.paidAt ? [{ pinResetAt: { lt: order.paidAt } }] : [])],
+      },
       data: { pinHash, pinFailedCount: 0, pinLockedUntil: null },
     });
-    if (count === 0) throw alreadySet();
+    if (count === 0) {
+      const current = await this.prisma.customer.findUnique({ where: { id: customer.id }, select: { pinHash: true } });
+      throw current?.pinHash ? alreadySet() : paidBeforeReset();
+    }
     return this.session(customer.id);
   }
 
@@ -224,6 +240,10 @@ function loginFailed() {
 function locked(until: Date) {
   const retryAfterSeconds = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 1000));
   return apiError("MEMBER_LOCKED", "Too many failed attempts; try again later", { retryAfterSeconds });
+}
+
+function paidBeforeReset() {
+  return apiError("ORDER_INVALID_STATE", "After a PIN reset, a PIN can only be set from an order paid after the reset");
 }
 
 function alreadySet() {

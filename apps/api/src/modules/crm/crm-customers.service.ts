@@ -322,9 +322,11 @@ export class CrmCustomersService {
     const existing = await this.prisma.customer.findUnique({ where: { id }, select: { pinHash: true } });
     if (!existing) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
     // updateMany: ລູກຄ້າຖືກລຶບ (ລວມ) ລະຫວ່າງອ່ານ ແລະ ບັນທຶກ = 404 ບໍ່ແມ່ນ 500
+    // pinResetAt: ຕັ້ງ PIN ໃໝ່ໄດ້ສະເພາະຈາກບິນເວັບທີ່ຈ່າຍຫຼັງຈາກນີ້ (ລິ້ງບິນເກົ່າເອົາບັນຊີຄືນບໍ່ໄດ້)
+    const pinResetAt = new Date();
     const updated = await this.prisma.customer.updateMany({
       where: { id },
-      data: { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } },
+      data: { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 }, pinResetAt },
     });
     if (updated.count === 0) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
     await this.audit.record({
@@ -333,7 +335,7 @@ export class CrmCustomersService {
       entity: "Customer",
       entityId: id,
       before: { hasPin: existing.pinHash !== null },
-      after: { hasPin: false },
+      after: { hasPin: false, pinResetAt: pinResetAt.toISOString() },
       ip,
     });
     return this.get(id);
@@ -359,7 +361,9 @@ export class CrmCustomersService {
       row = await this.prisma.customer.update({
         where: { id },
         data: {
-          ...(phoneChanged ? { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } } : {}),
+          ...(phoneChanged
+            ? { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 }, pinResetAt: new Date() }
+            : {}),
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.phone !== undefined ? { phone: input.phone } : {}),
           ...(input.email !== undefined ? { email: input.email } : {}),
@@ -409,10 +413,13 @@ export class CrmCustomersService {
         : dropTargetPin
           ? { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } }
           : {};
+      // pinResetAt ຫຼ້າສຸດຂອງທັງສອງ (ບິນເກົ່າຂອງ source ຍ້າຍມາ target) ແລະ ຖິ້ມ PIN = reset ດຽວນີ້
+      const pinResetAt = latest(target.pinResetAt, source.pinResetAt, dropTargetPin ? new Date() : null);
       await tx.customer.update({
         where: { id: target.id },
         data: {
           ...pinData,
+          pinResetAt,
           phone: target.phone ?? source.phone,
           email: target.email ?? source.email,
           facebookUserId: target.facebookUserId ?? source.facebookUserId,
@@ -441,6 +448,10 @@ export class CrmCustomersService {
     });
     return this.get(targetId);
   }
+}
+
+function latest(...dates: (Date | null)[]): Date | null {
+  return dates.reduce<Date | null>((max, date) => (date && (!max || date > max) ? date : max), null);
 }
 
 function phoneTaken(customerId: string | undefined) {
