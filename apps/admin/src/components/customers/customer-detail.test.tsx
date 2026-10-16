@@ -42,6 +42,7 @@ const customer: CrmCustomerDetailDto = {
   nextTier: { tier: "GOLD", minSpend: "5000000.00", remaining: "2500000.00" },
   hasPin: true,
   pinLockedUntil: null,
+  pinResetAt: null,
 };
 const orders: Page<CrmCustomerOrderDto> = {
   items: [{ id: "o1", orderNumber: "SO-000001", status: "PAID", channel: "FACEBOOK", total: "195.00", createdAt: "2026-10-05T05:30:00.000Z" }],

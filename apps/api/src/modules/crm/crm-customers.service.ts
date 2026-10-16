@@ -65,6 +65,8 @@ export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
   hasPin: boolean;
   /** ລັອກການເຂົ້າລະບົບເວັບຮອດ; null = ບໍ່ລັອກ ຫຼື ລັອກໝົດອາຍຸແລ້ວ */
   pinLockedUntil: Date | null;
+  /** ພະນັກງານເຮັດໃຫ້ PIN ໃຊ້ບໍ່ໄດ້ຫຼ້າສຸດ (reset/ປ່ຽນເບີ/ລວມ); ຫຼັງຈາກນີ້ຕັ້ງ PIN ໄດ້ສະເພາະຈາກບິນເວັບທີ່ຈ່າຍຫຼັງເວລານີ້ */
+  pinResetAt: Date | null;
 }
 
 export interface CrmPointEntryDto {
@@ -236,6 +238,7 @@ export class CrmCustomersService {
       nextTier: nextTierAfter(loyalty.tierRules, customer.tier, spend12m),
       hasPin: customer.pinHash !== null,
       pinLockedUntil: customer.pinLockedUntil && customer.pinLockedUntil > now ? customer.pinLockedUntil : null,
+      pinResetAt: customer.pinResetAt,
     };
   }
 

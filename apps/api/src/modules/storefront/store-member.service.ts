@@ -27,7 +27,7 @@ import {
   toStoreMemberOrder,
   toStoreMemberPoint,
 } from "./store-member.mapper";
-import { isPaidAfterPinReset, isPaidOrderStatus, isPinSetupOrder } from "./storefront.mapper";
+import { isPaidAfterPinReset, isPaidOrderStatus, isPinSetupOrder, isUnderCustomerPhone } from "./storefront.mapper";
 
 const MEMBER_AUDIENCE = "member";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -75,8 +75,9 @@ export class StoreMemberService {
             channel: true,
             status: true,
             paidAt: true,
+            shippingPhone: true,
             customerId: true,
-            customer: { select: { id: true, pinHash: true, pinResetAt: true } },
+            customer: { select: { id: true, phone: true, pinHash: true, pinResetAt: true } },
           },
         })
       : null;
@@ -91,22 +92,33 @@ export class StoreMemberService {
     }
     // ຕອບກ່ອນ hash (argon2 ແພງ); UPDATE ມີເງື່ອນໄຂລຸ່ມນີ້ຍັງເປັນດ່ານຈິງຂອງຄຳຂໍພ້ອມກັນ
     if (customer.pinHash) throw alreadySet();
+    // PIN ເປັນຂອງເບີ: ບິນຕ້ອງຖືກສັ່ງພາຍໃຕ້ເບີປັດຈຸບັນຂອງລູກຄ້າ (ບິນທີ່ຍ້າຍມາຕອນລວມ/ແກ້ເບີສົ່ງ ໃຊ້ບໍ່ໄດ້)
+    const shippingPhone = order.shippingPhone;
+    if (shippingPhone === null || !isUnderCustomerPhone(shippingPhone, customer.phone)) throw phoneMismatch();
     // ຫຼັງ reset/ປ່ຽນເບີ ໂດຍພະນັກງານ: ສະເພາະບິນທີ່ຈ່າຍຫຼັງຈາກນັ້ນ (ລິ້ງບິນເກົ່າເອົາບັນຊີຄືນບໍ່ໄດ້)
     if (!isPaidAfterPinReset(order.paidAt, customer.pinResetAt)) throw paidBeforeReset();
     const pinHash = await this.passwords.hash(pin);
-    // ເງື່ອນໄຂ pinHash IS NULL ແລະ pinResetAt ຢູ່ໃນ UPDATE ດຽວ: ສອງຄຳຂໍພ້ອມກັນ ສຳເລັດອັນດຽວ,
-    // ແລະ reset ທີ່ເກີດລະຫວ່າງອ່ານ ແລະ ບັນທຶກ ກໍ່ກັນບິນເກົ່ານີ້ໄດ້
+    // ເງື່ອນໄຂ pinHash IS NULL, ເບີ ແລະ pinResetAt ຢູ່ໃນ UPDATE ດຽວ: ສອງຄຳຂໍພ້ອມກັນ ສຳເລັດອັນດຽວ,
+    // ແລະ reset/ປ່ຽນເບີ ທີ່ເກີດລະຫວ່າງອ່ານ ແລະ ບັນທຶກ ກໍ່ກັນບິນນີ້ໄດ້
     const { count } = await this.prisma.customer.updateMany({
       where: {
         id: customer.id,
         pinHash: null,
+        phone: shippingPhone,
         OR: [{ pinResetAt: null }, ...(order.paidAt ? [{ pinResetAt: { lt: order.paidAt } }] : [])],
       },
       data: { pinHash, pinFailedCount: 0, pinLockedUntil: null },
     });
     if (count === 0) {
-      const current = await this.prisma.customer.findUnique({ where: { id: customer.id }, select: { pinHash: true } });
-      throw current?.pinHash ? alreadySet() : paidBeforeReset();
+      // ແພ້ການແຂ່ງ: ບອກເຫດຜົນຈາກຄ່າຫຼ້າສຸດ (ລູກຄ້າຖືກລຶບ/ລວມໄປແລ້ວ = ບໍ່ພົບບິນ ແບບກາງ)
+      const current = await this.prisma.customer.findUnique({
+        where: { id: customer.id },
+        select: { pinHash: true, phone: true, pinResetAt: true },
+      });
+      if (!current) throw apiError("ORDER_NOT_FOUND", "Order not found");
+      if (current.pinHash) throw alreadySet();
+      if (!isUnderCustomerPhone(shippingPhone, current.phone)) throw phoneMismatch();
+      throw paidBeforeReset();
     }
     return this.session(customer.id);
   }
@@ -253,7 +265,13 @@ function locked(until: Date) {
 }
 
 function paidBeforeReset() {
-  return apiError("ORDER_INVALID_STATE", "After a PIN reset, a PIN can only be set from an order paid after the reset");
+  return apiError("ORDER_INVALID_STATE", "After a PIN reset, a PIN can only be set from an order paid after the reset", {
+    reason: "PIN_RESET",
+  });
+}
+
+function phoneMismatch() {
+  return apiError("ORDER_INVALID_STATE", "A PIN can only be set from an order placed under the customer's current phone");
 }
 
 function alreadySet() {

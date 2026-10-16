@@ -622,6 +622,8 @@ export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
   hasPin: boolean;
   /** ISO; null = ບໍ່ລັອກ */
   pinLockedUntil: string | null;
+  /** ISO; ພະນັກງານເຮັດໃຫ້ PIN ໃຊ້ບໍ່ໄດ້ຫຼ້າສຸດ (reset/ປ່ຽນເບີ/ລວມ). ຫຼັງຈາກນີ້ຕັ້ງ PIN ໄດ້ສະເພາະຈາກບິນເວັບທີ່ຈ່າຍຫຼັງເວລານີ້ */
+  pinResetAt: string | null;
 }
 
 export interface CrmPointEntryDto {

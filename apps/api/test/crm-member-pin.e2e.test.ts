@@ -54,7 +54,7 @@ describe("crm member PIN (e2e)", () => {
   describe("GET /crm/customers/:id", () => {
     it("hasPin + pinLockedUntil (ສະເພາະລັອກທີ່ຍັງບໍ່ໝົດ); ບໍ່ສົ່ງ hash/ຕົວນັບ/version", async () => {
       const plain = await db().customer.create({ data: { name: "ບໍ່ມີ PIN" } });
-      expect((await detail(plain.id).expect(200)).body).toMatchObject({ hasPin: false, pinLockedUntil: null });
+      expect((await detail(plain.id).expect(200)).body).toMatchObject({ hasPin: false, pinLockedUntil: null, pinResetAt: null });
 
       const { customer } = await member();
       const res = await detail(customer.id, chat).expect(200);
@@ -110,8 +110,9 @@ describe("crm member PIN (e2e)", () => {
       const view = await request(server()).get(`/store/orders/${oldOrder.token}`).expect(200);
       expect(view.body.pinSetup).toBe("NONE");
       expect(JSON.stringify(view.body)).not.toContain("pinResetAt");
-      expect((await setPin(oldOrder.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+      expect((await setPin(oldOrder.token).expect(409)).body).toMatchObject({ code: "ORDER_INVALID_STATE", reason: "PIN_RESET" });
       expect((await db().customer.findUniqueOrThrow({ where: { id: customer.id } })).pinHash).toBeNull();
+      expect((await detail(customer.id).expect(200)).body.pinResetAt).toBe(row.pinResetAt?.toISOString());
 
       // ບິນທີ່ສ້າງກ່ອນ reset ແຕ່ຈ່າຍຫຼັງ reset ກໍ່ໃຊ້ໄດ້ (ການຈ່າຍເກີດຫຼັງ reset)
       const res = await request(server())
@@ -157,6 +158,23 @@ describe("crm member PIN (e2e)", () => {
       await request(server()).post(`/crm/customers/${customer.id}/pin/reset`).expect(401);
       await me(memberToken).expect(200);
       expect(await db().auditLog.count({ where: { action: "customer.pin.reset" } })).toBe(0);
+    });
+  });
+
+  describe("PIN ຕັ້ງໄດ້ສະເພາະບິນທີ່ສັ່ງພາຍໃຕ້ເບີຂອງລູກຄ້າ", () => {
+    it("ພະນັກງານແກ້ shippingPhone ຂອງບິນເປັນເບີອື່ນ → ບິນນັ້ນຕັ້ງ PIN ບໍ່ໄດ້ (pinSetup NONE)", async () => {
+      const order = await placePaid();
+      const row = await db().order.findUniqueOrThrow({ where: { publicToken: order.token } });
+      await request(server()).patch(`/fulfillment/${row.id}/shipping`).set(manager).send({ shippingPhone: OTHER_PHONE }).expect(200);
+      expect((await request(server()).get(`/store/orders/${order.token}`).expect(200)).body.pinSetup).toBe("NONE");
+      expect((await setPin(order.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+
+      // ລ້າງ shippingPhone (null) ກໍໃຊ້ບໍ່ໄດ້; ບິນທີ່ລໍຈ່າຍ ແລະ ເບີບໍ່ກົງ = NONE (ບໍ່ແມ່ນ AFTER_PAYMENT)
+      await request(server()).patch(`/fulfillment/${row.id}/shipping`).set(manager).send({ shippingPhone: "" }).expect(200);
+      expect((await setPin(order.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+      await db().order.update({ where: { id: row.id }, data: { status: "PENDING_PAYMENT", paidAt: null, shippingPhone: OTHER_PHONE } });
+      expect((await request(server()).get(`/store/orders/${order.token}`).expect(200)).body.pinSetup).toBe("NONE");
+      expect(await db().customer.findFirstOrThrow({ where: { phone: PHONE } })).toMatchObject({ pinHash: null });
     });
   });
 
@@ -257,6 +275,20 @@ describe("crm member PIN (e2e)", () => {
       await merge(target.customer.id, source.id).expect(200);
       expect((await db().customer.findUniqueOrThrow({ where: { id: target.customer.id } })).pinResetAt).not.toBeNull();
       expect((await setPin(sourceOrder.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+    });
+
+    it("target ມີເບີ ແລະ ບໍ່ມີ PIN: ບິນເວັບທີ່ຈ່າຍແລ້ວຂອງ source (ເບີອື່ນ) ຕັ້ງ PIN ຂອງ target ບໍ່ໄດ້", async () => {
+      const target = await db().customer.create({ data: { name: "T", phone: PHONE } });
+      const sourceOrder = await placePaid(OTHER_PHONE);
+      const source = await db().customer.findUniqueOrThrow({ where: { phone: OTHER_PHONE } });
+      await merge(target.id, source.id).expect(200);
+      const view = await request(server()).get(`/store/orders/${sourceOrder.token}`).expect(200);
+      expect(view.body.pinSetup).toBe("NONE");
+      expect((await setPin(sourceOrder.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+      expect((await db().customer.findUniqueOrThrow({ where: { id: target.id } })).pinHash).toBeNull();
+      // ບິນໃໝ່ພາຍໃຕ້ເບີຂອງ target ຍັງໃຊ້ໄດ້
+      const own = await placePaid(PHONE);
+      await setPin(own.token).expect(201);
     });
 
     it("pinResetAt ຂອງ source ຕິດໄປກັບ target (ບິນເກົ່າຂອງ source ທີ່ຍ້າຍມາ ຕັ້ງ PIN ບໍ່ໄດ້)", async () => {
