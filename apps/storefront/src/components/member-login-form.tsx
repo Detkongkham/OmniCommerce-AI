@@ -74,7 +74,7 @@ export function MemberLoginForm({ onSignedIn }: { onSignedIn: (member: StoreMemb
         ເຂົ້າສູ່ລະບົບ
       </Button>
       <p className="text-xs leading-relaxed text-ink-secondary">
-        ບັນຊີຈະເປີດໃຊ້ໄດ້ຫຼັງຈາກທ່ານສັ່ງຊື້ ແລະ ຊຳລະເງິນເທິງເວັບແລ້ວ — ຕັ້ງ PIN ໄດ້ທີ່ໜ້າອໍເດີ. ລືມ PIN? ຕິດຕໍ່ຮ້ານເພື່ອ reset.
+        ບັນຊີຈະເປີດໃຊ້ໄດ້ຫຼັງຈາກທ່ານສັ່ງຊື້ ແລະ ຊຳລະເງິນເທິງເວັບແລ້ວ — ຕັ້ງ PIN ໄດ້ທີ່ໜ້າອໍເດີ. ລືມ PIN? ຕິດຕໍ່ຮ້ານເພື່ອ reset — ຫຼັງຮ້ານ reset ແລ້ວ ຕັ້ງ PIN ໃໝ່ໄດ້ຈາກບິນເວັບບິນໃໝ່ ເມື່ອຊຳລະເງິນແລ້ວ.
       </p>
     </form>
   );

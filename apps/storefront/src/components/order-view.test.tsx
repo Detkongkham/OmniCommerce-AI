@@ -260,4 +260,16 @@ describe("OrderView", () => {
     await waitFor(() => expect(screen.getByRole("region", { name: "ບັນຊີສະມາຊິກ" })).toHaveTextContent("ເບີນີ້ມີ PIN ແລ້ວ"));
     expect(screen.getByRole("link", { name: "ເຂົ້າສູ່ລະບົບ" })).toHaveAttribute("href", "/account");
   });
+
+  it("AVAILABLE: ORDER_INVALID_STATE (ບິນເກົ່າກ່ອນຮ້ານ reset PIN) → ບອກໃຫ້ຕັ້ງ PIN ຈາກບິນໃໝ່ທີ່ຊຳລະແລ້ວ", async () => {
+    const user = userEvent.setup();
+    setOrderPinMock.mockRejectedValue(new ClientApiError(409, "ORDER_INVALID_STATE"));
+    view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
+    await user.type(screen.getByLabelText(/PIN ໃໝ່/), "123456");
+    await user.type(screen.getByLabelText(/ຢືນຢັນ PIN/), "123456");
+    await user.click(screen.getByRole("button", { name: "ຕັ້ງ PIN" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ບິນນີ້ໃຊ້ຕັ້ງ PIN ບໍ່ໄດ້ — ຕັ້ງ PIN ໄດ້ຈາກບິນເວັບທີ່ຊຳລະເງິນຫຼັງຈາກຮ້ານ reset PIN ໃຫ້ແລ້ວ",
+    );
+  });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import type { StorePinSetup } from "@oca/shared";
 import { Button, Field, buttonVariants } from "@oca/ui";
 import { KeyRound } from "lucide-react";
 import Link from "next/link";
@@ -7,7 +8,6 @@ import { type FormEvent, useState } from "react";
 import { ClientApiError, setOrderPin } from "@/lib/client-api";
 import { isValidPin } from "@/lib/member";
 import { apiMessage } from "@/lib/messages";
-import type { StorePinSetup } from "@/lib/types";
 import { PinInput } from "./pin-input";
 
 type Outcome = { kind: "form" } | { kind: "done"; name: string } | { kind: "already" };
@@ -77,7 +77,9 @@ export function OrderPinCard({ token, pinSetup }: { token: string; pinSetup: Sto
     } catch (error) {
       const code = error instanceof ClientApiError ? error.code : undefined;
       if (code === "PIN_ALREADY_SET") setOutcome({ kind: "already" });
-      else if (code === "ORDER_INVALID_STATE" || code === "ORDER_NOT_FOUND") setProblem("ບິນນີ້ຍັງຕັ້ງ PIN ບໍ່ໄດ້");
+      // ORDER_INVALID_STATE: ສ່ວນຫຼາຍແມ່ນບິນທີ່ຊຳລະກ່ອນຮ້ານ reset PIN / ປ່ຽນເບີ → ຕ້ອງໃຊ້ບິນໃໝ່
+      else if (code === "ORDER_INVALID_STATE") setProblem("ບິນນີ້ໃຊ້ຕັ້ງ PIN ບໍ່ໄດ້ — ຕັ້ງ PIN ໄດ້ຈາກບິນເວັບທີ່ຊຳລະເງິນຫຼັງຈາກຮ້ານ reset PIN ໃຫ້ແລ້ວ");
+      else if (code === "ORDER_NOT_FOUND") setProblem("ບິນນີ້ຍັງຕັ້ງ PIN ບໍ່ໄດ້");
       else setProblem(apiMessage(code, "ຕັ້ງ PIN ບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່"));
     } finally {
       setSubmitting(false);

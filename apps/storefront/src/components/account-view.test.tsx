@@ -79,6 +79,7 @@ describe("AccountView — ຍັງບໍ່ເຂົ້າລະບົບ", () 
     expect(pin).toHaveAttribute("autocomplete", "current-password");
     expect(screen.getByText(/ບັນຊີຈະເປີດໃຊ້ໄດ້ຫຼັງຈາກທ່ານສັ່ງຊື້ ແລະ ຊຳລະເງິນເທິງເວັບແລ້ວ/)).toBeInTheDocument();
     expect(screen.getByText(/ລືມ PIN\? ຕິດຕໍ່ຮ້ານເພື່ອ reset/)).toBeInTheDocument();
+    expect(screen.getByText(/ຫຼັງຮ້ານ reset ແລ້ວ ຕັ້ງ PIN ໃໝ່ໄດ້ຈາກບິນເວັບບິນໃໝ່ ເມື່ອຊຳລະເງິນແລ້ວ/)).toBeInTheDocument();
   });
 
   it("ກວດເບີ ແລະ PIN ກ່ອນສົ່ງ", async () => {

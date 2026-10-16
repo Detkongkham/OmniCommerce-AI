@@ -6,6 +6,7 @@ import type {
   PointsRejectReason,
   ReceivingAccount,
   SalesChannel,
+  StorePinSetup,
   StoreSlipStatus,
   StoreStock,
   StoreStockStatus,
@@ -67,8 +68,6 @@ export interface StoreMemberPoint {
   balanceAfter: number;
   orderNumber: string | null;
 }
-
-export type StorePinSetup = "AVAILABLE" | "AFTER_PAYMENT" | "NONE";
 
 export interface StoreCategory {
   name: string;
