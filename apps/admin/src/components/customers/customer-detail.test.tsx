@@ -39,7 +39,9 @@ const customer: CrmCustomerDetailDto = {
   tier: "SILVER",
   pointsBalance: 320,
   spend12m: "2500000.00",
-  nextTier: { tier: "GOLD", remaining: "2500000.00" },
+  nextTier: { tier: "GOLD", minSpend: "5000000.00", remaining: "2500000.00" },
+  hasPin: true,
+  pinLockedUntil: null,
 };
 const orders: Page<CrmCustomerOrderDto> = {
   items: [{ id: "o1", orderNumber: "SO-000001", status: "PAID", channel: "FACEBOOK", total: "195.00", createdAt: "2026-10-05T05:30:00.000Z" }],
@@ -64,6 +66,7 @@ const ledger: Page<CrmPointEntryDto> = {
 function mockApi(detail: CrmCustomerDetailDto | Error = customer) {
   vi.mocked(apiFetch).mockImplementation((async (path: string, options?: { method?: string }) => {
     if (options?.method === "PATCH") return { ...customer, name: "Mali 2" };
+    if (options?.method === "POST" && path.endsWith("/pin/reset")) return { ...customer, hasPin: false };
     if (options?.method === "POST") return { ...customer, pointsBalance: 370 };
     if (path.includes("/points")) return ledger;
     if (path.includes("/orders")) return orders;
@@ -216,5 +219,47 @@ describe("CustomerDetail", () => {
     await user.type(within(again).getByLabelText(/Reason/), "Mistake");
     await user.click(within(again).getByRole("button", { name: "Save" }));
     expect(await within(again).findByText("Cannot deduct more than the balance (320 points)")).toBeInTheDocument();
+  });
+
+  it("PIN ເວັບ: ຕັ້ງແລ້ວ / ຍັງບໍ່ຕັ້ງ / ລັອກຮອດ", async () => {
+    const { unmount } = renderWithProviders(<CustomerDetail id="c1" />);
+    const profile = await screen.findByRole("region", { name: "Profile" });
+    expect(within(profile).getByText("Web PIN").parentElement).toHaveTextContent("Set");
+    unmount();
+
+    mockApi({ ...customer, hasPin: false });
+    const second = renderWithProviders(<CustomerDetail id="c1" />);
+    const plain = await screen.findByRole("region", { name: "Profile" });
+    expect(within(plain).getByText("Web PIN").parentElement).toHaveTextContent("Not set");
+    expect(screen.queryByRole("button", { name: "Reset PIN" })).toBeNull();
+    second.unmount();
+
+    mockApi({ ...customer, pinLockedUntil: "2026-10-16T08:30:00.000Z" });
+    renderWithProviders(<CustomerDetail id="c1" />);
+    const locked = await screen.findByRole("region", { name: "Profile" });
+    expect(within(locked).getByText("Web PIN").parentElement).toHaveTextContent(/Set · Locked until .+/);
+  });
+
+  it("Reset PIN: ບໍ່ມີ crm:write ບໍ່ເຫັນປຸ່ມ", async () => {
+    auth.canWrite = false;
+    renderWithProviders(<CustomerDetail id="c1" />);
+    await screen.findByRole("region", { name: "Profile" });
+    expect(screen.queryByRole("button", { name: "Reset PIN" })).toBeNull();
+  });
+
+  it("Reset PIN: ຢືນຢັນກ່ອນ → POST → toast; ຍົກເລີກ = ບໍ່ສົ່ງ", async () => {
+    const { user } = renderWithProviders(<CustomerDetail id="c1" />);
+    await user.click(await screen.findByRole("button", { name: "Reset PIN" }));
+    let dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/signed out/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(vi.mocked(apiFetch).mock.calls.some((call) => call[1]?.method === "POST")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Reset PIN" }));
+    dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Reset PIN" }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Web PIN reset"));
+    const post = vi.mocked(apiFetch).mock.calls.find((call) => call[1]?.method === "POST");
+    expect(post?.[0]).toBe("/crm/customers/c1/pin/reset");
   });
 });

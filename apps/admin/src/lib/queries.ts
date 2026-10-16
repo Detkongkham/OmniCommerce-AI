@@ -1151,3 +1151,12 @@ export function useAdjustCrmPoints() {
     onSuccess: invalidate,
   });
 }
+
+/** ລ້າງ PIN ເວັບ: ລູກຄ້າຖືກອອກຈາກລະບົບ ແລະ ຕັ້ງ PIN ໃໝ່ໄດ້ຈາກບິນເວັບທີ່ຈ່າຍແລ້ວ */
+export function useResetCrmCustomerPin() {
+  const invalidate = useInvalidate(queryKeys.crmCustomers, queryKeys.customers);
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<CrmCustomerDetailDto>(`/crm/customers/${encodeURIComponent(id)}/pin/reset`, { method: "POST" }),
+    onSuccess: invalidate,
+  });
+}

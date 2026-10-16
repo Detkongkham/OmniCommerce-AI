@@ -616,7 +616,12 @@ export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
   conversationCount: number;
   rfm: { recency: number; frequency: number; monetary: number } | null;
   spend12m: string;
-  nextTier: { tier: MemberTier; remaining: string } | null;
+  /** ລະດັບຖັດຈາກ tier ທີ່ບັນທຶກ; remaining ບໍ່ຕິດລົບ */
+  nextTier: { tier: MemberTier; minSpend: string; remaining: string } | null;
+  /** ຕັ້ງ PIN ເວັບແລ້ວ */
+  hasPin: boolean;
+  /** ISO; null = ບໍ່ລັອກ */
+  pinLockedUntil: string | null;
 }
 
 export interface CrmPointEntryDto {

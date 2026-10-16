@@ -3,6 +3,7 @@
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   PageHeader,
   StatusPill,
@@ -14,17 +15,19 @@ import {
   TableRow,
   TableSkeletonRows,
   cn,
+  toast,
 } from "@oca/ui";
-import { AlertCircle, ArrowLeft, Coins, Combine, MessageSquare, Pencil } from "lucide-react";
+import { AlertCircle, ArrowLeft, Coins, Combine, KeyRound, MessageSquare, Pencil } from "lucide-react";
 import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useCan } from "@/components/auth/auth-provider";
 import { ServerPager } from "@/components/common/server-pager";
 import { OrderStatusPill } from "@/components/orders/order-status";
 import { ApiError } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { useT } from "@/lib/i18n/language-provider";
-import { useCrmCustomer, useCrmCustomerConversations, useCrmCustomerOrders, useCrmCustomerPoints } from "@/lib/queries";
+import { useCrmCustomer, useCrmCustomerConversations, useCrmCustomerOrders, useCrmCustomerPoints, useResetCrmCustomerPin } from "@/lib/queries";
 import type { CrmCustomerDetailDto } from "@/lib/types";
 import { AdjustPointsDialog } from "./adjust-points-dialog";
 import { CustomerEditDialog } from "./customer-edit-dialog";
@@ -43,6 +46,8 @@ export function CustomerDetail({ id }: { id: string }) {
   const [editOpen, setEditOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [pinResetOpen, setPinResetOpen] = useState(false);
+  const resetPin = useResetCrmCustomerPin();
   const back = (
     <Link href="/customers" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-ink hover:underline">
       <ArrowLeft className="size-4" aria-hidden="true" />
@@ -78,6 +83,18 @@ export function CustomerDetail({ id }: { id: string }) {
     );
   }
   const customer = query.data;
+  const pinStatus = customer.hasPin ? t("customers.detail.pinSet") : t("customers.detail.pinNotSet");
+
+  async function confirmPinReset() {
+    try {
+      await resetPin.mutateAsync(customer.id);
+      toast.success(t("customers.pinReset.done"));
+    } catch (error) {
+      toast.error(errorMessage(error, t));
+    } finally {
+      setPinResetOpen(false);
+    }
+  }
 
   return (
     <div>
@@ -116,8 +133,23 @@ export function CustomerDetail({ id }: { id: string }) {
               <Row label={t("customers.detail.email")} value={customer.email} />
               <Row label={t("customers.detail.since")} value={formatDateTime(customer.createdAt)} />
               <Row label={t("customers.detail.note")} value={customer.note} />
+              <Row
+                label={t("customers.detail.pin")}
+                value={
+                  customer.pinLockedUntil
+                    ? `${pinStatus} · ${t("customers.detail.pinLocked", { time: formatDateTime(customer.pinLockedUntil) })}`
+                    : pinStatus
+                }
+              />
             </dl>
             {customer.facebookLinked ? <p className="mt-3 text-xs font-medium text-ink-secondary">{t("customers.detail.facebook")}</p> : null}
+            {/* ລູກຄ້າທີ່ບໍ່ມີ PIN ບໍ່ມີ session ໃຫ້ລ້າງ: ສະແດງປຸ່ມສະເພາະເມື່ອຕັ້ງແລ້ວ */}
+            {canWrite && customer.hasPin ? (
+              <Button variant="outlinePrimary" className="mt-3 rounded-lg" onClick={() => setPinResetOpen(true)}>
+                <KeyRound aria-hidden="true" />
+                {t("customers.pinReset")}
+              </Button>
+            ) : null}
           </Section>
           <Section id="customer-membership" title={t("customers.detail.membership")}>
             <dl className="space-y-2 text-sm">
@@ -175,6 +207,17 @@ export function CustomerDetail({ id }: { id: string }) {
           <CustomerEditDialog customer={customer} open={editOpen} onOpenChange={setEditOpen} />
           <MergeCustomerDialog target={customer} open={mergeOpen} onOpenChange={setMergeOpen} />
           <AdjustPointsDialog customer={customer} open={adjustOpen} onOpenChange={setAdjustOpen} />
+          <ConfirmDialog
+            open={pinResetOpen}
+            onOpenChange={setPinResetOpen}
+            title={t("customers.pinReset.title", { name: customer.name })}
+            description={t("customers.pinReset.description")}
+            confirmLabel={t("customers.pinReset")}
+            cancelLabel={t("common.cancel")}
+            closeLabel={t("common.close")}
+            busy={resetPin.isPending}
+            onConfirm={confirmPinReset}
+          />
         </>
       ) : null}
     </div>
