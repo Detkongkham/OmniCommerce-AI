@@ -7,6 +7,7 @@ import { isValidPin } from "@/lib/member";
 import { apiMessage, memberLockedMessage } from "@/lib/messages";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import type { StoreMember } from "@/lib/types";
+import { PinInput } from "./pin-input";
 
 type Errors = { phone?: string; pin?: string };
 
@@ -62,18 +63,7 @@ export function MemberLoginForm({ onSignedIn }: { onSignedIn: (member: StoreMemb
         />
       </Field>
       <Field label="PIN 6 ຕົວ" htmlFor="member-pin" required error={errors.pin}>
-        <Input
-          id="member-pin"
-          className="h-11 tracking-[0.4em]"
-          type="password"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          autoComplete="off"
-          maxLength={6}
-          value={pin}
-          onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-          invalid={Boolean(errors.pin)}
-        />
+        <PinInput id="member-pin" autoComplete="current-password" value={pin} onChange={setPin} invalid={Boolean(errors.pin)} />
       </Field>
       {problem ? (
         <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm text-danger-ink">

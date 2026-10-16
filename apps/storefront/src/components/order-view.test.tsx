@@ -227,6 +227,8 @@ describe("OrderView", () => {
     view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
     const card = screen.getByRole("region", { name: "ບັນຊີສະມາຊິກ" });
     expect(within(card).getByText("ຕັ້ງ PIN 6 ຕົວ ເພື່ອເບິ່ງແຕ້ມ ແລະ ປະຫວັດການສັ່ງຊື້")).toBeInTheDocument();
+    expect(within(card).getByLabelText(/PIN ໃໝ່/)).toHaveAttribute("autocomplete", "new-password");
+    expect(within(card).getByLabelText(/ຢືນຢັນ PIN/)).toHaveAttribute("inputmode", "numeric");
     await user.type(within(card).getByLabelText(/PIN ໃໝ່/), "123456");
     await user.type(within(card).getByLabelText(/ຢືນຢັນ PIN/), "123457");
     await user.click(within(card).getByRole("button", { name: "ຕັ້ງ PIN" }));

@@ -1,5 +1,5 @@
 import { type CouponRejectReason, type PointsRejectReason, STORE_MAX_OPEN_ORDERS } from "@oca/shared";
-import { formatLak } from "./format";
+import { formatLak, formatPoints } from "./format";
 
 /** ຂໍ້ຄວາມສຳລັບ error ຂອງ API ທີ່ລູກຄ້າແກ້ໄຂເອງໄດ້; ຢ່າງອື່ນໃຊ້ `fallback` */
 const MESSAGES: Record<string, string> = {
@@ -58,12 +58,10 @@ const POINTS_MESSAGES: Record<PointsRejectReason, string> = {
   PHONE_MISMATCH: "ໃຊ້ແຕ້ມໄດ້ສະເພາະເມື່ອເບີໂທຜູ້ຮັບກົງກັບເບີຂອງບັນຊີ",
 };
 
-const GROUPED = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
 /** ເຫດຜົນທີ່ໃຊ້ແຕ້ມບໍ່ໄດ້ (`pointsError` ຂອງກະຕ່າ ຫຼື body ຂອງ 409 POINTS_INVALID) */
 export function pointsMessage(error: { reason?: unknown; balance?: unknown; maxPoints?: unknown }): string {
   const reason = typeof error.reason === "string" && error.reason in POINTS_MESSAGES ? (error.reason as PointsRejectReason) : null;
-  if (reason === "OVER_CAP" && typeof error.maxPoints === "number") return `ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ ${GROUPED.format(error.maxPoints)} ແຕ້ມ`;
-  if (reason === "INSUFFICIENT" && typeof error.balance === "number") return `ແຕ້ມບໍ່ພໍ (ມີ ${GROUPED.format(error.balance)} ແຕ້ມ)`;
+  if (reason === "OVER_CAP" && typeof error.maxPoints === "number") return `ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ ${formatPoints(error.maxPoints)}`;
+  if (reason === "INSUFFICIENT" && typeof error.balance === "number") return `ແຕ້ມບໍ່ພໍ (ມີ ${formatPoints(error.balance)})`;
   return reason ? POINTS_MESSAGES[reason] : "ໃຊ້ແຕ້ມບໍ່ໄດ້";
 }

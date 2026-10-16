@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addToCart, getCart, resetCartForTests } from "@/lib/cart";
@@ -374,18 +374,106 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
       expect(createOrderMock.mock.calls[0]?.[0]).toMatchObject({ name: "ນາງ ສະມາຊິກ", phone: "02055555555", pointsToRedeem: 100, expectedTotal: "100.00" });
     });
 
-    it("ໃສ່ແຕ້ມເກີນ → ສະແດງ pointsError ແລະ ບໍ່ສົ່ງ pointsToRedeem", async () => {
+    it("ໃສ່ແຕ້ມເກີນ → ປັດລົງເປັນສູງສຸດ ແລະ ບອກເຫດຜົນ", async () => {
       const user = userEvent.setup();
-      createOrderMock.mockResolvedValue({ orderNumber: "SO-1", token: "tok" });
       render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
       const input = await screen.findByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" });
       await user.type(input, "150");
       await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
-      expect(await screen.findByText("ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 100 ແຕ້ມ")).toBeInTheDocument();
+      expect(input).toHaveValue(100);
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+      expect(screen.getByText("ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 100 ແຕ້ມ")).toBeInTheDocument();
+      expect(checkCartMock).not.toHaveBeenCalledWith(expect.anything(), undefined, 150);
+      expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, 100);
+    });
+
+    it("ພິມແຕ້ມແຕ່ຍັງບໍ່ກົດ ໃຊ້ → ຫ້າມສັ່ງ ພ້ອມໝາຍເຫດ; ກົດ ໃຊ້ ແລ້ວຈຶ່ງສົ່ງ", async () => {
+      const user = userEvent.setup();
+      createOrderMock.mockResolvedValue({ orderNumber: "SO-1", token: "tok" });
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      const input = await screen.findByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" });
       await fillRest(user);
+      await user.type(input, "50");
+      expect(screen.getByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).toBeInTheDocument();
+      expect(input).toHaveAttribute("aria-describedby", expect.stringContaining("checkout-points-status"));
+      expect(submit()).toBeDisabled();
+      await user.click(submit());
+      expect(createOrderMock).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (50 ແຕ້ມ)")).toBeInTheDocument();
+      expect(screen.queryByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).not.toBeInTheDocument();
+      await waitFor(() => expect(submit()).toBeEnabled());
       await user.click(submit());
       await waitFor(() => expect(createOrderMock).toHaveBeenCalledTimes(1));
-      expect(createOrderMock.mock.calls[0]?.[0]).not.toHaveProperty("pointsToRedeem");
+      expect(createOrderMock.mock.calls[0]?.[0]).toMatchObject({ pointsToRedeem: 50, expectedTotal: "150.00" });
+    });
+
+    it("ໃຊ້ໂຄດຫຼັງໃຊ້ແຕ້ມ (ເກນແຕ້ມຫຼຸດລົງ) → ປັບແຕ້ມລົງເປັນເກນໃໝ່ອັດຕະໂນມັດ", async () => {
+      const user = userEvent.setup();
+      checkCartMock.mockImplementation(async (_items, code, points) => {
+        const max = code ? 60 : 100;
+        const base = code ? 180 : 200;
+        const coupon = code ? { code, discount: "20.00" } : null;
+        if (points === undefined) return cart(`${base}.00`, true, { coupon, points: { balance: 300, maxPoints: max, redeemed: 0, discount: "0.00" } });
+        if (points > max) {
+          return cart(`${base}.00`, true, {
+            coupon,
+            points: { balance: 300, maxPoints: max, redeemed: 0, discount: "0.00" },
+            pointsError: { reason: "OVER_CAP", maxPoints: max },
+          });
+        }
+        return cart(`${base - points}.00`, true, { coupon, points: { balance: 300, maxPoints: max, redeemed: points, discount: `${points}.00` } });
+      });
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      await user.click(await screen.findByRole("button", { name: "ໃຊ້ສູງສຸດ" }));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+      await user.type(screen.getByLabelText("ໂຄດສ່ວນຫຼຸດ"), "new10");
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ໂຄດ" }));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (60 ແຕ້ມ)")).toBeInTheDocument();
+      expect(screen.getByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" })).toHaveValue(60);
+      expect(screen.getByText("ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 60 ແຕ້ມ")).toBeInTheDocument();
+      expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], "NEW10", 60);
+      expect(screen.queryByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).not.toBeInTheDocument();
+    });
+
+    it("server ປະຕິເສດແຕ້ມດ້ວຍເຫດຜົນອື່ນ → ກັບໄປຄ່າທີ່ຢືນຢັນ (0) ແລະ ບອກເຫດຜົນ ໂດຍບໍ່ລັອກການສັ່ງ", async () => {
+      const user = userEvent.setup();
+      checkCartMock.mockImplementation(async (_items, _code, points) =>
+        points
+          ? cart("200.00", true, { points: { balance: 300, maxPoints: 100, redeemed: 0, discount: "0.00" }, pointsError: { reason: "INSUFFICIENT", balance: 20 } })
+          : memberCart(undefined),
+      );
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      const input = await screen.findByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" });
+      await user.type(input, "80");
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
+      expect(await screen.findByText("ແຕ້ມບໍ່ພໍ (ມີ 20 ແຕ້ມ)")).toBeInTheDocument();
+      await waitFor(() => expect(input).toHaveValue(null));
+      await fillRest(user);
+      await waitFor(() => expect(submit()).toBeEnabled());
+      expect(screen.queryByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).not.toBeInTheDocument();
+    });
+
+    it("ຄຳຕອບເກົ່າທີ່ມາຊ້າ (ແຕ້ມປ່ຽນໄວສອງເທື່ອ) ຖືກຖິ້ມ", async () => {
+      const user = userEvent.setup();
+      const pending = new Map<number, (cart: StoreCart) => void>();
+      checkCartMock.mockImplementation((_items, _code, points) =>
+        points === undefined ? Promise.resolve(memberCart(undefined)) : new Promise<StoreCart>((resolve) => pending.set(points, resolve)),
+      );
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      const input = await screen.findByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" });
+      await user.type(input, "50");
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
+      await user.clear(input);
+      await user.type(input, "80");
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
+      await waitFor(() => expect(pending.size).toBe(2));
+      await act(async () => pending.get(80)?.(memberCart(80)));
+      await act(async () => pending.get(50)?.(memberCart(50)));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (80 ແຕ້ມ)")).toBeInTheDocument();
+      expect(screen.queryByText("ໃຊ້ແຕ້ມ (50 ແຕ້ມ)")).not.toBeInTheDocument();
+      expect(screen.getByText("120 ກີບ")).toBeInTheDocument();
     });
 
     it("ປ່ຽນເບີອອກຈາກເບີຂອງບັນຊີ → ປິດການໃຊ້ແຕ້ມພ້ອມໝາຍເຫດ ແລະ ກວດກະຕ່າໂດຍບໍ່ມີແຕ້ມ", async () => {

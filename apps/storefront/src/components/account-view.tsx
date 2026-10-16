@@ -90,6 +90,10 @@ export function AccountView({ loyalty }: { loyalty: StoreLoyalty }) {
   return <MemberDashboard member={state.member} loyalty={loyalty} onSignedOut={() => setState({ status: "guest" })} onExpired={expire} />;
 }
 
+// ຢູ່ນອກ component: HistoryList ໃຊ້ເປັນ dependency ຂອງການໂຫຼດ (ຕ້ອງຄົງທີ່)
+const orderKey = (order: StoreMemberOrder) => order.orderNumber;
+const pointKey = (entry: StoreMemberPoint) => `${entry.createdAt}|${entry.type}|${entry.points}|${entry.balanceAfter}|${entry.orderNumber ?? ""}`;
+
 function MemberDashboard({
   member,
   loyalty,
@@ -141,7 +145,7 @@ function MemberDashboard({
         empty="ຍັງບໍ່ມີການສັ່ງຊື້"
         load={fetchMemberOrders}
         onExpired={onExpired}
-        itemKey={(order) => order.orderNumber}
+        itemKey={orderKey}
         renderItem={(order) => <OrderRow order={order} />}
       />
       {loyalty.enabled ? (
@@ -150,7 +154,7 @@ function MemberDashboard({
           empty="ຍັງບໍ່ມີລາຍການແຕ້ມ"
           load={fetchMemberPoints}
           onExpired={onExpired}
-          itemKey={(entry, index) => `${entry.createdAt}-${index}`}
+          itemKey={pointKey}
           renderItem={(entry) => <PointRow entry={entry} />}
         />
       ) : null}
@@ -162,6 +166,11 @@ function LoyaltySummary({ member, pointValue }: { member: StoreMember; pointValu
   const progress = tierProgress(member);
   const next = member.nextTier;
   const qualified = next !== null && Number(next.remaining) <= 0;
+  const progressText = !next
+    ? ""
+    : qualified
+      ? `ຈະຂຶ້ນເປັນ ${tierLabel(next.tier)} ໃນການຄຳນວນຮອບຕໍ່ໄປ`
+      : `ຊື້ອີກ ${formatLak(next.remaining)} ເພື່ອຂຶ້ນເປັນ ${tierLabel(next.tier)}`;
   return (
     <Panel label="ແຕ້ມສະສົມ">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -185,15 +194,12 @@ function LoyaltySummary({ member, pointValue }: { member: StoreMember; pointValu
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={progress}
+              aria-valuetext={`${progress}% — ${progressText}`}
               className="h-2 w-full overflow-hidden rounded-full bg-subtle"
             >
               <div className="h-full rounded-full bg-brand transition-[width]" style={{ width: `${progress}%` }} />
             </div>
-            <p className="text-sm text-ink">
-              {qualified
-                ? `ຈະຂຶ້ນເປັນ ${tierLabel(next.tier)} ໃນການຄຳນວນຮອບຕໍ່ໄປ`
-                : `ຊື້ອີກ ${formatLak(next.remaining)} ເພື່ອຂຶ້ນເປັນ ${tierLabel(next.tier)}`}
-            </p>
+            <p className="text-sm text-ink">{progressText}</p>
           </>
         ) : (
           <p className="text-sm text-ink">ທ່ານຢູ່ລະດັບສູງສຸດແລ້ວ</p>
@@ -247,6 +253,11 @@ function PointRow({ entry }: { entry: StoreMemberPoint }) {
   );
 }
 
+export function appendUnique<T>(current: T[], next: T[], key: (item: T) => string): T[] {
+  const seen = new Set(current.map(key));
+  return [...current, ...next.filter((item) => !seen.has(key(item)))];
+}
+
 type ListState<T> = { items: T[]; page: number; total: number; loading: boolean; error: string | null };
 
 /** ລາຍການແບບແບ່ງໜ້າ: ໂຫຼດໜ້າ 1 ຕອນເປີດ ແລ້ວ "ໂຫຼດເພີ່ມ" ຕໍ່ທ້າຍ. session ໝົດອາຍຸ → `onExpired` */
@@ -262,7 +273,7 @@ function HistoryList<T>({
   empty: string;
   load: (page: number) => Promise<Page<T>>;
   onExpired: () => void;
-  itemKey: (item: T, index: number) => string;
+  itemKey: (item: T) => string;
   renderItem: (item: T) => ReactNode;
 }) {
   const [list, setList] = useState<ListState<T>>({ items: [], page: 0, total: 0, loading: true, error: null });
@@ -272,7 +283,8 @@ function HistoryList<T>({
       load(page).then(
         (result) =>
           setList((current) => ({
-            items: page === 1 ? result.items : [...current.items, ...result.items],
+            // ລາຍການໃໝ່ທີ່ເກີດລະຫວ່າງໂຫຼດ ເລື່ອນແຖວເກົ່າໄປໜ້າຖັດໄປ → ຕັດແຖວຊ້ຳ
+            items: page === 1 ? result.items : appendUnique(current.items, result.items, itemKey),
             page: result.page,
             total: result.total,
             loading: false,
@@ -288,7 +300,7 @@ function HistoryList<T>({
         },
       );
     },
-    [load, onExpired],
+    [load, onExpired, itemKey],
   );
 
   useEffect(() => {
@@ -305,8 +317,8 @@ function HistoryList<T>({
     <Panel label={label}>
       {list.items.length > 0 ? (
         <ul className="-mx-2 flex flex-col divide-y divide-line">
-          {list.items.map((item, index) => (
-            <li key={itemKey(item, index)}>{renderItem(item)}</li>
+          {list.items.map((item) => (
+            <li key={itemKey(item)}>{renderItem(item)}</li>
           ))}
         </ul>
       ) : !list.loading && !list.error ? (

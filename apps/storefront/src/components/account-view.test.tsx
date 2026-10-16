@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ClientApiError, fetchMember, fetchMemberOrders, fetchMemberPoints, memberLogin, memberLogout } from "@/lib/client-api";
 import type { StoreLoyalty, StoreMember } from "@/lib/types";
-import { AccountView } from "./account-view";
+import { AccountView, appendUnique } from "./account-view";
 
 vi.mock("@/lib/client-api", async (original) => ({
   ...(await original<typeof import("@/lib/client-api")>()),
@@ -76,7 +76,7 @@ describe("AccountView — ຍັງບໍ່ເຂົ້າລະບົບ", () 
     expect(await screen.findByRole("form", { name: "ເຂົ້າສູ່ລະບົບ" })).toBeInTheDocument();
     const pin = screen.getByLabelText(/PIN 6 ຕົວ/);
     expect(pin).toHaveAttribute("inputmode", "numeric");
-    expect(pin).toHaveAttribute("autocomplete", "off");
+    expect(pin).toHaveAttribute("autocomplete", "current-password");
     expect(screen.getByText(/ບັນຊີຈະເປີດໃຊ້ໄດ້ຫຼັງຈາກທ່ານສັ່ງຊື້ ແລະ ຊຳລະເງິນເທິງເວັບແລ້ວ/)).toBeInTheDocument();
     expect(screen.getByText(/ລືມ PIN\? ຕິດຕໍ່ຮ້ານເພື່ອ reset/)).toBeInTheDocument();
   });
@@ -196,5 +196,11 @@ describe("AccountView — ເຂົ້າລະບົບແລ້ວ", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("ເຊື່ອມຕໍ່ບໍ່ໄດ້");
     await user.click(screen.getByRole("button", { name: "ລອງໃໝ່" }));
     await waitFor(() => expect(screen.getByRole("region", { name: "ແຕ້ມສະສົມ" })).toBeInTheDocument());
+  });
+});
+
+describe("appendUnique", () => {
+  it("ຕໍ່ທ້າຍໂດຍຕັດແຖວທີ່ key ຊ້ຳ", () => {
+    expect(appendUnique([{ id: "a" }, { id: "b" }], [{ id: "b" }, { id: "c" }], (row) => row.id)).toEqual([{ id: "a" }, { id: "b" }, { id: "c" }]);
   });
 });

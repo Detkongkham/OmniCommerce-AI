@@ -174,7 +174,7 @@ export function OrderView({ token, initialOrder, payment }: OrderViewProps) {
         </Panel>
       ) : null}
 
-      <OrderPinCard token={token} pinSetup={order.pinSetup ?? "NONE"} />
+      <OrderPinCard token={token} pinSetup={order.pinSetup} />
 
       <Panel label="ລາຍການສິນຄ້າ">
         <ul className="flex flex-col gap-2">

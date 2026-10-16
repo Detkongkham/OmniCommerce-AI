@@ -7,12 +7,12 @@ import { CartLink } from "./cart-link";
 export function SiteHeader({ storeName, query }: { storeName: string; query?: string }) {
   return (
     <header className="sticky top-0 z-30 border-b border-chrome-line bg-chrome/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-4 sm:gap-3">
         <Link href="/" className="flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <Image src="/oca-mark.png" alt="" width={32} height={32} priority />
-          <span className="max-w-[40vw] truncate text-base font-bold text-brand-deep sm:max-w-none">{storeName}</span>
+          <span className="max-w-[28vw] truncate text-base font-bold text-brand-deep sm:max-w-none">{storeName}</span>
         </Link>
-        <form action="/products" role="search" className="ml-auto flex w-full max-w-xs items-center">
+        <form action="/products" role="search" className="ml-auto flex min-w-0 flex-1 items-center sm:max-w-xs">
           <label htmlFor="site-search" className="sr-only">
             ຄົ້ນຫາສິນຄ້າ
           </label>
@@ -31,7 +31,7 @@ export function SiteHeader({ storeName, query }: { storeName: string; query?: st
         </form>
         <Link
           href="/account"
-          className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl px-2.5 text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex size-10 shrink-0 items-center justify-center gap-1.5 rounded-xl text-ink sm:w-auto sm:px-2.5 transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <UserRound className="size-5" aria-hidden="true" />
           <span className="sr-only text-sm font-medium sm:not-sr-only">ບັນຊີ</span>
