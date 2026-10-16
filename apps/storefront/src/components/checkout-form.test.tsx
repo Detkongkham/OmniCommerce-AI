@@ -382,7 +382,9 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
       await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
       expect(input).toHaveValue(100);
       expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
-      expect(screen.getByText("ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 100 ແຕ້ມ")).toBeInTheDocument();
+      const notice = screen.getByText("ປັບເປັນ 100 ແຕ້ມ (ສູງສຸດຂອງບິນນີ້)");
+      expect(notice).toHaveClass("text-warning-ink");
+      expect(notice).not.toHaveClass("text-danger-ink");
       expect(checkCartMock).not.toHaveBeenCalledWith(expect.anything(), undefined, 150);
       expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, 100);
     });
@@ -395,6 +397,7 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
       await fillRest(user);
       await user.type(input, "50");
       expect(screen.getByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" })).toBeEnabled();
       expect(input).toHaveAttribute("aria-describedby", expect.stringContaining("checkout-points-status"));
       expect(submit()).toBeDisabled();
       await user.click(submit());
@@ -407,6 +410,23 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
       await user.click(submit());
       await waitFor(() => expect(createOrderMock).toHaveBeenCalledTimes(1));
       expect(createOrderMock.mock.calls[0]?.[0]).toMatchObject({ pointsToRedeem: 50, expectedTotal: "150.00" });
+    });
+
+    it("ປຸ່ມ ໃຊ້: ປິດເມື່ອຊ່ອງກົງກັບຄ່າທີ່ໃຊ້ຢູ່; ລ້າງຊ່ອງແລ້ວກົດ ໃຊ້ = ຖອດແຕ້ມ", async () => {
+      const user = userEvent.setup();
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      const apply = await screen.findByRole("button", { name: "ໃຊ້ແຕ້ມ" });
+      expect(apply).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ສູງສຸດ" }));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+      expect(apply).toBeDisabled();
+      await user.clear(screen.getByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" }));
+      expect(screen.getByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).toBeInTheDocument();
+      expect(apply).toBeEnabled();
+      await user.click(apply);
+      await waitFor(() => expect(screen.queryByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).not.toBeInTheDocument());
+      expect(screen.queryByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).not.toBeInTheDocument();
+      expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, undefined);
     });
 
     it("ໃຊ້ໂຄດຫຼັງໃຊ້ແຕ້ມ (ເກນແຕ້ມຫຼຸດລົງ) → ປັບແຕ້ມລົງເປັນເກນໃໝ່ອັດຕະໂນມັດ", async () => {
@@ -432,7 +452,7 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
       await user.click(screen.getByRole("button", { name: "ໃຊ້ໂຄດ" }));
       expect(await screen.findByText("ໃຊ້ແຕ້ມ (60 ແຕ້ມ)")).toBeInTheDocument();
       expect(screen.getByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" })).toHaveValue(60);
-      expect(screen.getByText("ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 60 ແຕ້ມ")).toBeInTheDocument();
+      expect(screen.getByText("ປັບເປັນ 60 ແຕ້ມ (ສູງສຸດຂອງບິນນີ້)")).toHaveClass("text-warning-ink");
       expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], "NEW10", 60);
       expect(screen.queryByText("ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ")).not.toBeInTheDocument();
     });

@@ -12,6 +12,14 @@ export function parsePoints(raw: string): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/** info = ປັບຄ່າໃຫ້ແລ້ວ (ບໍ່ແມ່ນ error); error = ໃຊ້ແຕ້ມບໍ່ໄດ້ */
+export type PointsNotice = { tone: "info" | "error"; text: string };
+
+/** ແຕ້ມຖືກປັດລົງເປັນສູງສຸດຂອງບິນ */
+export function clampNotice(points: number): PointsNotice {
+  return { tone: "info", text: `ປັບເປັນ ${formatPoints(points)} (ສູງສຸດຂອງບິນນີ້)` };
+}
+
 interface PointsControlProps {
   member: StoreMember | null | undefined;
   loyalty: StoreLoyalty;
@@ -23,13 +31,15 @@ interface PointsControlProps {
   /** ຜູ້ເອີ້ນປັດໃຫ້ຢູ່ໃນ 0..maxPoints */
   onApply: (points: number) => void;
   /** ເຫດຜົນທີ່ແຕ້ມຖືກປັບ/ປະຕິເສດຫຼ້າສຸດ */
-  notice: string | null;
+  notice: PointsNotice | null;
+  /** ຄ່າທີ່ໃຊ້ຢູ່ (ປຸ່ມ "ໃຊ້" ປິດເມື່ອຊ່ອງກົງກັບຄ່ານີ້) */
+  appliedPoints: number;
   /** ພິມແລ້ວແຕ່ຍັງບໍ່ກົດ "ໃຊ້" (ຫຼື server ຍັງບໍ່ຢືນຢັນ) */
   pending: boolean;
 }
 
 /** "ໃຊ້ແຕ້ມ": ສະເພາະສະມາຊິກທີ່ມີແຕ້ມໃຊ້ໄດ້ໃນບິນນີ້; guest ເຫັນຄຳແນະນຳໃຫ້ເຂົ້າລະບົບ */
-export function PointsControl({ member, loyalty, points, phoneMatches, sessionExpired, input, onInput, onApply, notice, pending }: PointsControlProps) {
+export function PointsControl({ member, loyalty, points, phoneMatches, sessionExpired, input, onInput, onApply, notice, appliedPoints, pending }: PointsControlProps) {
   if (!loyalty.enabled) return null;
   if (!member) {
     if (member === undefined) return null;
@@ -74,7 +84,7 @@ export function PointsControl({ member, loyalty, points, phoneMatches, sessionEx
             }
           }}
         />
-        <Button type="button" variant="outlinePrimary" className="h-10 shrink-0 rounded-xl" aria-label="ໃຊ້ແຕ້ມ" disabled={disabled || !input.trim()} onClick={() => onApply(parsePoints(input))}>
+        <Button type="button" variant="outlinePrimary" className="h-10 shrink-0 rounded-xl" aria-label="ໃຊ້ແຕ້ມ" disabled={disabled || parsePoints(input) === appliedPoints} onClick={() => onApply(parsePoints(input))}>
           ໃຊ້
         </Button>
         <Button type="button" variant="outline" className="h-10 shrink-0 rounded-xl" disabled={disabled || points.maxPoints <= 0} onClick={() => onApply(points.maxPoints)}>
@@ -84,7 +94,7 @@ export function PointsControl({ member, loyalty, points, phoneMatches, sessionEx
       {disabled ? <p className="text-xs text-warning-ink">{`ໃຊ້ແຕ້ມໄດ້ສະເພາະເມື່ອເບີໂທຜູ້ຮັບແມ່ນ ${member.phone ?? "ເບີຂອງບັນຊີ"}`}</p> : null}
       {/* ຢູ່ຕະຫຼອດ ເພື່ອໃຫ້ screen reader ອ່ານຂໍ້ຄວາມທີ່ປ່ຽນ */}
       <div id="checkout-points-status" aria-live="polite" className="flex flex-col gap-1 text-xs font-semibold">
-        {!disabled && notice ? <p className="text-danger-ink">{notice}</p> : null}
+        {!disabled && notice ? <p className={notice.tone === "error" ? "text-danger-ink" : "font-normal text-warning-ink"}>{notice.text}</p> : null}
         {!disabled && pending ? <p className="text-warning-ink">ກົດ ໃຊ້ ເພື່ອຢືນຢັນແຕ້ມ</p> : null}
       </div>
       {points.redeemed > 0 ? (

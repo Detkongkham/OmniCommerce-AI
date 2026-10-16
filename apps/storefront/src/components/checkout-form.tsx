@@ -13,8 +13,8 @@ import { newIdempotencyKey } from "@/lib/idempotency";
 import { apiMessage, couponMessage, pointsMessage } from "@/lib/messages";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import type { StoreCart, StoreLoyalty, StoreMember } from "@/lib/types";
-import { PointsControl, parsePoints } from "./points-control";
 import { useCartCheck } from "@/lib/use-cart-check";
+import { type PointsNotice, PointsControl, clampNotice, parsePoints } from "./points-control";
 
 const FIELDS = ["name", "phone", "address", "courierId", "branch"] as const;
 type FieldName = (typeof FIELDS)[number];
@@ -56,7 +56,7 @@ export function CheckoutForm({ couriers, loyalty = NO_LOYALTY }: { couriers: { i
   const [pointsInput, setPointsInput] = useState("");
   const [appliedPoints, setAppliedPoints] = useState(0);
   const phoneMatches = Boolean(member?.phone) && normalizePhone(values.phone) === member?.phone;
-  const [pointsNotice, setPointsNotice] = useState<string | null>(null);
+  const [pointsNotice, setPointsNotice] = useState<PointsNotice | null>(null);
   const dropMember = useCallback(() => {
     setMember(null);
     setAppliedPoints(0);
@@ -73,11 +73,12 @@ export function CheckoutForm({ couriers, loyalty = NO_LOYALTY }: { couriers: { i
   const [handledCart, setHandledCart] = useState<StoreCart | null>(null);
   if (state.status === "ready" && !state.refreshing && state.cart !== handledCart) {
     setHandledCart(state.cart);
-    const { points, pointsError } = state.cart;
+    const { pointsError } = state.cart;
     if (requestedPoints > 0 && pointsError) {
-      setPointsNotice(pointsMessage(pointsError));
       const cap = pointsError.reason === "OVER_CAP" && typeof pointsError.maxPoints === "number" ? Math.max(0, pointsError.maxPoints) : null;
-      const next = cap !== null && cap < requestedPoints ? cap : Math.min(points?.redeemed ?? 0, requestedPoints - 1);
+      // ຖືກປະຕິເສດ = ບໍ່ມີແຕ້ມທີ່ຢືນຢັນ (redeemed 0)
+      const next = cap !== null && cap < requestedPoints ? cap : 0;
+      setPointsNotice(next > 0 ? clampNotice(next) : { tone: "error", text: pointsMessage(pointsError) });
       setAppliedPoints(next);
       setPointsInput(next > 0 ? String(next) : "");
     }
@@ -158,7 +159,7 @@ export function CheckoutForm({ couriers, loyalty = NO_LOYALTY }: { couriers: { i
   const applyPoints = (value: number) => {
     const max = points?.maxPoints ?? 0;
     const next = Math.max(0, Math.min(value, max));
-    setPointsNotice(value > max ? pointsMessage({ reason: "OVER_CAP", maxPoints: max }) : null);
+    setPointsNotice(value > max ? (next > 0 ? clampNotice(next) : { tone: "error", text: pointsMessage({ reason: "OVER_CAP", maxPoints: max }) }) : null);
     setAppliedPoints(next);
     setPointsInput(next > 0 ? String(next) : "");
   };
@@ -364,6 +365,7 @@ export function CheckoutForm({ couriers, loyalty = NO_LOYALTY }: { couriers: { i
           onInput={setPointsInput}
           onApply={applyPoints}
           notice={pointsNotice}
+          appliedPoints={appliedPoints}
           pending={pointsPending && !refreshing}
         />
         <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
