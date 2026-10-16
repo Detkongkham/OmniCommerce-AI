@@ -153,3 +153,13 @@
   - ສົ່ງເທື່ອດຽວຕໍ່ບິນ ແລະ ບໍ່ລອງຊ້ຳ. Messenger ປະຕິເສດຂໍ້ຄວາມທີ່ຢູ່ນອກ 24 ຊົ່ວໂມງຫຼັງລູກຄ້າທັກມາຄັ້ງສຸດທ້າຍ → ບິນຂຶ້ນ "ເຕືອນບໍ່ສຳເລັດ" ໃນໜ້າບິນ.
   - ຖ້າ process ຕາຍລະຫວ່າງ claim ແລະ ສົ່ງ ບິນຈະຂຶ້ນວ່າ "ເຕືອນແລ້ວ" ໂດຍບໍ່ໄດ້ສົ່ງ (ເລືອກແບບນີ້ເພື່ອບໍ່ໃຫ້ສົ່ງຊ້ຳ).
   - ຂໍ້ຄວາມເຕືອນປາກົດໃນ Inbox ເປັນຂໍ້ຄວາມຂາອອກທີ່ບໍ່ມີຊື່ພະນັກງານ.
+
+## 18. CRM & ສະມາຊິກເວັບ (3d)
+
+- ຕ້ອງ `pnpm --filter @oca/database db:deploy` ສຳລັບ 3 migration (ເພີ່ມຢ່າງດຽວ): `20261012000000_crm`, `20261012010000_loyalty`, `20261012020000_member_pin` (ຖັນ PIN ຂອງ `Customer`).
+- **`MEMBER_JWT_SECRET`** (API, ບໍ່ບັງຄັບ): ກະແຈຂອງ session ສະມາຊິກເວັບ (JWT HS256, 30 ວັນ). ຖ້າຕັ້ງ: ຍາວ ≥ 32 ຕົວອັກສອນ, **ຕ້ອງຕ່າງຈາກ `JWT_ACCESS_SECRET`** (API ບໍ່ຍອມ start ຖ້າຄືກັນ) ແລະ production ປະຕິເສດ placeholder `dev-only…`/`test-secret…`. ຖ້າບໍ່ຕັ້ງ: ໃຊ້ກະແຈທີ່ derive ຈາກ `JWT_ACCESS_SECRET` (HMAC-SHA256 ກັບ `"oca-member-session"`) ຈຶ່ງບໍ່ມີ env ໃໝ່ທີ່ບັງຄັບ — ແຕ່ **ປ່ຽນ `JWT_ACCESS_SECRET` = ສະມາຊິກທຸກຄົນຖືກອອກຈາກລະບົບ** (ຕ້ອງເຂົ້າລະບົບໃໝ່ດ້ວຍເບີ + PIN). ຕັ້ງ `MEMBER_JWT_SECRET` ແຍກເມື່ອຢາກ rotate ສອງອັນແຍກກັນ.
+- **`STORE_LOGIN_RATE_LIMIT`** (API): ຈຳນວນ `POST /store/member/login` + `POST /store/orders/:token/pin` ຕໍ່ IP ຕໍ່ 10 ນາທີ (ຄ່າເລີ່ມຕົ້ນ 20). ຕົວນັບຢູ່ໃນ memory ຄືຂໍ້ 16 ແລະ ຕ້ອງມີ `TRUST_PROXY` + `X-Forwarded-For` ທີ່ຖືກຕ້ອງ (ຂໍ້ 16), ບໍ່ດັ່ງນັ້ນລູກຄ້າທັງໝົດແບ່ງເພດານດຽວກັນ. ນອກຈາກນີ້ ຕໍ່ເບີ: ຜິດ 5 ຄັ້ງຕິດກັນ → ລັອກ 15 ນາທີ (ຄ່າຄົງທີ່, ບໍ່ແມ່ນ env).
+- **Cookie `oca_member`**: ເວັບ (`apps/storefront`, route `/api/store/*`) ເກັບ token ເປັນ `HttpOnly; SameSite=Lax; Path=/`, 30 ວັນ ແລະ `Secure` ເມື່ອ `NODE_ENV=production` → **ເວັບຕ້ອງເປີດຜ່ານ HTTPS** ບໍ່ດັ່ງນັ້ນ browser ບໍ່ເກັບ cookie ແລະ ເຂົ້າລະບົບບໍ່ໄດ້. token ບໍ່ເຄີຍຖືກສົ່ງໃຫ້ JavaScript ຂອງໜ້າເວັບ.
+- **ອອກຈາກລະບົບ** (`POST /api/store/member/logout`) ຖືກຕັດສິນຢູ່ເວັບເອງ ແລະ ປະຕິເສດຄຳຂໍຂ້າມ site: ເຊື່ອ `Sec-Fetch-Site` ທີ່ browser ສົ່ງມາ; ຖ້າບໍ່ມີ header ນີ້ ທຽບ `Origin` ກັບ `Host`. reverse proxy ຕ້ອງສົ່ງ `Host` ເດີມຕໍ່ (`proxy_set_header Host $host;`) ແລະ ບໍ່ລຶບ header `Sec-Fetch-*`.
+- ລືມ PIN: ລູກຄ້າຕິດຕໍ່ຮ້ານ → ແອດມິນກົດ "Reset PIN" ທີ່ໜ້າລູກຄ້າ (`crm:write`, ມີ audit `customer.pin.reset`) → ລູກຄ້າຕັ້ງໃໝ່ຈາກລິ້ງບິນເວັບທີ່ຈ່າຍແລ້ວ. ປ່ຽນເບີຂອງລູກຄ້າ ຫຼື ລວມລູກຄ້າກໍລ້າງ PIN ຄືກັນ (ເບິ່ງ `DATABASE.md`).
+- ເປີດ/ປິດແຕ້ມ ຫຼື ປ່ຽນຄ່າແຕ້ມທີ່ `/settings`: ເວັບ cache `/store/config` 60 ວິ (stale-while-revalidate) ຈຶ່ງໜ້າ `/account` ແລະ ຊ່ອງ "ໃຊ້ແຕ້ມ" ອາດປ່ຽນຊ້າໄດ້ ~1 ນາທີ (API ກວດແຕ້ມສົດຕອນ checkout ສະເໝີ).
