@@ -73,6 +73,23 @@ const envSchema = z
         message: "JWT_ACCESS_SECRET must not be a placeholder value in production",
       });
     }
+    const memberSecret = env.MEMBER_JWT_SECRET;
+    if (memberSecret === undefined) return;
+    if (env.NODE_ENV === "production" && PLACEHOLDER_SECRET_PREFIXES.some((prefix) => memberSecret.startsWith(prefix))) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MEMBER_JWT_SECRET"],
+        message: "MEMBER_JWT_SECRET must not be a placeholder value in production",
+      });
+    }
+    // ກະແຈດຽວກັນ = access token ຂອງພະນັກງານ ແລະ session ຂອງສະມາຊິກ ເຊັນດ້ວຍກະແຈດຽວ
+    if (memberSecret === env.JWT_ACCESS_SECRET) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MEMBER_JWT_SECRET"],
+        message: "MEMBER_JWT_SECRET must differ from JWT_ACCESS_SECRET",
+      });
+    }
   });
 
 export type Env = z.infer<typeof envSchema>;

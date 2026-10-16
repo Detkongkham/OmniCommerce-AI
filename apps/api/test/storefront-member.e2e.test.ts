@@ -1,7 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { JwtService } from "@nestjs/jwt";
 import { MEMBER_PIN_LOCK_MINUTES, MEMBER_PIN_MAX_FAILURES } from "@oca/shared";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { StoreMemberService } from "../src/modules/storefront/store-member.service";
 import { bearerFor, seedBasics } from "./helpers";
 import { FORBIDDEN_KEYS, keysOf, setupStoreTest } from "./storefront-fixtures";
 
@@ -104,18 +106,22 @@ describe("storefront member (e2e)", () => {
       for (const status of ["PENDING_PAYMENT", "EXPIRED", "CANCELLED"] as const) {
         await db().order.update({ where: { publicToken: order.token }, data: { status } });
         const res = await setPin(order.token).expect(409);
-        expect(res.body.code).toBe("ORDER_INVALID_STATE");
+        expect(res.body).toMatchObject({ code: "ORDER_INVALID_STATE", status });
         expectNoLeak(res.body);
       }
       expect((await customer()).pinHash).toBeNull();
     });
 
-    it("ບິນທີ່ບໍ່ແມ່ນຂອງເວັບ ຫຼື ບໍ່ມີລູກຄ້າ → 409 ORDER_INVALID_STATE", async () => {
+    it("ບິນທີ່ບໍ່ແມ່ນຂອງເວັບ ຫຼື ບໍ່ມີລູກຄ້າ → 409 ORDER_INVALID_STATE (ບໍ່ມີ status: ບໍ່ແມ່ນບັນຫາສະຖານະ)", async () => {
       const order = await placePaid();
       await db().order.update({ where: { publicToken: order.token }, data: { channel: "FACEBOOK" } });
-      expect((await setPin(order.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+      const channel = await setPin(order.token).expect(409);
+      expect(channel.body.code).toBe("ORDER_INVALID_STATE");
+      expect(channel.body).not.toHaveProperty("status");
       await db().order.update({ where: { publicToken: order.token }, data: { channel: "STOREFRONT", customerId: null } });
-      expect((await setPin(order.token).expect(409)).body.code).toBe("ORDER_INVALID_STATE");
+      const orphan = await setPin(order.token).expect(409);
+      expect(orphan.body.code).toBe("ORDER_INVALID_STATE");
+      expect(orphan.body).not.toHaveProperty("status");
       expect((await customer()).pinHash).toBeNull();
     });
 
@@ -188,11 +194,27 @@ describe("storefront member (e2e)", () => {
       expect((await customer()).pinLockedUntil).toEqual(row.pinLockedUntil);
     });
 
-    it("ຫຼັງໝົດເວລາລັອກ: PIN ຖືກ → 200 ແລະ ລ້າງຕົວນັບ + ລັອກ", async () => {
+    /** ຜິດຈົນຖືກລັອກ ແລ້ວເລື່ອນເວລາລັອກໄປອະດີດ (ສະຖານະທີ່ເກີດຈິງຫຼັງລໍຄົບເວລາ: ຕົວນັບ 0 + ລັອກໝົດອາຍຸ) */
+    const lockThenExpire = async () => {
+      for (let attempt = 1; attempt < MEMBER_PIN_MAX_FAILURES; attempt += 1) await login("000000").expect(401);
+      await login("000000").expect(429);
+      await db().customer.updateMany({ where: { phone: PHONE }, data: { pinLockedUntil: new Date(Date.now() - 1000) } });
+      expect((await customer()).pinFailedCount).toBe(0);
+    };
+
+    it("ຫຼັງໝົດເວລາລັອກ: PIN ຖືກ → 200 ແລະ ລ້າງລັອກ", async () => {
       await member();
-      await db().customer.updateMany({ where: { phone: PHONE }, data: { pinFailedCount: 3, pinLockedUntil: new Date(Date.now() - 1000) } });
+      await lockThenExpire();
       await login().expect(200);
       expect(await customer()).toMatchObject({ pinFailedCount: 0, pinLockedUntil: null });
+    });
+
+    it("ຫຼັງໝົດເວລາລັອກ: PIN ຜິດ → 401, ຕົວນັບເລີ່ມ 1 ແລະ ລັອກເກົ່າຖືກລ້າງ (ບໍ່ລັອກຄືນທັນທີ)", async () => {
+      await member();
+      await lockThenExpire();
+      expect((await login("000000").expect(401)).body.code).toBe("MEMBER_LOGIN_FAILED");
+      expect(await customer()).toMatchObject({ pinFailedCount: 1, pinLockedUntil: null });
+      await login().expect(200);
     });
 
     it("ເຂົ້າສຳເລັດ ລ້າງຕົວນັບ: ຜິດ 4 → ຖືກ → ຜິດ 4 ຍັງບໍ່ລັອກ", async () => {
@@ -250,6 +272,35 @@ describe("storefront member (e2e)", () => {
       await expectRequired(`Bearer ${none}.${forged}.`);
     });
 
+    it("ເຊັນດ້ວຍກະແຈສະມາຊິກທີ່ຖືກ ແຕ່ audience ຜິດ/ບໍ່ມີ ຫຼື ໝົດອາຍຸ → 401 MEMBER_REQUIRED", async () => {
+      const { memberToken } = await member();
+      const me = await customer();
+      // ກະແຈແບບດຽວກັບ service: test ບໍ່ຕັ້ງ MEMBER_JWT_SECRET ຈຶ່ງແຕກຈາກ JWT_ACCESS_SECRET
+      expect(process.env.MEMBER_JWT_SECRET).toBeUndefined();
+      const secret = createHmac("sha256", process.env.JWT_ACCESS_SECRET as string).update("oca-member-session").digest("hex");
+      const sign = (payload: object, options: { audience?: string; expiresIn?: number } = {}) =>
+        app().get(JwtService).signAsync({ pv: me.pinVersion, ...payload }, { subject: me.id, secret, algorithm: "HS256", ...options });
+
+      // ກະແຈທີ່ແຕກເອງໃຊ້ໄດ້ຈິງ: token ທີ່ຖືກຕ້ອງຜ່ານ (ບໍ່ດັ່ງນັ້ນ 401 ລຸ່ມນີ້ອາດມາຈາກກະແຈຜິດ)
+      await get("/store/member/me", await sign({}, { audience: "member", expiresIn: 60 })).expect(200);
+      await expectRequired(`Bearer ${await sign({}, { audience: "staff", expiresIn: 60 })}`);
+      await expectRequired(`Bearer ${await sign({}, { expiresIn: 60 })}`);
+      const past = Math.floor(Date.now() / 1000) - 3600;
+      await expectRequired(`Bearer ${await sign({ iat: past - 60, exp: past }, { audience: "member" })}`);
+      await get("/store/member/me", memberToken).expect(200);
+    });
+
+    it("optionalMember: ບໍ່ມີ header = null; header ວ່າງ/ຜິດ → MEMBER_REQUIRED; token ຖືກ = ລູກຄ້າ", async () => {
+      const { memberToken } = await member();
+      const service = app().get(StoreMemberService);
+      expect(await service.optionalMember(undefined)).toBeNull();
+      for (const header of ["", "Bearer ", "Bearer not-a-jwt"]) {
+        await expect(service.optionalMember(header)).rejects.toMatchObject({ response: { code: "MEMBER_REQUIRED" } });
+      }
+      const me = await customer();
+      expect(await service.optionalMember(`Bearer ${memberToken}`)).toEqual({ id: me.id, name: me.name, phone: PHONE, pointsBalance: 0, tier: "BRONZE" });
+    });
+
     it("pinVersion ປ່ຽນ (reset PIN) ຫຼື PIN ຖືກລຶບ ຫຼື ລູກຄ້າຖືກລຶບ → session ເກົ່າໃຊ້ບໍ່ໄດ້", async () => {
       const { memberToken } = await member();
       await get("/store/member/me", memberToken).expect(200);
@@ -281,12 +332,32 @@ describe("storefront member (e2e)", () => {
       expect(JSON.stringify(res.body)).not.toContain("ບັນທຶກພາຍໃນ");
     });
 
-    it("ລະດັບສູງສຸດ → nextTier null ແລະ ຕົວຄູນຂອງລະດັບ", async () => {
+    it("ລະດັບທີ່ບັນທຶກເປັນຂັ້ນສູງສຸດ ເຖິງຍອດຊື້ຕ່ຳ → nextTier null ແລະ ຕົວຄູນຂອງລະດັບ", async () => {
       const { memberToken } = await member();
       await db().customer.updateMany({ where: { phone: PHONE }, data: { tier: "PLATINUM" } });
-      await db().order.updateMany({ data: { subtotal: "10000000.00" } });
       const res = await get("/store/member/me", memberToken).expect(200);
-      expect(res.body).toMatchObject({ tier: "PLATINUM", spend12m: "10000000.00", nextTier: null, pointsMultiplier: "2" });
+      expect(res.body).toMatchObject({ tier: "PLATINUM", spend12m: "100.00", nextTier: null, pointsMultiplier: "2" });
+    });
+
+    it("nextTier ນັບຈາກລະດັບທີ່ບັນທຶກ ບໍ່ແມ່ນຈາກຍອດຊື້: ຂັ້ນຖັດຈາກ tier, remaining ບໍ່ຕິດລົບ", async () => {
+      const { memberToken } = await member();
+      // ລະດັບສູງກວ່າຍອດຊື້ (ຍັງບໍ່ຖືກຫຼຸດ): ຂັ້ນຖັດໄປແມ່ນ GOLD ບໍ່ແມ່ນ SILVER
+      await db().customer.updateMany({ where: { phone: PHONE }, data: { tier: "SILVER" } });
+      const ahead = await get("/store/member/me", memberToken).expect(200);
+      expect(ahead.body).toMatchObject({
+        tier: "SILVER",
+        nextTier: { tier: "GOLD", minSpend: "5000000.00", remaining: "4999900.00" },
+        pointsMultiplier: "1.25",
+      });
+      // ຍອດຊື້ເກີນເກນແລ້ວ ແຕ່ລະດັບຍັງບໍ່ທັນຖືກຄິດໃໝ່: ຍັງຊີ້ຂັ້ນຖັດຈາກ tier ແລະ ເຫຼືອ 0
+      await db().customer.updateMany({ where: { phone: PHONE }, data: { tier: "BRONZE" } });
+      await db().order.updateMany({ data: { subtotal: "3000000.00" } });
+      const behind = await get("/store/member/me", memberToken).expect(200);
+      expect(behind.body).toMatchObject({
+        tier: "BRONZE",
+        spend12m: "3000000.00",
+        nextTier: { tier: "SILVER", minSpend: "2000000.00", remaining: "0.00" },
+      });
     });
   });
 

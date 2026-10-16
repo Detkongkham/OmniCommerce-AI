@@ -75,6 +75,22 @@ describe("parseEnv", () => {
     expect(() => parseEnv(test)).not.toThrow();
   });
 
+  it("MEMBER_JWT_SECRET: optional, min 32, no placeholder in production, never equal to JWT_ACCESS_SECRET", () => {
+    expect(parseEnv(base).MEMBER_JWT_SECRET).toBeUndefined();
+    expect(parseEnv({ ...base, MEMBER_JWT_SECRET: "" }).MEMBER_JWT_SECRET).toBeUndefined();
+    expect(parseEnv({ ...base, MEMBER_JWT_SECRET: "b".repeat(32) }).MEMBER_JWT_SECRET).toBe("b".repeat(32));
+    expect(() => parseEnv({ ...base, MEMBER_JWT_SECRET: "short" })).toThrow();
+    const dev = { ...base, MEMBER_JWT_SECRET: `dev-only-${"x".repeat(32)}` };
+    const test = { ...base, MEMBER_JWT_SECRET: `test-secret-${"x".repeat(32)}` };
+    expect(() => parseEnv({ ...dev, NODE_ENV: "production" })).toThrow(/MEMBER_JWT_SECRET/);
+    expect(() => parseEnv({ ...test, NODE_ENV: "production" })).toThrow(/MEMBER_JWT_SECRET/);
+    expect(() => parseEnv({ ...base, MEMBER_JWT_SECRET: "b".repeat(32), NODE_ENV: "production" })).not.toThrow();
+    expect(() => parseEnv(dev)).not.toThrow();
+    for (const NODE_ENV of ["development", "test", "production"]) {
+      expect(() => parseEnv({ ...base, MEMBER_JWT_SECRET: base.JWT_ACCESS_SECRET, NODE_ENV })).toThrow(/MEMBER_JWT_SECRET must differ/);
+    }
+  });
+
   it("parses TRUST_PROXY: default false, hop count, rejects everything else", () => {
     expect(parseEnv(base).TRUST_PROXY).toBe(false);
     expect(parseEnv({ ...base, TRUST_PROXY: "false" }).TRUST_PROXY).toBe(false);

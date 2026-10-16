@@ -26,7 +26,7 @@ import {
   toStoreMember,
   toStoreMemberOrder,
   toStoreMemberPoint,
-} from "./storefront.mapper";
+} from "./store-member.mapper";
 
 const MEMBER_AUDIENCE = "member";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -57,7 +57,8 @@ export class StoreMemberService {
     @Inject(PasswordService) private readonly passwords: PasswordService,
     @Inject(ENV) env: Env,
   ) {
-    // ກະແຈແຍກຈາກ access token ຂອງພະນັກງານ: token ຂອງຝັ່ງໜຶ່ງ verify ອີກຝັ່ງບໍ່ຜ່ານ
+    // ກະແຈແຍກຈາກ access token ຂອງພະນັກງານ (env ປະຕິເສດ MEMBER_JWT_SECRET ທີ່ຄືກັບ JWT_ACCESS_SECRET).
+    // ຝັ່ງນີ້ຍັງກວດ audience "member" ນຳ; ຝັ່ງພະນັກງານອາໄສກະແຈຕ່າງກັນຢ່າງດຽວ (ບໍ່ກວດ audience)
     this.secret = env.MEMBER_JWT_SECRET ?? createHmac("sha256", env.JWT_ACCESS_SECRET).update("oca-member-session").digest("hex");
   }
 
@@ -67,21 +68,26 @@ export class StoreMemberService {
    */
   async setPin(token: string, pin: string): Promise<StoreMemberSessionDto> {
     const order = STORE_TOKEN_PATTERN.test(token)
-      ? await this.prisma.order.findUnique({ where: { publicToken: token }, select: { channel: true, status: true, customerId: true } })
+      ? await this.prisma.order.findUnique({ where: { publicToken: token }, select: { channel: true, status: true, customer: { select: { id: true, pinHash: true } } } })
       : null;
     if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
-    const paid = (COUNTED_ORDER_STATUSES as readonly string[]).includes(order.status);
-    if (order.channel !== "STOREFRONT" || !paid || !order.customerId) {
-      throw apiError("ORDER_INVALID_STATE", "A PIN can only be set from a paid storefront order", { status: order.status });
+    const customer = order.customer;
+    if (order.channel !== "STOREFRONT" || !customer) {
+      throw apiError("ORDER_INVALID_STATE", "A PIN can only be set from a storefront order that has a customer");
     }
+    if (!(COUNTED_ORDER_STATUSES as readonly string[]).includes(order.status)) {
+      throw apiError("ORDER_INVALID_STATE", `Order is ${order.status}; a PIN can only be set from a paid order`, { status: order.status });
+    }
+    // ຕອບກ່ອນ hash (argon2 ແພງ); UPDATE ມີເງື່ອນໄຂລຸ່ມນີ້ຍັງເປັນດ່ານຈິງຂອງຄຳຂໍພ້ອມກັນ
+    if (customer.pinHash) throw alreadySet();
     const pinHash = await this.passwords.hash(pin);
     // ເງື່ອນໄຂ pinHash IS NULL ຢູ່ໃນ UPDATE ດຽວ: ສອງຄຳຂໍພ້ອມກັນ ສຳເລັດອັນດຽວ
     const { count } = await this.prisma.customer.updateMany({
-      where: { id: order.customerId, pinHash: null },
+      where: { id: customer.id, pinHash: null },
       data: { pinHash, pinFailedCount: 0, pinLockedUntil: null },
     });
-    if (count === 0) throw apiError("PIN_ALREADY_SET", "This customer already has a PIN");
-    return this.session(order.customerId);
+    if (count === 0) throw alreadySet();
+    return this.session(customer.id);
   }
 
   /** ເບີບໍ່ມີ, ລູກຄ້າບໍ່ມີ PIN ແລະ PIN ຜິດ ຕອບຄືກັນ (401 MEMBER_LOGIN_FAILED) ແລະ ໃຊ້ເວລາໃກ້ກັນ */
@@ -144,13 +150,15 @@ export class StoreMemberService {
       where: { id: payload.sub },
       select: { ...storeMemberSelect, pinHash: true, pinVersion: true },
     });
-    if (!customer?.pinHash || customer.pinVersion !== payload.pv) throw memberRequired();
-    return { id: customer.id, name: customer.name, phone: customer.phone, pointsBalance: customer.pointsBalance, tier: customer.tier };
+    if (!customer) throw memberRequired();
+    const { pinHash, pinVersion, ...member } = customer;
+    if (!pinHash || pinVersion !== payload.pv) throw memberRequired();
+    return member;
   }
 
-  /** ບໍ່ມີ header = null (guest); ມີ header ແຕ່ໃຊ້ບໍ່ໄດ້ → 401 MEMBER_REQUIRED (ບໍ່ຕົກເປັນ guest ແບບງຽບໆ) */
+  /** ບໍ່ມີ header (undefined) = null (guest); ມີ header ແຕ່ໃຊ້ບໍ່ໄດ້ ລວມທັງຄ່າວ່າງ → 401 MEMBER_REQUIRED (ບໍ່ຕົກເປັນ guest ແບບງຽບໆ) */
   async optionalMember(authorization: string | undefined): Promise<StoreMemberRow | null> {
-    if (authorization === undefined || authorization === "") return null;
+    if (authorization === undefined) return null;
     return this.requireMember(authorization);
   }
 
@@ -211,6 +219,10 @@ function loginFailed() {
 function locked(until: Date) {
   const retryAfterSeconds = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 1000));
   return apiError("MEMBER_LOCKED", "Too many failed attempts; try again later", { retryAfterSeconds });
+}
+
+function alreadySet() {
+  return apiError("PIN_ALREADY_SET", "This customer already has a PIN");
 }
 
 function memberRequired() {
