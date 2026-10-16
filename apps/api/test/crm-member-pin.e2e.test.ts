@@ -115,6 +115,45 @@ describe("crm member PIN (e2e)", () => {
     });
   });
 
+  describe("PATCH /crm/customers/:id: PIN ຜູກກັບເບີ", () => {
+    const patch = (id: string, body: object) => request(server()).patch(`/crm/customers/${id}`).set(manager).send(body);
+
+    it("ປ່ຽນເບີ → ລ້າງ PIN + version ເພີ່ມ, session ເກົ່າ 401, audit ບັນທຶກ pinCleared", async () => {
+      const { customer, memberToken } = await member();
+      await db().customer.update({ where: { id: customer.id }, data: { pinFailedCount: 2, pinLockedUntil: new Date(Date.now() + 60_000) } });
+      const res = await patch(customer.id, { phone: OTHER_PHONE }).expect(200);
+      expect(res.body).toMatchObject({ phone: OTHER_PHONE, hasPin: false, pinLockedUntil: null });
+      expect(await db().customer.findUniqueOrThrow({ where: { id: customer.id } })).toMatchObject({
+        pinHash: null,
+        pinFailedCount: 0,
+        pinLockedUntil: null,
+        pinVersion: customer.pinVersion + 1,
+      });
+      expect((await me(memberToken).expect(401)).body.code).toBe("MEMBER_REQUIRED");
+      await login(OTHER_PHONE).expect(401);
+      const audit = await db().auditLog.findFirstOrThrow({ where: { action: "customer.update", entityId: customer.id } });
+      expect(audit.after).toMatchObject({ phone: OTHER_PHONE, pinCleared: true });
+      expect(JSON.stringify([audit.before, audit.after])).not.toContain("argon2");
+    });
+
+    it("ລ້າງເບີ → ລ້າງ PIN ຄືກັນ", async () => {
+      const { customer, memberToken } = await member();
+      await patch(customer.id, { phone: "" }).expect(200);
+      expect((await db().customer.findUniqueOrThrow({ where: { id: customer.id } })).pinHash).toBeNull();
+      await me(memberToken).expect(401);
+    });
+
+    it("ເບີບໍ່ປ່ຽນ (ສົ່ງເບີເດີມ ຫຼື ບໍ່ສົ່ງ) → PIN ແລະ session ຍັງຢູ່", async () => {
+      const { customer, memberToken } = await member();
+      await patch(customer.id, { name: "ຊື່ໃໝ່", phone: PHONE }).expect(200);
+      await patch(customer.id, { note: "VIP" }).expect(200);
+      expect(await db().customer.findUniqueOrThrow({ where: { id: customer.id } })).toMatchObject({ pinHash: customer.pinHash, pinVersion: customer.pinVersion });
+      await me(memberToken).expect(200);
+      const audits = await db().auditLog.findMany({ where: { action: "customer.update", entityId: customer.id } });
+      for (const audit of audits) expect(audit.after).not.toHaveProperty("pinCleared");
+    });
+  });
+
   describe("merge: ກົດຂອງ PIN", () => {
     it("target ມີ PIN: ຮັກສາ PIN ຂອງຕົນ; session ຂອງ source ໃຊ້ບໍ່ໄດ້", async () => {
       const target = await member(PHONE, "111111");
@@ -138,6 +177,22 @@ describe("crm member PIN (e2e)", () => {
       await me(source.memberToken).expect(401);
       const fresh = await login(OTHER_PHONE, "222222").expect(200);
       expect((await me(fresh.body.memberToken).expect(200)).body.name).toBe("Mali FB");
+    });
+
+    it("target ມີ PIN ແຕ່ບໍ່ມີເບີ (ຮັບເບີຂອງ source): PIN ທັງສອງຖືກຖິ້ມ, session ຂອງ target ໃຊ້ບໍ່ໄດ້", async () => {
+      const target = await member(PHONE, "111111");
+      // ພະນັກງານລ້າງເບີກ່ອນ PIN-ຜູກ-ເບີ: ສະຖານະເກົ່າທີ່ຍັງອາດມີໃນຖານ
+      await db().customer.update({ where: { id: target.customer.id }, data: { phone: null } });
+      const source = await member(OTHER_PHONE, "222222");
+      const res = await merge(target.customer.id, source.customer.id).expect(200);
+      expect(res.body).toMatchObject({ phone: OTHER_PHONE, hasPin: false });
+      expect((await db().customer.findUniqueOrThrow({ where: { id: target.customer.id } })).pinVersion).toBe(target.customer.pinVersion + 1);
+      await me(target.memberToken).expect(401);
+      await me(source.memberToken).expect(401);
+      await login(OTHER_PHONE, "111111").expect(401);
+      const audit = await db().auditLog.findFirstOrThrow({ where: { action: "customer.merge", entityId: target.customer.id } });
+      expect(audit.after).toMatchObject({ adoptedPin: false, pinCleared: true });
+      await login(OTHER_PHONE, "222222").expect(401);
     });
 
     it("target ບໍ່ມີ PIN ແຕ່ຮັກສາເບີຂອງຕົນ: PIN ຂອງ source ຖືກຖິ້ມ", async () => {

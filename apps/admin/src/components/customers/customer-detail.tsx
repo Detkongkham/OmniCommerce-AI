@@ -164,7 +164,10 @@ export function CustomerDetail({ id }: { id: string }) {
             </dl>
             <p className="mt-3 text-xs text-ink-muted">
               {customer.nextTier
-                ? t("customers.detail.nextTier", { amount: formatMoney(customer.nextTier.remaining), tier: t(`customers.tier.${customer.nextTier.tier}`) })
+                ? // ຍອດຮອດເກນແລ້ວ ແຕ່ລະດັບທີ່ບັນທຶກຍັງບໍ່ຖືກຄິດໃໝ່ (ຕອນຈ່າຍ/ທຸກຄືນ)
+                  Number(customer.nextTier.remaining) <= 0
+                  ? t("customers.detail.tierPending", { tier: t(`customers.tier.${customer.nextTier.tier}`) })
+                  : t("customers.detail.nextTier", { amount: formatMoney(customer.nextTier.remaining), tier: t(`customers.tier.${customer.nextTier.tier}`) })
                 : t("customers.detail.topTier")}
             </p>
             {canWrite ? (

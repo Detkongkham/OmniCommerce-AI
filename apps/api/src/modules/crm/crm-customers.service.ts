@@ -351,11 +351,15 @@ export class CrmCustomersService {
       const owner = await this.prisma.customer.findUnique({ where: { phone: input.phone }, select: { id: true } });
       if (owner && owner.id !== id) throw phoneTaken(owner.id);
     }
+    // PIN ເວັບເປັນຂອງເບີ: ປ່ຽນ/ລ້າງເບີ = ລ້າງ PIN + ເພີ່ມ pinVersion ໃນການບັນທຶກດຽວກັນ (session ເກົ່າຕາຍ).
+    // ລ້າງທຸກຄັ້ງທີ່ເບີປ່ຽນ ບໍ່ຂຶ້ນກັບ pinHash ທີ່ອ່ານມາ: PIN ທີ່ຖືກຕັ້ງລະຫວ່າງອ່ານ ແລະ ບັນທຶກ ກໍ່ບໍ່ລອດ
+    const phoneChanged = input.phone !== undefined && input.phone !== existing.phone;
     let row: Customer;
     try {
       row = await this.prisma.customer.update({
         where: { id },
         data: {
+          ...(phoneChanged ? { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } } : {}),
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.phone !== undefined ? { phone: input.phone } : {}),
           ...(input.email !== undefined ? { email: input.email } : {}),
@@ -367,7 +371,16 @@ export class CrmCustomersService {
       if (isUniqueViolation(error)) throw phoneTaken(undefined);
       throw error;
     }
-    await this.audit.record({ userId: actor.id, action: "customer.update", entity: "Customer", entityId: id, before: auditOf(existing), after: auditOf(row), ip });
+    const pinCleared = phoneChanged && existing.pinHash !== null;
+    await this.audit.record({
+      userId: actor.id,
+      action: "customer.update",
+      entity: "Customer",
+      entityId: id,
+      before: auditOf(existing),
+      after: { ...auditOf(row), ...(pinCleared ? { pinCleared: true } : {}) },
+      ip,
+    });
     return this.get(id);
   }
 
@@ -386,13 +399,20 @@ export class CrmCustomersService {
       await tx.pointEntry.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
       // ລຶບ source ກ່ອນ ເພື່ອປ່ອຍ unique (phone, facebookUserId) ໃຫ້ target ຮັບໄດ້. session ສະມາຊິກຂອງ source ຕາຍໄປພ້ອມແຖວ
       await tx.customer.delete({ where: { id: source.id } });
-      // PIN ຜູກກັບເບີ (ເຂົ້າລະບົບດ້ວຍເບີ + PIN): target ທີ່ມີ PIN ຮັກສາຂອງຕົນ; ຮັບ PIN ຂອງ source ສະເພາະເມື່ອ target
-      // ບໍ່ມີ PIN ແລະ ຮັບເບີຂອງ source ໄປພ້ອມກັນ (target ບໍ່ມີເບີ). ນອກນັ້ນ PIN ຂອງ source ຖືກຖິ້ມ
+      // PIN ເວັບເປັນຂອງເບີ: PIN ທີ່ເຫຼືອຕ້ອງຖືກຕັ້ງພາຍໃຕ້ເບີທີ່ເຫຼືອ. target ຮັກສາ PIN ຂອງຕົນສະເພາະເມື່ອມີເບີ (ເບີບໍ່ປ່ຽນ);
+      // ຮັບ PIN ຂອງ source ສະເພາະເມື່ອ target ບໍ່ມີ PIN ແລະ ບໍ່ມີເບີ (ຮັບເບີຂອງ source ໄປພ້ອມກັນ).
+      // target ທີ່ມີ PIN ແຕ່ບໍ່ມີເບີ ເສຍ PIN (ລ້າງ + ເພີ່ມ pinVersion). ນອກນັ້ນ PIN ຂອງ source ຖືກຖິ້ມ
       const adoptPin = target.pinHash === null && source.pinHash !== null && target.phone === null && source.phone !== null;
+      const dropTargetPin = target.pinHash !== null && target.phone === null;
+      const pinData = adoptPin
+        ? { pinHash: source.pinHash, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } }
+        : dropTargetPin
+          ? { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } }
+          : {};
       await tx.customer.update({
         where: { id: target.id },
         data: {
-          ...(adoptPin ? { pinHash: source.pinHash, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } } : {}),
+          ...pinData,
           phone: target.phone ?? source.phone,
           email: target.email ?? source.email,
           facebookUserId: target.facebookUserId ?? source.facebookUserId,
@@ -402,7 +422,7 @@ export class CrmCustomersService {
       });
       // ບິນທີ່ຍ້າຍມາປ່ຽນຍອດຊື້ 12 ເດືອນຂອງ target
       await recomputeTier(tx, target.id, await loadLoyaltyConfig(tx));
-      return { source, adoptPin, movedOrders: orders.count, movedConversations: conversations.count };
+      return { source, adoptPin, dropTargetPin, movedOrders: orders.count, movedConversations: conversations.count };
     });
     await this.audit.record({
       userId: actor.id,
@@ -410,7 +430,13 @@ export class CrmCustomersService {
       entity: "Customer",
       entityId: targetId,
       before: { source: { id: result.source.id, ...auditOf(result.source), facebookUserId: result.source.facebookUserId, hasPin: result.source.pinHash !== null } },
-      after: { movedOrders: result.movedOrders, movedConversations: result.movedConversations, movedPoints: result.source.pointsBalance, adoptedPin: result.adoptPin },
+      after: {
+        movedOrders: result.movedOrders,
+        movedConversations: result.movedConversations,
+        movedPoints: result.source.pointsBalance,
+        adoptedPin: result.adoptPin,
+        ...(result.dropTargetPin ? { pinCleared: true } : {}),
+      },
       ip,
     });
     return this.get(targetId);

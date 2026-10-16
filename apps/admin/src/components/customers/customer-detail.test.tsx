@@ -262,4 +262,48 @@ describe("CustomerDetail", () => {
     const post = vi.mocked(apiFetch).mock.calls.find((call) => call[1]?.method === "POST");
     expect(post?.[0]).toBe("/crm/customers/c1/pin/reset");
   });
+
+  it("ລະດັບຖັດໄປ: ຍອດຮອດເກນແລ້ວ (remaining 0) → ຂຶ້ນລະດັບໃນການຄຳນວນຮອບຕໍ່ໄປ", async () => {
+    mockApi({ ...customer, nextTier: { tier: "GOLD", minSpend: "5000000.00", remaining: "0.00" } });
+    renderWithProviders(<CustomerDetail id="c1" />);
+    const card = await screen.findByRole("region", { name: "Membership" });
+    expect(within(card).getByText("Moves up to Gold at the next recalculation")).toBeInTheDocument();
+    expect(within(card).queryByText(/more to reach/)).toBeNull();
+  });
+
+  it("Reset PIN ລົ້ມ: toast.error ແລະ ປິດ dialog", async () => {
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(apiFetch).mockImplementation((async (path: string, options?: { method?: string }) => {
+      if (options?.method === "POST") throw new ApiError(404, "gone", [], "CUSTOMER_NOT_FOUND");
+      if (path.includes("/orders")) return orders;
+      return customer;
+    }) as typeof apiFetch);
+    const { user } = renderWithProviders(<CustomerDetail id="c1" />);
+    await user.click(await screen.findByRole("button", { name: "Reset PIN" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Reset PIN" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("ແກ້ໄຂ: ລູກຄ້າມີ PIN ແລະ ປ່ຽນເບີ → ຄຳເຕືອນວ່າ PIN ຈະຖືກລ້າງ; ບໍ່ມີ PIN = ບໍ່ເຕືອນ", async () => {
+    const warning = /sign the member out/;
+    const { user, unmount } = renderWithProviders(<CustomerDetail id="c1" />);
+    await user.click(await screen.findByRole("button", { name: "Edit profile" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByText(warning)).toBeNull();
+    const phone = within(dialog).getByLabelText(/Phone/);
+    await user.clear(phone);
+    expect(within(dialog).getByText(warning)).toBeInTheDocument();
+    await user.type(phone, "02055550001");
+    expect(within(dialog).queryByText(warning)).toBeNull();
+    unmount();
+
+    mockApi({ ...customer, hasPin: false });
+    const second = renderWithProviders(<CustomerDetail id="c1" />);
+    await second.user.click(await screen.findByRole("button", { name: "Edit profile" }));
+    const plain = screen.getByRole("dialog");
+    await second.user.clear(within(plain).getByLabelText(/Phone/));
+    expect(within(plain).queryByText(warning)).toBeNull();
+  });
 });

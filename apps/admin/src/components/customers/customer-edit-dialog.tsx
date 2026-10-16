@@ -89,6 +89,10 @@ function EditForm({ customer, onDone }: { customer: CrmCustomerDetailDto; onDone
           <Field label={t("customers.detail.phone")} htmlFor="customer-phone" error={errors.phone}>
             <Input id="customer-phone" inputMode="tel" maxLength={16} value={state.phone} invalid={!!errors.phone} onChange={(event) => set("phone", event.target.value)} />
           </Field>
+          {/* PIN ເວັບເປັນຂອງເບີ: API ລ້າງ PIN ເມື່ອເບີປ່ຽນ */}
+          {customer.hasPin && state.phone.trim() !== (customer.phone ?? "") ? (
+            <p className="-mt-2 text-sm text-warning-ink">{t("customers.edit.phonePinWarning")}</p>
+          ) : null}
           {phoneOwnerId ? (
             <Link href={`/customers/${phoneOwnerId}`} className="-mt-2 text-sm font-medium text-brand-ink hover:underline">
               {t("customers.edit.openOwner")}
