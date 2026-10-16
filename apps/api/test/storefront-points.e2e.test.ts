@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { awardPointsForOrder, expireOrder, loadLoyaltyConfig } from "@oca/database";
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
+import { StoreMemberService } from "../src/modules/storefront/store-member.service";
+import { StoreOrdersService } from "../src/modules/storefront/store-orders.service";
 import { expectLedgerMatches } from "./helpers";
 import { FORBIDDEN_KEYS, keysOf, setupStoreTest } from "./storefront-fixtures";
 
@@ -16,7 +18,7 @@ const TIERS = [
 ];
 
 describe("storefront loyalty points (e2e)", () => {
-  const { server, db, state } = setupStoreTest({ STORE_LOGIN_RATE_LIMIT: "1000" });
+  const { server, app, db, state } = setupStoreTest({ STORE_LOGIN_RATE_LIMIT: "1000" });
 
   beforeEach(async () => {
     // 10 ກີບ = 1 ແຕ້ມ, 1 ແຕ້ມ = 1 ກີບ, ໃຊ້ໄດ້ບໍ່ເກີນ 50% ຂອງຍອດ; VAT 0 ເພື່ອໃຫ້ total = subtotal
@@ -188,6 +190,23 @@ describe("storefront loyalty points (e2e)", () => {
       expect(res.body.code).toBe("MEMBER_REQUIRED");
       expect((await placeOrder({ pointsToRedeem: 100, expectedTotal: "200.00" }, "bad").expect(401)).body.code).toBe("MEMBER_REQUIRED");
       expect(await db().order.count()).toBe(before);
+    });
+
+    it("ເບີຍ້າຍໄປລູກຄ້າອື່ນຫຼັງອ່ານ session (ແຂ່ງກັນ) → ກວດໃນ transaction: 409 PHONE_MISMATCH; ບໍ່ສ້າງບິນ ບໍ່ຫັກແຕ້ມ", async () => {
+      const token = await member(500);
+      // session ຖືກອ່ານຕອນເບີຍັງເປັນຂອງສະມາຊິກ
+      const stale = await app().get(StoreMemberService).requireMember(`Bearer ${token}`);
+      // ລະຫວ່າງນັ້ນ ພະນັກງານຍ້າຍເບີ ແລະ ເບີນີ້ກາຍເປັນຂອງລູກຄ້າອື່ນ
+      await db().customer.update({ where: { id: stale.id }, data: { phone: OTHER_PHONE } });
+      const other = await db().customer.create({ data: { name: "ຄົນອື່ນ", phone: PHONE, pointsBalance: 900 } });
+      const before = await db().order.count();
+      const body = { ...orderBody({ pointsToRedeem: 100, expectedTotal: "200.00" }) } as Parameters<StoreOrdersService["create"]>[0];
+      await expect(app().get(StoreOrdersService).create(body, stale, undefined, randomUUID())).rejects.toMatchObject({
+        response: { code: "POINTS_INVALID", reason: "PHONE_MISMATCH" },
+      });
+      expect(await db().order.count()).toBe(before);
+      expect((await db().customer.findUniqueOrThrow({ where: { id: other.id } })).pointsBalance).toBe(900);
+      expect((await db().customer.findUniqueOrThrow({ where: { id: stale.id } })).pointsBalance).toBe(500);
     });
 
     it("ເບີຂອງ session ບໍ່ຕົງກັບເບີທີ່ສັ່ງ → 409 POINTS_INVALID PHONE_MISMATCH; ບໍ່ສ້າງບິນ", async () => {

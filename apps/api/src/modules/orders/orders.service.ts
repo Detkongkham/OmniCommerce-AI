@@ -3,6 +3,7 @@ import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import {
   type CouponEvaluation,
   type OrderSource,
+  PointsRejectedError,
   Prisma,
   type PrismaClient,
   type Redemption,
@@ -59,6 +60,11 @@ export interface WebOrderExtras {
   expectedTotal: string;
   /** ແລ່ນທຳອິດໃນ transaction (ກວດເພດານພາຍໃຕ້ lock); throw = rollback ທັງໝົດ */
   guard: (tx: Prisma.TransactionClient) => Promise<void>;
+  /**
+   * ໃຊ້ແຕ້ມ: id ຂອງສະມາຊິກໃນ session. ລູກຄ້າທີ່ບິນຖືກຜູກ (ຕາມເບີ, ພາຍໃນ transaction) ຕ້ອງເປັນຄົນດຽວກັນ
+   * ບໍ່ດັ່ງນັ້ນ 409 POINTS_INVALID PHONE_MISMATCH (ເບີຖືກຍ້າຍລະຫວ່າງອ່ານ session ແລະ ສ້າງບິນ)
+   */
+  redeemerId?: string;
 }
 
 /** ແຫຼ່ງທີ່ມາຂອງບິນທີ່ຖືກສ້າງໂດຍລະບົບ (CF Engine, ໜ້າຮ້ານ); ບິນຈາກແຊັດໃຊ້ conversationId ແທນ */
@@ -343,6 +349,8 @@ export class OrdersService {
           totals = calculateOrderTotals({ ...totalsInput, orderDiscount: coupon.discount });
         }
         if (input.pointsToRedeem !== undefined) {
+          const redeemerId = origin?.web?.redeemerId;
+          if (redeemerId !== undefined && customerId !== redeemerId) throw new PointsRejectedError("PHONE_MISMATCH");
           // ລັອກລູກຄ້າຈົນ commit: ກວດຍອດແຕ້ມ ແລະ ຫັກ (ຫຼັງສ້າງບິນ) ເປັນ atomic ຕໍ່ລູກຄ້າ
           redemption = await evaluateRedemption(tx, loyaltyConfigOf(settings), {
             customerId,
