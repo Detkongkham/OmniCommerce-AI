@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { InsufficientStockError, type Prisma, type PrismaClient } from "@oca/database";
+import { InsufficientStockError, PointsRejectedError, type Prisma, type PrismaClient } from "@oca/database";
 import {
   COUPON_CODE_PATTERN,
   STORE_MAX_OPEN_ORDERS,
@@ -11,9 +11,11 @@ import {
   createOrderSchema,
 } from "@oca/shared";
 import { apiError } from "../../common/api-error";
+import { pointsRejection } from "../../common/points-error";
 import { PRISMA } from "../../prisma/prisma.module";
 import { OrdersService } from "../orders/orders.service";
 import { SlipsService, type UploadedImage } from "../payments/slips.service";
+import type { StoreMemberRow } from "./store-member.mapper";
 import { type StoreOrderDto, type StoreOrderRow, isReservationExpired, storeOrderInclude, toStoreOrder } from "./storefront.mapper";
 
 export interface StoreOrderCreatedDto {
@@ -31,7 +33,19 @@ export class StoreOrdersService {
     @Inject(SlipsService) private readonly slips: SlipsService,
   ) {}
 
-  async create(body: StoreCreateOrderInput, ip: string | undefined, idempotencyKey: string): Promise<StoreOrderCreatedDto> {
+  /** `member` = ສະມາຊິກຂອງ session; ຕ້ອງມີເມື່ອ body ມີ pointsToRedeem (controller ບັງຄັບແລ້ວ) */
+  async create(
+    body: StoreCreateOrderInput,
+    member: StoreMemberRow | null,
+    ip: string | undefined,
+    idempotencyKey: string,
+  ): Promise<StoreOrderCreatedDto> {
+    if (body.pointsToRedeem !== undefined) {
+      if (!member) throw apiError("MEMBER_REQUIRED", "Member sign-in required");
+      // ແຕ້ມເປັນຂອງລູກຄ້າເບີນີ້: ບິນຖືກຜູກກັບລູກຄ້າຕາມເບີທີ່ພິມ (ບໍ່ normalize) ຈຶ່ງຕ້ອງຕົງກັນທຸກຕົວອັກສອນ
+      if (member.phone !== body.phone) throw pointsRejection(new PointsRejectedError("PHONE_MISMATCH"));
+    }
+
     const courier = await this.prisma.courier.findUnique({ where: { id: body.courierId }, select: { isActive: true } });
     if (!courier) throw apiError("COURIER_NOT_FOUND", "Courier not found");
     if (!courier.isActive) throw apiError("COURIER_INACTIVE", "Courier is inactive");
@@ -50,6 +64,7 @@ export class StoreOrdersService {
       shippingAddress: body.address,
       ...(body.note ? { note: body.note } : {}),
       ...(body.couponCode !== undefined ? { couponCode: body.couponCode } : {}),
+      ...(body.pointsToRedeem !== undefined ? { pointsToRedeem: body.pointsToRedeem } : {}),
     });
 
     let orderId: string;

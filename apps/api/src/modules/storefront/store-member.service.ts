@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { COUNTED_ORDER_STATUSES, type PrismaClient, customerSpend12m, loadLoyaltyConfig } from "@oca/database";
+import { type PrismaClient, customerSpend12m, loadLoyaltyConfig } from "@oca/database";
 import {
   MEMBER_PAGE_SIZE,
   MEMBER_PIN_LOCK_MINUTES,
@@ -27,6 +27,7 @@ import {
   toStoreMemberOrder,
   toStoreMemberPoint,
 } from "./store-member.mapper";
+import { isPaidOrderStatus, isPinSetupOrder } from "./storefront.mapper";
 
 const MEMBER_AUDIENCE = "member";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -68,14 +69,18 @@ export class StoreMemberService {
    */
   async setPin(token: string, pin: string): Promise<StoreMemberSessionDto> {
     const order = STORE_TOKEN_PATTERN.test(token)
-      ? await this.prisma.order.findUnique({ where: { publicToken: token }, select: { channel: true, status: true, customer: { select: { id: true, pinHash: true } } } })
+      ? await this.prisma.order.findUnique({
+          where: { publicToken: token },
+          select: { channel: true, status: true, customerId: true, customer: { select: { id: true, pinHash: true } } },
+        })
       : null;
     if (!order) throw apiError("ORDER_NOT_FOUND", "Order not found");
+    // ເງື່ອນໄຂດຽວກັບ pinSetup ຂອງ GET /store/orders/:token
     const customer = order.customer;
-    if (order.channel !== "STOREFRONT" || !customer) {
+    if (!isPinSetupOrder(order) || !customer) {
       throw apiError("ORDER_INVALID_STATE", "A PIN can only be set from a storefront order that has a customer");
     }
-    if (!(COUNTED_ORDER_STATUSES as readonly string[]).includes(order.status)) {
+    if (!isPaidOrderStatus(order.status)) {
       throw apiError("ORDER_INVALID_STATE", `Order is ${order.status}; a PIN can only be set from a paid order`, { status: order.status });
     }
     // ຕອບກ່ອນ hash (argon2 ແພງ); UPDATE ມີເງື່ອນໄຂລຸ່ມນີ້ຍັງເປັນດ່ານຈິງຂອງຄຳຂໍພ້ອມກັນ

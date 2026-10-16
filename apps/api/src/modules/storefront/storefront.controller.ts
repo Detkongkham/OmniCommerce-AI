@@ -93,21 +93,31 @@ export class StorefrontController {
 
   @Post("cart/check")
   @HttpCode(200)
-  cartCheck(@Body(new ZodValidationPipe(storeCartCheckSchema)) body: StoreCartCheckInput, @Req() req: Request) {
+  async cartCheck(
+    @Body(new ZodValidationPipe(storeCartCheckSchema)) body: StoreCartCheckInput,
+    @Req() req: Request,
+    @Headers("authorization") authorization?: string,
+  ) {
     this.limiter.hit(`check:${clientOf(req)}`, this.env.STORE_CHECK_RATE_LIMIT, MINUTE_MS);
-    return this.catalog.cartCheck(body);
+    // ໃຊ້ແຕ້ມຕ້ອງເຂົ້າລະບົບ; ບໍ່ໃຊ້ແຕ້ມ = session ບໍ່ບັງຄັບ (ມີ = ສະແດງຍອດແຕ້ມ)
+    const member =
+      body.pointsToRedeem !== undefined ? await this.members.requireMember(authorization) : await this.members.optionalMember(authorization);
+    return this.catalog.cartCheck(body, member);
   }
 
   @Post("orders")
   @Header("Cache-Control", "no-store")
-  createOrder(
+  async createOrder(
     @Body(new ZodValidationPipe(storeCreateOrderSchema)) body: StoreCreateOrderInput,
     @Req() req: Request,
     @Headers("idempotency-key") idempotencyKey?: string,
+    @Headers("authorization") authorization?: string,
   ) {
     const key = requireIdempotencyKey(idempotencyKey);
     this.limiter.hit(`order:${clientOf(req)}`, this.env.STORE_ORDER_RATE_LIMIT, TEN_MINUTES_MS);
-    return this.orders.create(body, req.ip, key);
+    // session ໃຊ້ສະເພາະຕອນໃຊ້ແຕ້ມ; ບໍ່ໃຊ້ແຕ້ມ = ມອງຂ້າມ header (session ເກົ່າ/ຜິດ ບໍ່ກີດຂວາງ guest checkout)
+    const member = body.pointsToRedeem !== undefined ? await this.members.requireMember(authorization) : null;
+    return this.orders.create(body, member, req.ip, key);
   }
 
   @Get("orders/:token")

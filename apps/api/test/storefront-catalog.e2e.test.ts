@@ -30,6 +30,7 @@ describe("storefront catalog (e2e)", () => {
         paymentInstructions: "ໂອນແລ້ວສົ່ງສະລິບ",
         receivingAccounts: [{ bank: "BCEL", accountNo: "0101234567", accountName: "ຮ້ານ ກ" }],
         couriers: [{ id: state.courier.id, name: "Anousith" }],
+        loyalty: { enabled: false },
       });
     });
 
@@ -249,6 +250,8 @@ describe("storefront catalog (e2e)", () => {
         ],
         coupon: null,
         couponError: null,
+        points: null,
+        pointsError: null,
         subtotal: "300.00",
         vatAmount: "27.27",
         total: "300.00",

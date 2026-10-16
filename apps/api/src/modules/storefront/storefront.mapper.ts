@@ -1,6 +1,7 @@
-import { type ActiveFlashPrice, type EffectivePrice, Prisma, effectivePrice } from "@oca/database";
+import { type ActiveFlashPrice, COUNTED_ORDER_STATUSES, type EffectivePrice, Prisma, effectivePrice } from "@oca/database";
 import {
   type OrderStatus,
+  type StorePinSetup,
   type StoreSlipStatus,
   type StoreStock,
   type StoreStockStatus,
@@ -168,6 +169,8 @@ export const storeOrderInclude = {
   shipment: {
     select: { trackingNumber: true, courier: { select: { name: true, trackingUrlTemplate: true } } },
   },
+  // ໃຊ້ຄິດ pinSetup ເທົ່ານັ້ນ (DTO ບໍ່ມີ pinHash/id ຂອງລູກຄ້າ)
+  customer: { select: { pinHash: true } },
 } as const satisfies Prisma.OrderInclude;
 
 export type StoreOrderRow = Prisma.OrderGetPayload<{ include: typeof storeOrderInclude }>;
@@ -180,11 +183,17 @@ export interface StoreOrderDto {
   reservedUntil: Date | null;
   paidAt: Date | null;
   currency: string;
-  /** subtotal ແລະ total ຫັກສ່ວນຫຼຸດຂອງໂຄດແລ້ວ */
+  /** subtotal ແລະ total ຫັກສ່ວນຫຼຸດຂອງໂຄດ ແລະ ແຕ້ມແລ້ວ */
   subtotal: string;
   vatAmount: string;
   total: string;
   coupon: { code: string; discount: string } | null;
+  /** ແຕ້ມທີ່ໃຊ້ຫັກໃນບິນນີ້; null = ບໍ່ໄດ້ໃຊ້ແຕ້ມ (ແຕ້ມຖືກຄືນເມື່ອບິນໝົດອາຍຸ/ຍົກເລີກ ແຕ່ຄ່ານີ້ຍັງສະແດງ) */
+  points: { redeemed: number; discount: string } | null;
+  /** ແຕ້ມທີ່ໄດ້ຈາກບິນນີ້ (ໃຫ້ຕອນຈ່າຍ); null = ຍັງບໍ່ຈ່າຍ, ຍົກເລີກ/ໝົດອາຍຸ ຫຼື ບໍ່ໄດ້ແຕ້ມ */
+  pointsEarned: number | null;
+  /** ຕັ້ງ PIN ສະມາຊິກຈາກບິນນີ້ໄດ້ບໍ (POST /store/orders/:token/pin) */
+  pinSetup: StorePinSetup;
   /** variantId: ໃຫ້ເວັບເຕີມກະຕ່າຄືນໄດ້ ("ສັ່ງໃໝ່" ຂອງບິນທີ່ໝົດອາຍຸ) */
   items: { variantId: string; productName: string; variantName: string | null; quantity: number; unitPrice: string; lineTotal: string }[];
   shipping: {
@@ -201,6 +210,26 @@ export interface StoreOrderDto {
 
 export function isReservationExpired(row: { status: string; reservedUntil: Date | null }, now: Date = new Date()): boolean {
   return row.status === "PENDING_PAYMENT" && row.reservedUntil !== null && row.reservedUntil.getTime() <= now.getTime();
+}
+
+/** ບິນທີ່ໃຊ້ຕັ້ງ PIN ໄດ້: ບິນຂອງເວັບທີ່ມີລູກຄ້າ */
+export function isPinSetupOrder(order: { channel: string; customerId: string | null }): boolean {
+  return order.channel === "STOREFRONT" && order.customerId !== null;
+}
+
+/** ບິນທີ່ຈ່າຍແລ້ວ (ນັບເປັນການຊື້): ຕັ້ງ PIN ໄດ້ ແລະ ສະແດງແຕ້ມທີ່ໄດ້ */
+export function isPaidOrderStatus(status: string): boolean {
+  return (COUNTED_ORDER_STATUSES as readonly string[]).includes(status);
+}
+
+/** ເງື່ອນໄຂດຽວກັບ StoreMemberService.setPin: AVAILABLE = ຕັ້ງໄດ້ດຽວນີ້, AFTER_PAYMENT = ຕັ້ງໄດ້ເມື່ອຈ່າຍ */
+export function pinSetupOf(
+  order: { channel: string; customerId: string | null; status: string; reservedUntil: Date | null; customer: { pinHash: string | null } | null },
+  now: Date = new Date(),
+): StorePinSetup {
+  if (!isPinSetupOrder(order) || !order.customer || order.customer.pinHash) return "NONE";
+  if (isPaidOrderStatus(order.status)) return "AVAILABLE";
+  return order.status === "PENDING_PAYMENT" && !isReservationExpired(order, now) ? "AFTER_PAYMENT" : "NONE";
 }
 
 function storeSlipStatus(status: string): StoreSlipStatus {
@@ -220,6 +249,9 @@ export function toStoreOrder(row: StoreOrderRow, now: Date = new Date()): StoreO
     vatAmount: money(row.vatAmount),
     total: money(row.total),
     coupon: row.couponCode ? { code: row.couponCode, discount: money(row.couponDiscount) } : null,
+    points: row.pointsRedeemed > 0 ? { redeemed: row.pointsRedeemed, discount: money(row.pointsDiscount) } : null,
+    pointsEarned: row.pointsEarned > 0 && isPaidOrderStatus(row.status) ? row.pointsEarned : null,
+    pinSetup: pinSetupOf(row, now),
     items: row.items.map((item) => ({
       variantId: item.variantId,
       productName: item.productName,

@@ -1,21 +1,28 @@
 import { Inject, Injectable } from "@nestjs/common";
 import {
   CouponRejectedError,
-  type Prisma,
+  type LoyaltyConfig,
+  PointsRejectedError,
+  Prisma,
   type PrismaClient,
   activeFlashPrices,
   effectivePrice,
   evaluateCoupon,
+  evaluateRedemption,
+  loyaltyConfigOf,
 } from "@oca/database";
 import {
   COUPON_CODE_PATTERN,
   type CouponRejectReason,
+  type MemberTier,
+  type PointsRejectReason,
   type ReceivingAccount,
   STORE_PAGE_SIZE,
   type StoreCartCheckInput,
   type StoreProductListQuery,
   type StoreStock,
   calculateOrderTotals,
+  maxRedeemablePoints,
   receivingAccountsSchema,
   storeStock,
 } from "@oca/shared";
@@ -24,6 +31,7 @@ import { money } from "../../common/money";
 import { type Page, pageArgs, toPage } from "../../common/pagination";
 import { PRISMA } from "../../prisma/prisma.module";
 import { ensureStoreSetting } from "../inventory/ensure-store-setting";
+import type { StoreMemberRow } from "./store-member.mapper";
 import {
   SELLABLE_PRODUCT,
   type StoreProductDetailDto,
@@ -43,6 +51,33 @@ export interface StoreConfigDto {
   paymentInstructions: string | null;
   receivingAccounts: ReceivingAccount[];
   couriers: { id: string; name: string }[];
+  loyalty: StoreLoyaltyDto;
+}
+
+/** ກົດແຕ້ມສະສົມທີ່ເວັບສະແດງ; ລະບົບແຕ້ມປິດ = { enabled: false } ເທົ່ານັ້ນ (ເວັບບໍ່ສະແດງຫຍັງກ່ຽວກັບແຕ້ມ) */
+export type StoreLoyaltyDto =
+  | { enabled: false }
+  | {
+      enabled: true;
+      /** ຍອດຊື້ (ກີບ) ຕໍ່ 1 ແຕ້ມ ເຊັ່ນ "10000.00" */
+      earnPer: string;
+      /** ມູນຄ່າ 1 ແຕ້ມຕອນແລກ (ກີບ) ເຊັ່ນ "100.00" */
+      pointValue: string;
+      /** ສ່ວນຫຼຸດຈາກແຕ້ມບໍ່ເກີນ % ນີ້ຂອງຍອດສິນຄ້າ (ຫຼັງໂຄດ) */
+      maxRedeemPercent: number;
+      /** BRONZE → PLATINUM; minSpend = ຍອດຊື້ 12 ເດືອນຂັ້ນຕ່ຳ, multiplier = ຕົວຄູນແຕ້ມ ເຊັ່ນ "1.25" */
+      tiers: { tier: MemberTier; minSpend: string; multiplier: string }[];
+    };
+
+function toStoreLoyalty(config: LoyaltyConfig): StoreLoyaltyDto {
+  if (!config.enabled) return { enabled: false };
+  return {
+    enabled: true,
+    earnPer: config.earnPer,
+    pointValue: config.pointValue,
+    maxRedeemPercent: config.maxRedeemPercent,
+    tiers: config.tierRules.map((rule) => ({ tier: rule.tier, minSpend: money(new Prisma.Decimal(rule.minSpend)), multiplier: rule.multiplier })),
+  };
 }
 
 export interface StoreCategoryDto {
@@ -74,6 +109,13 @@ export interface StoreCartDto {
   coupon: { code: string; discount: string } | null;
   /** ເຫດຜົນທີ່ໂຄດທີ່ໃສ່ມາໃຊ້ບໍ່ໄດ້ (ຍອດບໍ່ຖືກຫຼຸດ) */
   couponError: { reason: CouponRejectReason; minSubtotal?: string } | null;
+  /**
+   * ແຕ້ມຂອງສະມາຊິກ (ລະບົບແຕ້ມເປີດ ແລະ ສົ່ງ session ມາ); null = guest ຫຼື ລະບົບປິດ.
+   * maxPoints = ແຕ້ມສູງສຸດທີ່ໃຊ້ໄດ້ໃນກະຕ່ານີ້ (ຫຼັງໂຄດ); redeemed/discount = ແຕ້ມທີ່ຂໍ ແລະ ສ່ວນຫຼຸດ (ຫັກອອກຈາກ subtotal/total ແລ້ວ)
+   */
+  points: { balance: number; maxPoints: number; redeemed: number; discount: string } | null;
+  /** ເຫດຜົນທີ່ແຕ້ມທີ່ຂໍໃຊ້ບໍ່ໄດ້ (redeemed 0, ຍອດບໍ່ຖືກຫຼຸດດ້ວຍແຕ້ມ) */
+  pointsError: { reason: PointsRejectReason; balance?: number; maxPoints?: number } | null;
   subtotal: string;
   vatAmount: string;
   /** ຍອດທີ່ເວັບຕ້ອງສົ່ງຄືນເປັນ expectedTotal ຕອນສັ່ງ (ຄິດສະເພາະລາຍການທີ່ຂາຍໄດ້) */
@@ -101,6 +143,7 @@ export class StoreCatalogService {
       paymentInstructions: settings.paymentInstructions,
       receivingAccounts: accounts.success ? accounts.data : [],
       couriers,
+      loyalty: toStoreLoyalty(loyaltyConfigOf(settings)),
     };
   }
 
@@ -160,8 +203,11 @@ export class StoreCatalogService {
     return toStoreProductDetail(row, flashPrices);
   }
 
-  /** ລາຄາ ແລະ ສະຕ໋ອກປັດຈຸບັນຂອງກະຕ່າ. ຍອດໃຊ້ສູດດຽວກັບການສ້າງບິນ (ບໍ່ມີສ່ວນຫຼຸດ, ຄ່າສົ່ງ 0) */
-  async cartCheck(input: StoreCartCheckInput): Promise<StoreCartDto> {
+  /**
+   * ລາຄາ ແລະ ສະຕ໋ອກປັດຈຸບັນຂອງກະຕ່າ. ຍອດໃຊ້ສູດດຽວກັບການສ້າງບິນ (ໂຄດ ແລ້ວແຕ້ມ, ຄ່າສົ່ງ 0).
+   * `member` = ສະມາຊິກຂອງ session (null = guest); ຜູ້ເອີ້ນບັງຄັບ session ເມື່ອມີ pointsToRedeem.
+   */
+  async cartCheck(input: StoreCartCheckInput, member: StoreMemberRow | null): Promise<StoreCartDto> {
     const warehouseId = await this.defaultWarehouseId();
     const settings = await ensureStoreSetting(this.prisma);
     const variants = await this.prisma.productVariant.findMany({
@@ -229,10 +275,40 @@ export class StoreCatalogService {
         couponError = { reason: error.reason, ...error.detail };
       }
     }
+
+    // ແຕ້ມ: ຊ້ອນຫຼັງໂຄດຄືກັບການສ້າງບິນ (ສ່ວນຫຼຸດລວມ = ໂຄດ + ແຕ້ມ)
+    const loyalty = loyaltyConfigOf(settings);
+    let points: StoreCartDto["points"] = null;
+    let pointsError: StoreCartDto["pointsError"] = null;
+    if (!loyalty.enabled) {
+      if (input.pointsToRedeem !== undefined) pointsError = { reason: "DISABLED" };
+    } else if (member) {
+      const merchandise = totals.subtotal;
+      const balance = member.pointsBalance;
+      const maxPoints = maxRedeemablePoints({ merchandise, balance, pointValue: loyalty.pointValue, maxPercent: loyalty.maxRedeemPercent });
+      points = { balance, maxPoints, redeemed: 0, discount: "0.00" };
+      const requested = input.pointsToRedeem;
+      if (requested !== undefined) {
+        try {
+          // ກົດດຽວກັບການສ້າງບິນ (ລັອກແຖວລູກຄ້າແປບດຽວ ບໍ່ຫັກແຕ້ມ)
+          const redemption = await this.prisma.$transaction((tx) =>
+            evaluateRedemption(tx, loyalty, { customerId: member.id, points: requested, merchandise }),
+          );
+          points = { ...points, redeemed: redemption.points, discount: redemption.discount };
+          const orderDiscount = new Prisma.Decimal(coupon?.discount ?? 0).plus(redemption.discount).toFixed(2);
+          totals = calculateOrderTotals({ ...totalsInput, orderDiscount });
+        } catch (error) {
+          if (!(error instanceof PointsRejectedError)) throw error;
+          pointsError = { reason: error.reason, ...error.detail };
+        }
+      }
+    }
     return {
       items,
       coupon,
       couponError,
+      points,
+      pointsError,
       subtotal: totals.subtotal,
       vatAmount: totals.vatAmount,
       total: totals.total,
