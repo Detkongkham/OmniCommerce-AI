@@ -185,6 +185,64 @@ describe("/api/store/* proxy", () => {
       expect(res.headers.get("set-cookie")).toMatch(/^oca_member=;.*Max-Age=0/);
     });
 
+    it("path ຕົວພິມໃຫຍ່ (Member/Login, orders/t/PIN) → ຍັງຕັ້ງ cookie ແລະ ຕັດ token", async () => {
+      fetchMock.mockImplementation(async () => upstream({ memberToken: "tok-case", member }));
+      for (const path of [["Member", "Login"], ["orders", "t", "PIN"]]) {
+        const res = await login(path);
+        await expect(res.json()).resolves.toEqual({ member });
+        expect(res.headers.get("set-cookie")).toMatch(/^oca_member=tok-case;/);
+      }
+    });
+
+    it("path member/* ອື່ນທີ່ body ມີ memberToken → ຕັດ token ອອກ ແຕ່ບໍ່ຕັ້ງ cookie", async () => {
+      fetchMock.mockResolvedValue(upstream({ memberToken: "leak", id: "m1" }));
+      const res = await GET(new Request("http://shop.test/api/store/MEMBER/me"), ctx("MEMBER", "me"));
+      await expect(res.json()).resolves.toEqual({ id: "m1" });
+      expect(res.headers.get("set-cookie")).toBeNull();
+    });
+
+    it("login 2xx ທີ່ body ບໍ່ແມ່ນ JSON → ສົ່ງຕໍ່ຕາມເດີມ, ບໍ່ຕັ້ງ cookie", async () => {
+      fetchMock.mockResolvedValue(new Response("not json", { status: 200, headers: { "content-type": "application/json" } }));
+      const res = await login(["member", "login"]);
+      expect(res.status).toBe(200);
+      await expect(res.text()).resolves.toBe("not json");
+      expect(res.headers.get("set-cookie")).toBeNull();
+    });
+
+    it("login 2xx ທີ່ບໍ່ມີ memberToken → ສົ່ງ body ຕໍ່, ບໍ່ຕັ້ງ cookie", async () => {
+      fetchMock.mockResolvedValue(upstream({ member }));
+      const res = await login(["member", "login"]);
+      await expect(res.json()).resolves.toEqual({ member });
+      expect(res.headers.get("set-cookie")).toBeNull();
+    });
+
+    it("cookie ຮູບແບບຜິດ → ເປັນ guest (ບໍ່ສົ່ງ authorization), ບໍ່ 500, ລຶບ cookie", async () => {
+      fetchMock.mockResolvedValue(upstream({ ok: true }));
+      const res = await GET(new Request("http://shop.test/api/store/config", { headers: { cookie: "oca_member=a%0D%0Ab" } }), ctx("config"));
+      expect(res.status).toBe(200);
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull();
+      expect(res.headers.get("set-cookie")).toMatch(/^oca_member=;.*Max-Age=0/);
+    });
+
+    it("logout ຈາກເວັບອື່ນ (Sec-Fetch-Site ຫຼື Origin ຕ່າງ) → 403, ບໍ່ລຶບ cookie", async () => {
+      const crossSite: Record<string, string>[] = [{ "sec-fetch-site": "cross-site" }, { "sec-fetch-site": "same-site" }, { origin: "http://evil.test" }];
+      for (const headers of crossSite) {
+        const res = await login(["member", "logout"], { headers });
+        expect(res.status).toBe(403);
+        expect(res.headers.get("set-cookie")).toBeNull();
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("logout ຈາກເວັບດຽວກັນ (same-origin / none / Origin ກົງ) → 204", async () => {
+      const sameSite: Record<string, string>[] = [{ "sec-fetch-site": "same-origin", origin: "http://shop.test" }, { "sec-fetch-site": "none" }, { origin: "http://shop.test" }];
+      for (const headers of sameSite) {
+        const res = await login(["Member", "Logout"], { headers });
+        expect(res.status).toBe(204);
+        expect(res.headers.get("set-cookie")).toMatch(/^oca_member=;/);
+      }
+    });
+
     it("API ຕອບ 401 code ອື່ນ → ບໍ່ລຶບ cookie", async () => {
       fetchMock.mockResolvedValue(upstream({ statusCode: 401, code: "SOMETHING_ELSE", message: "x" }, 401));
       const res = await GET(new Request("http://shop.test/api/store/member/me", { headers: { cookie: "oca_member=old" } }), ctx("member", "me"));

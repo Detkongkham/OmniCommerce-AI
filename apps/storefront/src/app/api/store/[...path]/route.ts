@@ -23,15 +23,44 @@ function memberCookieOptions(maxAge: number) {
   return { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge };
 }
 
+/** token ທີ່ API ອອກໃຫ້ (base64url / JWT); ຄ່າອື່ນ (ເຊັ່ນ CR/LF) ຈະເຮັດໃຫ້ Headers ໂຍນ error → 500 */
+const MEMBER_TOKEN_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/** Express ຂອງ API ຈັບ route ບໍ່ສົນຕົວພິມ → ປຽບທຽບດ້ວຍ segment ຕົວພິມນ້ອຍສະເໝີ */
+function isPinPath(path: string[]): boolean {
+  return path.length === 3 && path[0] === "orders" && path[2] === "pin";
+}
+
 /** path ທີ່ API ຕອບ `{ memberToken, member }`: `member/login`, `orders/<token>/pin` */
 function issuesMemberToken(method: string, path: string[]): boolean {
-  if (method !== "POST") return false;
-  return (path.length === 2 && path[0] === "member" && path[1] === "login") || (path.length === 3 && path[0] === "orders" && path[2] === "pin");
+  return method === "POST" && ((path.length === 2 && path[0] === "member" && path[1] === "login") || isPinPath(path));
+}
+
+/** ປ້ອງກັນຊັ້ນສອງ: ບໍ່ໃຫ້ memberToken ຫຼຸດໄປຫາ JS ຂອງໜ້າເວັບຈາກ path ສະມາຊິກໃດໆ */
+function mayCarryMemberToken(path: string[]): boolean {
+  return path[0] === "member" || isPinPath(path);
 }
 
 function clearMemberCookie(response: NextResponse): NextResponse {
   response.cookies.set(MEMBER_COOKIE, "", memberCookieOptions(0));
   return response;
+}
+
+/** ອອກຈາກລະບົບຢູ່ເວັບເອງ (ບໍ່ເອີ້ນ API); ປະຕິເສດຄຳຂໍຂ້າມເວັບ (CSRF) */
+function logout(request: Request): NextResponse {
+  const site = request.headers.get("sec-fetch-site");
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host") ?? new URL(request.url).host;
+  let crossOrigin = site !== null && site !== "same-origin" && site !== "none";
+  if (origin !== null) {
+    try {
+      crossOrigin ||= new URL(origin).host !== host;
+    } catch {
+      crossOrigin = true;
+    }
+  }
+  if (crossOrigin) return json(403, { statusCode: 403, code: "FORBIDDEN", message: "Cross-site logout is not allowed" });
+  return clearMemberCookie(new NextResponse(null, { status: 204, headers: { "cache-control": "no-store" } }));
 }
 
 type Context = { params: Promise<{ path: string[] }> };
@@ -40,15 +69,25 @@ function apiBase(): string {
   return (process.env.API_URL || "http://localhost:3001").replace(/\/+$/, "");
 }
 
-function json(status: number, body: Record<string, unknown>): Response {
-  return Response.json(body, { status, headers: { "cache-control": "no-store" } });
+function json(status: number, body: Record<string, unknown>): NextResponse {
+  return NextResponse.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
 async function forward(request: Request, context: Context): Promise<Response> {
   const { path } = await context.params;
-  if (request.method === "POST" && path.length === 2 && path[0] === "member" && path[1] === "logout") {
-    return clearMemberCookie(new NextResponse(null, { status: 204, headers: { "cache-control": "no-store" } }));
+  const lower = path.map((segment) => segment.toLowerCase());
+  if (request.method === "POST" && lower.length === 2 && lower[0] === "member" && lower[1] === "logout") {
+    return logout(request);
   }
+  // handler ຮັບ Request ທຳມະດາ (test ສົ່ງ Request) → ສ້າງ NextRequest ຈາກ headers ເພື່ອອ່ານ cookie ໂດຍບໍ່ແຕະ body
+  const cookie = new NextRequest(request.url, { headers: request.headers }).cookies.get(MEMBER_COOKIE)?.value;
+  const memberToken = cookie && MEMBER_TOKEN_PATTERN.test(cookie) ? cookie : undefined;
+  const response = await proxy(request, path, lower, memberToken);
+  // cookie ເສຍ → ເຮັດເປັນ guest ແລະ ລຶບຖິ້ມ
+  return cookie && !memberToken ? clearMemberCookie(response) : response;
+}
+
+async function proxy(request: Request, path: string[], lower: string[], memberToken: string | undefined): Promise<NextResponse> {
   const target = `${apiBase()}/store/${path.map(encodeURIComponent).join("/")}${new URL(request.url).search}`;
 
   const headers = new Headers();
@@ -59,7 +98,6 @@ async function forward(request: Request, context: Context): Promise<Response> {
   // ຄ່າສຸດທ້າຍ = ທີ່ຢູ່ທີ່ hop ໃກ້ສຸດ (proxy ໜ້າເວັບ ຫຼື Next ເອງ) ເຫັນ; ຄ່າກ່ອນໜ້າລູກຄ້າປອມໄດ້
   const client = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim();
   if (client) headers.set("x-forwarded-for", client);
-  const memberToken = new NextRequest(request.url, { headers: request.headers }).cookies.get(MEMBER_COOKIE)?.value;
   if (memberToken) headers.set("authorization", `Bearer ${memberToken}`);
 
   let body: ArrayBuffer | undefined;
@@ -85,9 +123,9 @@ async function forward(request: Request, context: Context): Promise<Response> {
     "cache-control": "no-store",
   };
   const isJson = responseHeaders["content-type"].includes("application/json");
-  const issuing = issuesMemberToken(request.method, path) && upstream.ok;
-  if (!isJson || (!issuing && upstream.status !== 401)) {
-    return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+  const memberBody = upstream.ok && mayCarryMemberToken(lower);
+  if (!isJson || (!memberBody && upstream.status !== 401)) {
+    return new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
   }
 
   const text = await upstream.text();
@@ -95,13 +133,15 @@ async function forward(request: Request, context: Context): Promise<Response> {
   try {
     data = JSON.parse(text);
   } catch {
-    return new Response(text, { status: upstream.status, headers: responseHeaders });
+    return new NextResponse(text, { status: upstream.status, headers: responseHeaders });
   }
-  const record = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-  if (issuing && typeof record.memberToken === "string") {
+  const record = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  if (memberBody && "memberToken" in record) {
     const { memberToken: token, ...rest } = record;
     const response = NextResponse.json(rest, { status: upstream.status, headers: responseHeaders });
-    response.cookies.set(MEMBER_COOKIE, token as string, memberCookieOptions(MEMBER_COOKIE_MAX_AGE));
+    if (issuesMemberToken(request.method, lower) && typeof token === "string" && MEMBER_TOKEN_PATTERN.test(token)) {
+      response.cookies.set(MEMBER_COOKIE, token, memberCookieOptions(MEMBER_COOKIE_MAX_AGE));
+    }
     return response;
   }
   const response = new NextResponse(text, { status: upstream.status, headers: responseHeaders });
