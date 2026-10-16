@@ -11,7 +11,7 @@ export default async function CheckoutPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold text-ink">ສັ່ງຊື້</h1>
-      <CheckoutForm couriers={config.couriers} />
+      <CheckoutForm couriers={config.couriers} loyalty={config.loyalty ?? { enabled: false }} />
     </div>
   );
 }

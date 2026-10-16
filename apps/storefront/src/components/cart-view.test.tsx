@@ -30,6 +30,8 @@ const cartOf = (items: StoreCartLine[], patch: Partial<StoreCart> = {}): StoreCa
   items,
   coupon: null,
   couponError: null,
+  points: null,
+  pointsError: null,
   subtotal: "0.00",
   vatAmount: "0.00",
   total: "300.00",
@@ -71,6 +73,7 @@ describe("CartView", () => {
         { variantId: "b", quantity: 1 },
       ],
       undefined,
+      undefined,
     );
   });
 
@@ -82,7 +85,7 @@ describe("CartView", () => {
     render(<CartView />);
     await user.click(within(await screen.findByRole("listitem", { name: "ສິນຄ້າ a" })).getByRole("button", { name: "ເພີ່ມຈຳນວນ ສິນຄ້າ a" }));
     expect(getCart()[0]).toEqual({ variantId: "a", quantity: 3 });
-    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "a", quantity: 3 }, { variantId: "b", quantity: 1 }], undefined));
+    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "a", quantity: 3 }, { variantId: "b", quantity: 1 }], undefined, undefined));
     await user.click(within(row("ສິນຄ້າ b")).getByRole("button", { name: "ລຶບ ສິນຄ້າ b ອອກຈາກກະຕ່າ" }));
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "ສິນຄ້າ b" })).not.toBeInTheDocument());
     expect(getCart()).toEqual([{ variantId: "a", quantity: 3 }]);

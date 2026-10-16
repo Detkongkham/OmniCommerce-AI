@@ -5,13 +5,15 @@ import { Button, EmptyState, Field, Input, Select, Skeleton, buttonVariants, cn 
 import { ShoppingCart } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { clearCart, useCart } from "@/lib/cart";
-import { ClientApiError, createOrder } from "@/lib/client-api";
-import { formatLak } from "@/lib/format";
+import { ClientApiError, createOrder, fetchMember } from "@/lib/client-api";
+import { formatLak, formatPoints } from "@/lib/format";
 import { newIdempotencyKey } from "@/lib/idempotency";
-import { apiMessage, couponMessage } from "@/lib/messages";
+import { pointsValue } from "@/lib/member";
+import { apiMessage, couponMessage, pointsMessage } from "@/lib/messages";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
+import type { StoreCart, StoreLoyalty, StoreMember } from "@/lib/types";
 import { useCartCheck } from "@/lib/use-cart-check";
 
 const FIELDS = ["name", "phone", "address", "courierId", "branch"] as const;
@@ -35,15 +37,50 @@ function validate(values: Values): Partial<Record<FieldName, string>> {
   return errors;
 }
 
-/** ຟອມສັ່ງຊື້ແບບ guest + ສະຫຼຸບກະຕ່າ. ສຳເລັດ → ລ້າງກະຕ່າ ແລ້ວໄປໜ້າບິນ */
-export function CheckoutForm({ couriers }: { couriers: { id: string; name: string }[] }) {
+const NO_LOYALTY: StoreLoyalty = { enabled: false };
+
+/**
+ * ຟອມສັ່ງຊື້ + ສະຫຼຸບກະຕ່າ. ສຳເລັດ → ລ້າງກະຕ່າ ແລ້ວໄປໜ້າບິນ.
+ * ສະມາຊິກທີ່ເຂົ້າລະບົບແລ້ວ: ຕື່ມຊື່/ເບີໃຫ້ ແລະ ໃຊ້ແຕ້ມໄດ້ (ສະເພາະເມື່ອເບີຜູ້ຮັບກົງກັບເບີຂອງບັນຊີ)
+ */
+export function CheckoutForm({ couriers, loyalty = NO_LOYALTY }: { couriers: { id: string; name: string }[]; loyalty?: StoreLoyalty }) {
   const router = useRouter();
   const items = useCart();
   // ໂຄດທີ່ລູກຄ້າກົດ "ໃຊ້" (server ເປັນຜູ້ຕັດສິນວ່າໃຊ້ໄດ້ ຫຼື ບໍ່)
   const [couponInput, setCouponInput] = useState("");
   const [appliedCode, setAppliedCode] = useState<string | undefined>(undefined);
-  const { state, reload } = useCartCheck(appliedCode);
   const [values, setValues] = useState<Values>(EMPTY_VALUES);
+  // undefined = ກຳລັງຖາມ, null = guest
+  const [member, setMember] = useState<StoreMember | null | undefined>(undefined);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [pointsInput, setPointsInput] = useState("");
+  const [appliedPoints, setAppliedPoints] = useState(0);
+  const phoneMatches = Boolean(member?.phone) && normalizePhone(values.phone) === member?.phone;
+  const dropMember = useCallback(() => {
+    setMember(null);
+    setAppliedPoints(0);
+    setPointsInput("");
+    setSessionExpired(true);
+  }, []);
+  const { state, reload } = useCartCheck(appliedCode, member && phoneMatches ? appliedPoints : 0, dropMember);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMember().then(
+      (found) => {
+        if (cancelled) return;
+        setMember(found);
+        // ຕື່ມສະເພາະຊ່ອງທີ່ຍັງວ່າງ (ລູກຄ້າແກ້ໄຂໄດ້)
+        setValues((current) => ({ ...current, name: current.name || found.name, phone: current.phone || (found.phone ?? "") }));
+      },
+      () => {
+        if (!cancelled) setMember(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [problem, setProblem] = useState<Problem | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -125,6 +162,8 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
       ...(note ? { note } : {}),
       // ສົ່ງສະເພາະໂຄດທີ່ server ຢືນຢັນວ່າໃຊ້ໄດ້ (ຍອດທີ່ຄາດລວມສ່ວນຫຼຸດແລ້ວ)
       ...(cart.coupon ? { couponCode: cart.coupon.code } : {}),
+      // ແຕ້ມທີ່ server ຢືນຢັນໃນການກວດກະຕ່າຫຼ້າສຸດ (ຍອດທີ່ຄາດລວມສ່ວນຫຼຸດຈາກແຕ້ມແລ້ວ)
+      ...(cart.points && cart.points.redeemed > 0 ? { pointsToRedeem: cart.points.redeemed } : {}),
       expectedTotal: cart.total,
     };
     const serialized = JSON.stringify(body);
@@ -152,6 +191,15 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
         setProblem({ message: `${couponMessage(error.body)} ໂຄດຖືກຖອດອອກແລ້ວ ກະລຸນາກວດຍອດໃໝ່` });
         setAppliedCode(undefined);
         setCouponInput("");
+      } else if (code === "MEMBER_REQUIRED") {
+        // session ໝົດອາຍຸ (proxy ລຶບ cookie ແລ້ວ): ຖອດແຕ້ມ → ກວດຍອດໃໝ່ແບບ guest
+        dropMember();
+        setProblem({ message: "ກະລຸນາເຂົ້າສູ່ລະບົບໃໝ່ — ແຕ້ມຖືກຖອດອອກແລ້ວ ກະລຸນາກວດຍອດໃໝ່" });
+      } else if (code === "POINTS_INVALID" && error instanceof ClientApiError) {
+        setProblem({ message: `${pointsMessage(error.body)} — ແຕ້ມຖືກຖອດອອກແລ້ວ ກະລຸນາກວດຍອດໃໝ່` });
+        setAppliedPoints(0);
+        setPointsInput("");
+        reload();
       } else if (code && CART_PROBLEM_CODES.has(code)) {
         setProblem({ message: "ສິນຄ້າບາງລາຍການມີບໍ່ພໍ ຫຼື ບໍ່ມີຂາຍແລ້ວ", cartLink: true });
         reload();
@@ -274,6 +322,21 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
             </div>
           ) : null}
         </div>
+        <PointsControl
+          member={member}
+          loyalty={loyalty}
+          points={cart.points}
+          pointsError={cart.pointsError}
+          refreshing={refreshing}
+          phoneMatches={phoneMatches}
+          sessionExpired={sessionExpired}
+          input={pointsInput}
+          onInput={setPointsInput}
+          onApply={(value) => {
+            setPointsInput(value > 0 ? String(value) : "");
+            setAppliedPoints(value);
+          }}
+        />
         <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
           <span className="text-sm text-ink-secondary">ຍອດທີ່ຕ້ອງໂອນ</span>
           <span className="text-xl font-bold text-ink">{formatLak(cart.total)}</span>
@@ -302,5 +365,102 @@ export function CheckoutForm({ couriers }: { couriers: { id: string; name: strin
         <p className="text-xs text-ink-secondary">ຫຼັງສັ່ງຊື້ ທ່ານຈະໄດ້ຮັບເລກບັນຊີສຳລັບໂອນເງິນ ແລະ ອັບໂຫຼດສະລິບ</p>
       </section>
     </form>
+  );
+}
+
+interface PointsControlProps {
+  member: StoreMember | null | undefined;
+  loyalty: StoreLoyalty;
+  points: StoreCart["points"];
+  pointsError: StoreCart["pointsError"];
+  refreshing: boolean;
+  phoneMatches: boolean;
+  sessionExpired: boolean;
+  input: string;
+  onInput: (value: string) => void;
+  onApply: (points: number) => void;
+}
+
+/** "ໃຊ້ແຕ້ມ": ສະເພາະສະມາຊິກທີ່ມີແຕ້ມໃຊ້ໄດ້ໃນບິນນີ້; guest ເຫັນຄຳແນະນຳໃຫ້ເຂົ້າລະບົບ */
+function PointsControl({ member, loyalty, points, pointsError, refreshing, phoneMatches, sessionExpired, input, onInput, onApply }: PointsControlProps) {
+  if (!loyalty.enabled) return null;
+  if (!member) {
+    if (member === undefined) return null;
+    return (
+      <p className="border-t border-line pt-3 text-xs text-ink-secondary">
+        {sessionExpired ? "ກະລຸນາເຂົ້າສູ່ລະບົບໃໝ່ ເພື່ອໃຊ້ແຕ້ມ " : "ມີບັນຊີ? "}
+        <Link href="/account" className="font-semibold text-brand-ink underline underline-offset-4">
+          ເຂົ້າສູ່ລະບົບເພື່ອໃຊ້ແຕ້ມ
+        </Link>
+      </p>
+    );
+  }
+  if (!points || (points.maxPoints <= 0 && points.redeemed <= 0)) return null;
+
+  const apply = (raw: string) => {
+    const value = Math.floor(Number(raw));
+    onApply(Number.isFinite(value) && value > 0 ? value : 0);
+  };
+  const disabled = !phoneMatches;
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-3">
+      <label htmlFor="checkout-points" className="text-xs font-semibold text-ink-secondary">
+        ໃຊ້ແຕ້ມ
+      </label>
+      <p className="text-xs text-ink-secondary">
+        {`ມີ ${formatPoints(points.balance)} · ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ ${formatPoints(points.maxPoints)} (${formatLak(pointsValue(points.maxPoints, loyalty.pointValue))})`}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Input
+          id="checkout-points"
+          className="h-10 min-w-0 flex-1 basis-24"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={points.maxPoints}
+          step={1}
+          disabled={disabled}
+          value={input}
+          onChange={(event) => onInput(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter ໃນຊ່ອງແຕ້ມ = ໃຊ້ແຕ້ມ ບໍ່ແມ່ນສົ່ງຄຳສັ່ງຊື້
+            if (event.key === "Enter") {
+              event.preventDefault();
+              apply(input);
+            }
+          }}
+        />
+        <Button type="button" variant="outlinePrimary" className="h-10 shrink-0 rounded-xl" aria-label="ໃຊ້ແຕ້ມ" disabled={disabled || !input.trim()} onClick={() => apply(input)}>
+          ໃຊ້
+        </Button>
+        <Button type="button" variant="outline" className="h-10 shrink-0 rounded-xl" disabled={disabled || points.maxPoints <= 0} onClick={() => onApply(points.maxPoints)}>
+          ໃຊ້ສູງສຸດ
+        </Button>
+      </div>
+      {disabled ? (
+        <p className="text-xs text-warning-ink">{`ໃຊ້ແຕ້ມໄດ້ສະເພາະເມື່ອເບີໂທຜູ້ຮັບແມ່ນ ${member.phone ?? "ເບີຂອງບັນຊີ"}`}</p>
+      ) : null}
+      {pointsError && !refreshing && !disabled ? (
+        <p role="status" className="text-xs font-semibold text-danger-ink">
+          {pointsMessage(pointsError)}
+        </p>
+      ) : null}
+      {points.redeemed > 0 ? (
+        <div className="flex items-center justify-between gap-3 text-sm text-success-ink">
+          <span>{`ໃຊ້ແຕ້ມ (${formatPoints(points.redeemed)})`}</span>
+          <span className="flex items-center gap-2">
+            <span>{`−${formatLak(points.discount)}`}</span>
+            <button
+              type="button"
+              aria-label="ລຶບແຕ້ມທີ່ໃຊ້"
+              className="rounded-md px-1 text-xs text-ink-secondary underline underline-offset-4 hover:text-danger-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onApply(0)}
+            >
+              ລຶບ
+            </button>
+          </span>
+        </div>
+      ) : null}
+    </div>
   );
 }

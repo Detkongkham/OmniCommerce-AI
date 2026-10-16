@@ -1,9 +1,9 @@
-import { Search } from "lucide-react";
+import { Search, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { CartLink } from "./cart-link";
 
-/** ຫົວເວັບ: ຊື່ຮ້ານ + ຄົ້ນຫາ (ຟອມ GET ໄປ /products ໃຊ້ໄດ້ໂດຍບໍ່ຕ້ອງມີ JavaScript) */
+/** ຫົວເວັບ: ຊື່ຮ້ານ + ຄົ້ນຫາ (ຟອມ GET ໄປ /products ໃຊ້ໄດ້ໂດຍບໍ່ຕ້ອງມີ JavaScript) + ບັນຊີ + ກະຕ່າ */
 export function SiteHeader({ storeName, query }: { storeName: string; query?: string }) {
   return (
     <header className="sticky top-0 z-30 border-b border-chrome-line bg-chrome/95 backdrop-blur">
@@ -29,6 +29,13 @@ export function SiteHeader({ storeName, query }: { storeName: string; query?: st
             />
           </div>
         </form>
+        <Link
+          href="/account"
+          className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl px-2.5 text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <UserRound className="size-5" aria-hidden="true" />
+          <span className="sr-only text-sm font-medium sm:not-sr-only">ບັນຊີ</span>
+        </Link>
         <CartLink />
       </div>
     </header>

@@ -2,8 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { addToCart, getCart, resetCartForTests } from "@/lib/cart";
-import { ClientApiError, checkCart, createOrder } from "@/lib/client-api";
-import type { StoreCart } from "@/lib/types";
+import { ClientApiError, checkCart, createOrder, fetchMember } from "@/lib/client-api";
+import type { StoreCart, StoreLoyalty, StoreMember } from "@/lib/types";
 import { CheckoutForm } from "./checkout-form";
 
 const push = vi.fn();
@@ -12,7 +12,9 @@ vi.mock("@/lib/client-api", async (original) => ({
   ...(await original<typeof import("@/lib/client-api")>()),
   checkCart: vi.fn(),
   createOrder: vi.fn(),
+  fetchMember: vi.fn(),
 }));
+const fetchMemberMock = vi.mocked(fetchMember);
 const checkCartMock = vi.mocked(checkCart);
 const createOrderMock = vi.mocked(createOrder);
 
@@ -34,6 +36,8 @@ const cart = (total = "200.00", orderable = true, patch: Partial<StoreCart> = {}
   ],
   coupon: null,
   couponError: null,
+  points: null,
+  pointsError: null,
   subtotal: total,
   vatAmount: "0.00",
   total,
@@ -53,6 +57,8 @@ beforeEach(() => {
   createOrderMock.mockReset();
   addToCart("v1", 2);
   checkCartMock.mockResolvedValue(cart());
+  fetchMemberMock.mockReset();
+  fetchMemberMock.mockRejectedValue(new ClientApiError(401, "MEMBER_REQUIRED"));
 });
 afterEach(() => resetCartForTests());
 
@@ -235,7 +241,7 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
     expect(await screen.findByText("ສ່ວນຫຼຸດ (NEW10)")).toBeInTheDocument();
     expect(screen.getByText("−20 ກີບ")).toBeInTheDocument();
     expect(screen.getByText("180 ກີບ")).toBeInTheDocument();
-    expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], "NEW10");
+    expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], "NEW10", undefined);
   });
 
   it("ສັ່ງຊື້ສົ່ງໂຄດທີ່ server ຢືນຢັນ ແລະ ຍອດຫຼັງຫຼຸດ", async () => {
@@ -277,7 +283,7 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
     checkCartMock.mockResolvedValue(cart());
     await user.click(screen.getByRole("button", { name: "ລຶບໂຄດ NEW10" }));
     await waitFor(() => expect(screen.queryByText("ສ່ວນຫຼຸດ (NEW10)")).not.toBeInTheDocument());
-    expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined);
+    expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, undefined);
   });
 
   it("server ປະຕິເສດໂຄດຕອນສັ່ງ (ເຊັ່ນ ເບີນີ້ໃຊ້ຄົບແລ້ວ) → ບອກເຫດຜົນ ແລະ ຖອດໂຄດອອກ", async () => {
@@ -292,7 +298,133 @@ describe("CheckoutForm: ໂຄດສ່ວນຫຼຸດ", () => {
     checkCartMock.mockResolvedValue(cart());
     await user.click(submit());
     expect(await screen.findByRole("alert")).toHaveTextContent("ເບີໂທນີ້ໃຊ້ໂຄດນີ້ຄົບຈຳນວນແລ້ວ");
-    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined));
+    await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, undefined));
     expect(push).not.toHaveBeenCalled();
+  });
+
+  describe("ສະມາຊິກ ແລະ ແຕ້ມ", () => {
+    const loyalty: StoreLoyalty = {
+      enabled: true,
+      earnPer: "10000.00",
+      pointValue: "1.00",
+      maxRedeemPercent: 50,
+      tiers: [],
+    };
+    const member: StoreMember = {
+      name: "ນາງ ສະມາຊິກ",
+      phone: "02055555555",
+      pointsBalance: 300,
+      tier: "BRONZE",
+      spend12m: "0.00",
+      nextTier: null,
+      pointsMultiplier: "1",
+    };
+    /** ກະຕ່າ 200 ກີບ, ມີ 300 ແຕ້ມ, ໃຊ້ໄດ້ສູງສຸດ 100 (1 ແຕ້ມ = 1 ກີບ) */
+    const memberCart = (points: number | undefined): StoreCart => {
+      if (points === undefined) return cart("200.00", true, { points: { balance: 300, maxPoints: 100, redeemed: 0, discount: "0.00" } });
+      if (points > 100) {
+        return cart("200.00", true, {
+          points: { balance: 300, maxPoints: 100, redeemed: 0, discount: "0.00" },
+          pointsError: { reason: "OVER_CAP", maxPoints: 100 },
+        });
+      }
+      return cart(`${200 - points}.00`, true, { points: { balance: 300, maxPoints: 100, redeemed: points, discount: `${points}.00` } });
+    };
+    const fillRest = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.type(screen.getByLabelText(/ທີ່ຢູ່/), "ບ້ານ ກ");
+      await user.selectOptions(screen.getByLabelText(/ບໍລິສັດຂົນສົ່ງ/), "c1");
+      await user.type(screen.getByLabelText(/ສາຂາປາຍທາງ/), "ໂພນທັນ");
+    };
+
+    beforeEach(() => {
+      fetchMemberMock.mockReset();
+      fetchMemberMock.mockResolvedValue(member);
+      checkCartMock.mockImplementation(async (_items, _code, points) => memberCart(points));
+    });
+
+    it("guest + ລະບົບແຕ້ມເປີດ → ຄຳແນະນຳໃຫ້ເຂົ້າສູ່ລະບົບ", async () => {
+      fetchMemberMock.mockReset();
+      fetchMemberMock.mockRejectedValue(new ClientApiError(401, "MEMBER_REQUIRED"));
+      checkCartMock.mockResolvedValue(cart());
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      expect(await screen.findByRole("link", { name: "ເຂົ້າສູ່ລະບົບເພື່ອໃຊ້ແຕ້ມ" })).toHaveAttribute("href", "/account");
+      expect(screen.getByText(/ມີບັນຊີ\?/)).toBeInTheDocument();
+      expect(screen.queryByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" })).not.toBeInTheDocument();
+    });
+
+    it("ເຂົ້າລະບົບແລ້ວ: ຕື່ມຊື່/ເບີ, ໃຊ້ສູງສຸດ → ກວດກະຕ່າພ້ອມແຕ້ມ, ແຖວສ່ວນຫຼຸດ, ແລະ ສົ່ງ pointsToRedeem", async () => {
+      const user = userEvent.setup();
+      createOrderMock.mockResolvedValue({ orderNumber: "SO-1", token: "tok" });
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      await waitFor(() => expect(screen.getByLabelText(/ຊື່ຜູ້ຮັບ/)).toHaveValue("ນາງ ສະມາຊິກ"));
+      expect(screen.getByLabelText(/ເບີໂທ/)).toHaveValue("02055555555");
+      const input = await screen.findByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" });
+      expect(input).toHaveAttribute("max", "100");
+      expect(screen.getByText(/ມີ 300 ແຕ້ມ · ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 100 ແຕ້ມ/)).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ສູງສຸດ" }));
+      await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, 100));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+      expect(screen.getByText("−100 ກີບ")).toBeInTheDocument();
+      expect(input).toHaveValue(100);
+
+      await fillRest(user);
+      await user.click(submit());
+      await waitFor(() => expect(createOrderMock).toHaveBeenCalledTimes(1));
+      expect(createOrderMock.mock.calls[0]?.[0]).toMatchObject({ name: "ນາງ ສະມາຊິກ", phone: "02055555555", pointsToRedeem: 100, expectedTotal: "100.00" });
+    });
+
+    it("ໃສ່ແຕ້ມເກີນ → ສະແດງ pointsError ແລະ ບໍ່ສົ່ງ pointsToRedeem", async () => {
+      const user = userEvent.setup();
+      createOrderMock.mockResolvedValue({ orderNumber: "SO-1", token: "tok" });
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      const input = await screen.findByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" });
+      await user.type(input, "150");
+      await user.click(screen.getByRole("button", { name: "ໃຊ້ແຕ້ມ" }));
+      expect(await screen.findByText("ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ 100 ແຕ້ມ")).toBeInTheDocument();
+      await fillRest(user);
+      await user.click(submit());
+      await waitFor(() => expect(createOrderMock).toHaveBeenCalledTimes(1));
+      expect(createOrderMock.mock.calls[0]?.[0]).not.toHaveProperty("pointsToRedeem");
+    });
+
+    it("ປ່ຽນເບີອອກຈາກເບີຂອງບັນຊີ → ປິດການໃຊ້ແຕ້ມພ້ອມໝາຍເຫດ ແລະ ກວດກະຕ່າໂດຍບໍ່ມີແຕ້ມ", async () => {
+      const user = userEvent.setup();
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      await user.click(await screen.findByRole("button", { name: "ໃຊ້ສູງສຸດ" }));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+      const phone = screen.getByLabelText(/ເບີໂທ/);
+      await user.clear(phone);
+      await user.type(phone, "02099999999");
+      expect(await screen.findByText("ໃຊ້ແຕ້ມໄດ້ສະເພາະເມື່ອເບີໂທຜູ້ຮັບແມ່ນ 02055555555")).toBeInTheDocument();
+      expect(screen.getByLabelText("ໃຊ້ແຕ້ມ", { selector: "input" })).toBeDisabled();
+      await waitFor(() => expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, undefined));
+      await waitFor(() => expect(screen.queryByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).not.toBeInTheDocument());
+    });
+
+    it("session ໝົດອາຍຸຕອນກວດກະຕ່າພ້ອມແຕ້ມ → ຖອດແຕ້ມ, ກວດໃໝ່ແບບ guest ແລະ ບອກໃຫ້ເຂົ້າລະບົບໃໝ່", async () => {
+      const user = userEvent.setup();
+      checkCartMock.mockImplementation(async (_items, _code, points) => {
+        if (points) throw new ClientApiError(401, "MEMBER_REQUIRED");
+        return memberCart(undefined);
+      });
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      await user.click(await screen.findByRole("button", { name: "ໃຊ້ສູງສຸດ" }));
+      expect(await screen.findByText(/ກະລຸນາເຂົ້າສູ່ລະບົບໃໝ່ ເພື່ອໃຊ້ແຕ້ມ/)).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(checkCartMock).toHaveBeenLastCalledWith([{ variantId: "v1", quantity: 2 }], undefined, undefined);
+    });
+
+    it("server ປະຕິເສດແຕ້ມຕອນສັ່ງ (POINTS_INVALID) → ບອກເຫດຜົນ ແລະ ຖອດແຕ້ມອອກ", async () => {
+      const user = userEvent.setup();
+      createOrderMock.mockRejectedValue(new ClientApiError(409, "POINTS_INVALID", { code: "POINTS_INVALID", reason: "INSUFFICIENT", balance: 20 }));
+      render(<CheckoutForm couriers={couriers} loyalty={loyalty} />);
+      await user.click(await screen.findByRole("button", { name: "ໃຊ້ສູງສຸດ" }));
+      expect(await screen.findByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+      await fillRest(user);
+      await user.click(submit());
+      expect(await screen.findByRole("alert")).toHaveTextContent("ແຕ້ມບໍ່ພໍ (ມີ 20 ແຕ້ມ) — ແຕ້ມຖືກຖອດອອກແລ້ວ");
+      await waitFor(() => expect(screen.queryByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).not.toBeInTheDocument());
+    });
   });
 });

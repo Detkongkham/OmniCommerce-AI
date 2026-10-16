@@ -1,8 +1,8 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCart, resetCartForTests } from "@/lib/cart";
-import { fetchOrder, uploadSlip } from "@/lib/client-api";
+import { ClientApiError, fetchOrder, setOrderPin, uploadSlip } from "@/lib/client-api";
 import type { StoreOrder } from "@/lib/types";
 import { OrderView } from "./order-view";
 
@@ -12,7 +12,9 @@ vi.mock("@/lib/client-api", async (original) => ({
   ...(await original<typeof import("@/lib/client-api")>()),
   fetchOrder: vi.fn(),
   uploadSlip: vi.fn(),
+  setOrderPin: vi.fn(),
 }));
+const setOrderPinMock = vi.mocked(setOrderPin);
 const fetchOrderMock = vi.mocked(fetchOrder);
 const uploadSlipMock = vi.mocked(uploadSlip);
 
@@ -34,6 +36,9 @@ const order = (patch: Partial<StoreOrder> = {}): StoreOrder => ({
   note: null,
   slips: [],
   tracking: null,
+  points: null,
+  pointsEarned: null,
+  pinSetup: "NONE",
   ...patch,
 });
 const payment: Parameters<typeof OrderView>[0]["payment"] = {
@@ -47,6 +52,7 @@ beforeEach(() => {
   push.mockReset();
   fetchOrderMock.mockReset();
   uploadSlipMock.mockReset();
+  setOrderPinMock.mockReset();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -197,5 +203,59 @@ describe("OrderView", () => {
     await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(fetchOrderMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText("ບິນນີ້ໝົດເວລາຊຳລະແລ້ວ ສິນຄ້າທີ່ຈອງໄວ້ຖືກປ່ອຍຄືນ")).toBeInTheDocument();
+  });
+
+  it("ໃຊ້ແຕ້ມ ແລະ ໄດ້ແຕ້ມ: ແຖວສ່ວນຫຼຸດຈາກແຕ້ມ ແລະ ແຕ້ມທີ່ໄດ້ຮັບ", () => {
+    view(order({ status: "PAID", total: "190000.00", points: { redeemed: 100, discount: "10000.00" }, pointsEarned: 19 }));
+    const items = screen.getByRole("region", { name: "ລາຍການສິນຄ້າ" });
+    expect(within(items).getByText("ໃຊ້ແຕ້ມ (100 ແຕ້ມ)")).toBeInTheDocument();
+    expect(within(items).getByText("−10,000 ກີບ")).toBeInTheDocument();
+    expect(within(items).getByText("+19 ແຕ້ມ")).toBeInTheDocument();
+  });
+
+  it("pinSetup NONE → ບໍ່ມີກ່ອງ PIN; AFTER_PAYMENT → ບອກໃຫ້ຊຳລະກ່ອນ", () => {
+    const { unmount } = view(order());
+    expect(screen.queryByRole("region", { name: "ບັນຊີສະມາຊິກ" })).not.toBeInTheDocument();
+    unmount();
+    view(order({ pinSetup: "AFTER_PAYMENT" }));
+    expect(screen.getByRole("region", { name: "ບັນຊີສະມາຊິກ" })).toHaveTextContent("ຕັ້ງ PIN ໄດ້ຫຼັງຊຳລະເງິນແລ້ວ");
+    expect(screen.queryByLabelText(/PIN ໃໝ່/)).not.toBeInTheDocument();
+  });
+
+  it("AVAILABLE: PIN ບໍ່ກົງກັນ → ຂໍ້ຄວາມ ແລະ ບໍ່ສົ່ງ", async () => {
+    const user = userEvent.setup();
+    view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
+    const card = screen.getByRole("region", { name: "ບັນຊີສະມາຊິກ" });
+    expect(within(card).getByText("ຕັ້ງ PIN 6 ຕົວ ເພື່ອເບິ່ງແຕ້ມ ແລະ ປະຫວັດການສັ່ງຊື້")).toBeInTheDocument();
+    await user.type(within(card).getByLabelText(/PIN ໃໝ່/), "123456");
+    await user.type(within(card).getByLabelText(/ຢືນຢັນ PIN/), "123457");
+    await user.click(within(card).getByRole("button", { name: "ຕັ້ງ PIN" }));
+    expect(within(card).getByText("PIN ທັງສອງຊ່ອງບໍ່ກົງກັນ")).toBeInTheDocument();
+    expect(setOrderPinMock).not.toHaveBeenCalled();
+  });
+
+  it("AVAILABLE: ຕັ້ງ PIN ສຳເລັດ → ເຂົ້າລະບົບແລ້ວ + ລິ້ງໄປບັນຊີ", async () => {
+    const user = userEvent.setup();
+    setOrderPinMock.mockResolvedValue({
+      member: { name: "ນາງ ກ", phone: "02055555555", pointsBalance: 19, tier: "BRONZE", spend12m: "200000.00", nextTier: null, pointsMultiplier: "1" },
+    });
+    view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
+    await user.type(screen.getByLabelText(/PIN ໃໝ່/), "12a3456");
+    await user.type(screen.getByLabelText(/ຢືນຢັນ PIN/), "123456");
+    await user.click(screen.getByRole("button", { name: "ຕັ້ງ PIN" }));
+    expect(setOrderPinMock).toHaveBeenCalledWith("tok", "123456");
+    expect(await screen.findByText(/ຕັ້ງ PIN ສຳເລັດ — ທ່ານເຂົ້າສູ່ລະບົບແລ້ວ/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "ໄປທີ່ບັນຊີຂອງຂ້ອຍ" })).toHaveAttribute("href", "/account");
+  });
+
+  it("AVAILABLE: PIN_ALREADY_SET → ບອກວ່າມີ PIN ແລ້ວ + ລິ້ງເຂົ້າສູ່ລະບົບ", async () => {
+    const user = userEvent.setup();
+    setOrderPinMock.mockRejectedValue(new ClientApiError(409, "PIN_ALREADY_SET"));
+    view(order({ status: "PAID", pinSetup: "AVAILABLE" }));
+    await user.type(screen.getByLabelText(/PIN ໃໝ່/), "123456");
+    await user.type(screen.getByLabelText(/ຢືນຢັນ PIN/), "123456");
+    await user.click(screen.getByRole("button", { name: "ຕັ້ງ PIN" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "ບັນຊີສະມາຊິກ" })).toHaveTextContent("ເບີນີ້ມີ PIN ແລ້ວ"));
+    expect(screen.getByRole("link", { name: "ເຂົ້າສູ່ລະບົບ" })).toHaveAttribute("href", "/account");
   });
 });

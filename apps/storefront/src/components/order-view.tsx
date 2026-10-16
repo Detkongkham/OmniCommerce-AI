@@ -7,10 +7,11 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { replaceCart } from "@/lib/cart";
 import { fetchOrder } from "@/lib/client-api";
-import { formatLak } from "@/lib/format";
+import { formatLak, formatPoints } from "@/lib/format";
 import { ORDER_STEPS, orderStatusLabel, orderStepIndex } from "@/lib/order-status";
 import type { StoreOrder } from "@/lib/types";
 import { Countdown } from "./countdown";
+import { OrderPinCard } from "./order-pin-card";
 import { SlipUpload } from "./slip-upload";
 
 const POLL_MS = 15_000;
@@ -173,6 +174,8 @@ export function OrderView({ token, initialOrder, payment }: OrderViewProps) {
         </Panel>
       ) : null}
 
+      <OrderPinCard token={token} pinSetup={order.pinSetup ?? "NONE"} />
+
       <Panel label="ລາຍການສິນຄ້າ">
         <ul className="flex flex-col gap-2">
           {order.items.map((item) => (
@@ -185,16 +188,32 @@ export function OrderView({ token, initialOrder, payment }: OrderViewProps) {
             </li>
           ))}
         </ul>
-        {order.coupon ? (
-          <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3 text-sm text-success-ink">
-            <span>{`ສ່ວນຫຼຸດ (${order.coupon.code})`}</span>
-            <span>{`−${formatLak(order.coupon.discount)}`}</span>
+        {order.coupon || order.points ? (
+          <div className="flex flex-col gap-2 border-t border-line pt-3 text-sm text-success-ink">
+            {order.coupon ? (
+              <div className="flex items-baseline justify-between gap-3">
+                <span>{`ສ່ວນຫຼຸດ (${order.coupon.code})`}</span>
+                <span>{`−${formatLak(order.coupon.discount)}`}</span>
+              </div>
+            ) : null}
+            {order.points ? (
+              <div className="flex items-baseline justify-between gap-3">
+                <span>{`ໃຊ້ແຕ້ມ (${formatPoints(order.points.redeemed)})`}</span>
+                <span>{`−${formatLak(order.points.discount)}`}</span>
+              </div>
+            ) : null}
           </div>
         ) : null}
-        <div className={cn("flex items-baseline justify-between gap-3", order.coupon ? "" : "border-t border-line pt-3")}>
+        <div className={cn("flex items-baseline justify-between gap-3", order.coupon || order.points ? "" : "border-t border-line pt-3")}>
           <span className="text-sm text-ink-secondary">ຍອດລວມ</span>
           <span className="text-lg font-bold text-ink">{formatLak(order.total)}</span>
         </div>
+        {order.pointsEarned ? (
+          <div className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="text-ink-secondary">ແຕ້ມທີ່ໄດ້ຮັບຈາກບິນນີ້</span>
+            <span className="font-semibold text-brand-ink">{`+${formatPoints(order.pointsEarned)}`}</span>
+          </div>
+        ) : null}
       </Panel>
 
       <Panel label="ການຈັດສົ່ງ">

@@ -1,4 +1,4 @@
-import { type CouponRejectReason, STORE_MAX_OPEN_ORDERS } from "@oca/shared";
+import { type CouponRejectReason, type PointsRejectReason, STORE_MAX_OPEN_ORDERS } from "@oca/shared";
 import { formatLak } from "./format";
 
 /** ຂໍ້ຄວາມສຳລັບ error ຂອງ API ທີ່ລູກຄ້າແກ້ໄຂເອງໄດ້; ຢ່າງອື່ນໃຊ້ `fallback` */
@@ -13,6 +13,10 @@ const MESSAGES: Record<string, string> = {
   SLIP_LIMIT_REACHED: "ບິນນີ້ມີສະລິບຄົບຈຳນວນແລ້ວ ກະລຸນາລໍຖ້າຮ້ານກວດສອບ",
   RESERVATION_EXPIRED: "ບິນນີ້ໝົດເວລາຊຳລະແລ້ວ",
   ORDER_INVALID_STATE: "ບິນນີ້ບໍ່ໄດ້ຢູ່ໃນສະຖານະລໍຖ້າຊຳລະແລ້ວ",
+  MEMBER_LOGIN_FAILED: "ເບີໂທ ຫຼື PIN ບໍ່ຖືກຕ້ອງ",
+  MEMBER_LOCKED: "ໃສ່ PIN ຜິດຫຼາຍເທື່ອ ກະລຸນາລໍຖ້າຈັກໜ້ອຍແລ້ວລອງໃໝ່",
+  MEMBER_REQUIRED: "ກະລຸນາເຂົ້າສູ່ລະບົບໃໝ່",
+  PIN_ALREADY_SET: "ເບີນີ້ມີ PIN ແລ້ວ",
 };
 
 export function apiMessage(code: string | undefined, fallback: string): string {
@@ -37,4 +41,29 @@ export function couponMessage(error: { reason?: unknown; minSubtotal?: unknown }
     return `ໂຄດນີ້ໃຊ້ໄດ້ເມື່ອຊື້ຄົບ ${formatLak(error.minSubtotal)}`;
   }
   return reason ? COUPON_MESSAGES[reason] : "ໂຄດນີ້ໃຊ້ບໍ່ໄດ້";
+}
+
+/** ລັອກການເຂົ້າລະບົບ: ບອກຈຳນວນນາທີທີ່ເຫຼືອຈາກ `retryAfterSeconds` (top-level ໃນ body ຂອງ 429) */
+export function memberLockedMessage(retryAfterSeconds: unknown): string {
+  if (typeof retryAfterSeconds !== "number" || !(retryAfterSeconds > 0)) return MESSAGES.MEMBER_LOCKED as string;
+  const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+  return `ໃສ່ PIN ຜິດຫຼາຍເທື່ອ ກະລຸນາລອງໃໝ່ໃນອີກ ${minutes} ນາທີ`;
+}
+
+const POINTS_MESSAGES: Record<PointsRejectReason, string> = {
+  DISABLED: "ຮ້ານປິດການໃຊ້ແຕ້ມຢູ່ຕອນນີ້",
+  NO_CUSTOMER: "ບັນຊີນີ້ໃຊ້ແຕ້ມບໍ່ໄດ້",
+  INSUFFICIENT: "ແຕ້ມບໍ່ພໍ",
+  OVER_CAP: "ໃຊ້ແຕ້ມເກີນກຳນົດຂອງບິນນີ້",
+  PHONE_MISMATCH: "ໃຊ້ແຕ້ມໄດ້ສະເພາະເມື່ອເບີໂທຜູ້ຮັບກົງກັບເບີຂອງບັນຊີ",
+};
+
+const GROUPED = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** ເຫດຜົນທີ່ໃຊ້ແຕ້ມບໍ່ໄດ້ (`pointsError` ຂອງກະຕ່າ ຫຼື body ຂອງ 409 POINTS_INVALID) */
+export function pointsMessage(error: { reason?: unknown; balance?: unknown; maxPoints?: unknown }): string {
+  const reason = typeof error.reason === "string" && error.reason in POINTS_MESSAGES ? (error.reason as PointsRejectReason) : null;
+  if (reason === "OVER_CAP" && typeof error.maxPoints === "number") return `ບິນນີ້ໃຊ້ໄດ້ສູງສຸດ ${GROUPED.format(error.maxPoints)} ແຕ້ມ`;
+  if (reason === "INSUFFICIENT" && typeof error.balance === "number") return `ແຕ້ມບໍ່ພໍ (ມີ ${GROUPED.format(error.balance)} ແຕ້ມ)`;
+  return reason ? POINTS_MESSAGES[reason] : "ໃຊ້ແຕ້ມບໍ່ໄດ້";
 }
