@@ -46,21 +46,35 @@ function clearMemberCookie(response: NextResponse): NextResponse {
   return response;
 }
 
-/** ອອກຈາກລະບົບຢູ່ເວັບເອງ (ບໍ່ເອີ້ນ API); ປະຕິເສດຄຳຂໍຂ້າມເວັບ (CSRF) */
-function logout(request: Request): NextResponse {
+/**
+ * ປະຕິເສດຄຳຂໍຂ້າມເວັບ (CSRF) ສຳລັບທຸກ method ທີ່ບໍ່ແມ່ນ GET/HEAD: ຖ້າບໍ່ກັນ, form ຈາກເວັບອື່ນທີ່ submit ເອງ
+ * ຈະ login / ຕັ້ງ PIN ແລ້ວຝັງ cookie ບັນຊີຂອງຄົນອື່ນໃສ່ browser ລູກຄ້າໄດ້.
+ * ມີ Sec-Fetch-Site → ເຊື່ອຄ່ານີ້ຢ່າງດຽວ (Host ອາດຖືກ reverse proxy ປ່ຽນ); ບໍ່ມີ → ທຽບ Origin ກັບ Host;
+ * ບໍ່ມີທັງສອງ (client ທີ່ບໍ່ແມ່ນ browser) → ຜ່ານ.
+ */
+function isCrossOrigin(request: Request): boolean {
   const site = request.headers.get("sec-fetch-site");
+  if (site !== null) return site !== "same-origin" && site !== "none";
   const origin = request.headers.get("origin");
+  if (origin === null) return false;
   const host = request.headers.get("host") ?? new URL(request.url).host;
-  // ມີ Sec-Fetch-Site → ເຊື່ອຄ່ານີ້ຢ່າງດຽວ (Host ອາດຖືກ reverse proxy ປ່ຽນ); ບໍ່ມີ → ທຽບ Origin ກັບ Host
-  let crossOrigin = site !== null && site !== "same-origin" && site !== "none";
-  if (site === null && origin !== null) {
-    try {
-      crossOrigin = new URL(origin).host !== host;
-    } catch {
-      crossOrigin = true;
-    }
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
   }
-  if (crossOrigin) return json(403, { statusCode: 403, code: "FORBIDDEN", message: "Cross-site logout is not allowed" });
+}
+
+/** body ທີ່ສົ່ງຕໍ່ໄດ້: JSON ແລະ multipart (ອັບສະລິບ). urlencoded / text/plain ແມ່ນສິ່ງທີ່ form ຂ້າມເວັບສົ່ງໄດ້ → ບໍ່ຮັບ */
+const ALLOWED_BODY_TYPES = ["application/json", "multipart/form-data"];
+
+function isAllowedBodyType(contentType: string | null): boolean {
+  const type = contentType?.split(";")[0]?.trim().toLowerCase();
+  return type !== undefined && ALLOWED_BODY_TYPES.includes(type);
+}
+
+/** ອອກຈາກລະບົບຢູ່ເວັບເອງ (ບໍ່ເອີ້ນ API); ຄຳຂໍຂ້າມເວັບຖືກກັນໄວ້ກ່ອນຮອດນີ້ແລ້ວ */
+function logout(): NextResponse {
   return clearMemberCookie(new NextResponse(null, { status: 204, headers: { "cache-control": "no-store" } }));
 }
 
@@ -77,8 +91,11 @@ function json(status: number, body: Record<string, unknown>): NextResponse {
 async function forward(request: Request, context: Context): Promise<Response> {
   const { path } = await context.params;
   const lower = path.map((segment) => segment.toLowerCase());
+  if (request.method !== "GET" && request.method !== "HEAD" && isCrossOrigin(request)) {
+    return json(403, { statusCode: 403, code: "FORBIDDEN", message: "Cross-site requests are not allowed" });
+  }
   if (request.method === "POST" && lower.length === 2 && lower[0] === "member" && lower[1] === "logout") {
-    return logout(request);
+    return logout();
   }
   // handler ຮັບ Request ທຳມະດາ (test ສົ່ງ Request) → ສ້າງ NextRequest ຈາກ headers ເພື່ອອ່ານ cookie ໂດຍບໍ່ແຕະ body
   const cookie = new NextRequest(request.url, { headers: request.headers }).cookies.get(MEMBER_COOKIE)?.value;
@@ -109,6 +126,9 @@ async function proxy(request: Request, path: string[], lower: string[], memberTo
     body = await request.arrayBuffer();
     if (body.byteLength > MAX_BODY_BYTES) {
       return json(413, { statusCode: 413, code: "BAD_REQUEST", message: "Request body is too large" });
+    }
+    if (body.byteLength > 0 && !isAllowedBodyType(request.headers.get("content-type"))) {
+      return json(415, { statusCode: 415, code: "BAD_REQUEST", message: "Content-Type must be application/json or multipart/form-data" });
     }
   }
 

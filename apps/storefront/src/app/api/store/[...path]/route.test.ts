@@ -70,7 +70,9 @@ describe("/api/store/* proxy", () => {
 
   it("ສົ່ງຕໍ່ status ແລະ body ຂອງ error ຈາກ API", async () => {
     fetchMock.mockResolvedValue(upstream({ code: "PRICE_CHANGED", total: "240.00" }, 409));
-    const res = await POST(new Request("http://shop.test/api/store/orders", { method: "POST", body: "{}" }), ctx("orders"));
+    const res = await POST(new Request("http://shop.test/api/store/orders", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+      ctx("orders"),
+    );
     expect(res.status).toBe(409);
     await expect(res.json()).resolves.toEqual({ code: "PRICE_CHANGED", total: "240.00" });
   });
@@ -79,7 +81,11 @@ describe("/api/store/* proxy", () => {
     fetchMock.mockResolvedValue(upstream({ status: "REVIEWING" }, 201));
     const form = new FormData();
     form.append("file", new File([new Uint8Array([1, 2, 3])], "slip.png", { type: "image/png" }));
-    const request = new Request("http://shop.test/api/store/orders/tok/slips", { method: "POST", body: form });
+    const request = new Request("http://shop.test/api/store/orders/tok/slips", {
+      method: "POST",
+      headers: { "sec-fetch-site": "same-origin", origin: "http://shop.test" },
+      body: form,
+    });
     const res = await POST(request, ctx("orders", "tok", "slips"));
     expect(res.status).toBe(201);
     const init = fetchMock.mock.calls[0]?.[1];
@@ -98,7 +104,15 @@ describe("/api/store/* proxy", () => {
 
   describe("member session cookie (oca_member)", () => {
     const login = (path: string[], init: RequestInit = {}) =>
-      POST(new Request(`http://shop.test/api/store/${path.join("/")}`, { method: "POST", body: "{}", ...init }), ctx(...path));
+      POST(
+        new Request(`http://shop.test/api/store/${path.join("/")}`, {
+          method: "POST",
+          body: "{}",
+          ...init,
+          headers: { "content-type": "application/json", ...(init.headers as Record<string, string> | undefined) },
+        }),
+        ctx(...path),
+      );
     const member = { id: "m1", phone: "2055551234", name: "Ana" };
 
     it("ມີ cookie → ສົ່ງ Authorization: Bearer ໄປ API", async () => {
@@ -255,6 +269,71 @@ describe("/api/store/* proxy", () => {
       const res = await GET(new Request("http://shop.test/api/store/member/me", { headers: { cookie: "oca_member=old" } }), ctx("member", "me"));
       expect(res.status).toBe(401);
       expect(res.headers.get("set-cookie")).toBeNull();
+    });
+  });
+
+  describe("CSRF / content-type (ທຸກ method ທີ່ບໍ່ແມ່ນ GET)", () => {
+    const post = (path: string[], headers: Record<string, string>, body: BodyInit = '{"phone":"2055551234","pin":"1234"}') =>
+      POST(new Request(`http://shop.test/api/store/${path.join("/")}`, { method: "POST", headers, body }), ctx(...path));
+    const json = { "content-type": "application/json" };
+
+    it("login / ຕັ້ງ PIN / ສັ່ງຊື້ ຈາກເວັບອື່ນ → 403 FORBIDDEN, ບໍ່ເອີ້ນ API, ບໍ່ຕັ້ງ cookie", async () => {
+      const crossSite: Record<string, string>[] = [
+        { "sec-fetch-site": "cross-site" },
+        { "sec-fetch-site": "same-site" },
+        { "sec-fetch-site": "cross-site", origin: "http://shop.test" },
+        { origin: "http://evil.test" },
+        { origin: "null" },
+      ];
+      for (const path of [["member", "login"], ["orders", "t", "pin"], ["orders"]]) {
+        for (const headers of crossSite) {
+          const res = await post(path, { ...json, ...headers });
+          expect(res.status).toBe(403);
+          await expect(res.json()).resolves.toMatchObject({ statusCode: 403, code: "FORBIDDEN" });
+          expect(res.headers.get("set-cookie")).toBeNull();
+        }
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("login ຈາກເວັບດຽວກັນ ຫຼື client ທີ່ບໍ່ແມ່ນ browser → ສົ່ງຕໍ່ ແລະ ຕັ້ງ cookie", async () => {
+      fetchMock.mockImplementation(async () => upstream({ memberToken: "tok", member: { id: "m1" } }));
+      const allowed: Record<string, string>[] = [
+        { "sec-fetch-site": "same-origin", origin: "http://public.example" },
+        { "sec-fetch-site": "none" },
+        { origin: "http://shop.test" },
+        {},
+      ];
+      for (const headers of allowed) {
+        const res = await post(["member", "login"], { ...json, ...headers });
+        expect(res.status).toBe(200);
+        expect(res.headers.get("set-cookie")).toMatch(/^oca_member=tok;/);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(allowed.length);
+    });
+
+    it("body ທີ່ບໍ່ແມ່ນ JSON / multipart (form urlencoded, text/plain, ບໍ່ມີ content-type) → 415, ບໍ່ເອີ້ນ API", async () => {
+      const cases: { headers: Record<string, string>; body: BodyInit }[] = [
+        { headers: { "content-type": "application/x-www-form-urlencoded" }, body: "phone=2055551234&pin=1234" },
+        { headers: { "sec-fetch-site": "same-origin" }, body: new URLSearchParams({ phone: "2055551234", pin: "1234" }) },
+        { headers: { "content-type": "text/plain" }, body: '{"phone":"2055551234"}' },
+        { headers: {}, body: '{"phone":"2055551234"}' },
+      ];
+      for (const { headers, body } of cases) {
+        const res = await post(["member", "login"], headers, body);
+        expect(res.status).toBe(415);
+        expect(res.headers.get("set-cookie")).toBeNull();
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("content-type JSON ພ້ອມ charset / ຕົວພິມໃຫຍ່ → ສົ່ງຕໍ່", async () => {
+      fetchMock.mockImplementation(async () => upstream({}));
+      for (const type of ["application/json; charset=utf-8", "Application/JSON"]) {
+        const res = await post(["cart", "check"], { "content-type": type });
+        expect(res.status).toBe(200);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 
