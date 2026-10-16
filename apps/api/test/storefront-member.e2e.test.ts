@@ -276,7 +276,7 @@ describe("storefront member (e2e)", () => {
       const { memberToken } = await member();
       const me = await customer();
       // ກະແຈແບບດຽວກັບ service: test ບໍ່ຕັ້ງ MEMBER_JWT_SECRET ຈຶ່ງແຕກຈາກ JWT_ACCESS_SECRET
-      expect(process.env.MEMBER_JWT_SECRET).toBeUndefined();
+      expect(process.env.MEMBER_JWT_SECRET || undefined).toBeUndefined(); // ຄ່າວ່າງ (ສຳເນົາຈາກ .env.example) = ບໍ່ຕັ້ງ
       const secret = createHmac("sha256", process.env.JWT_ACCESS_SECRET as string).update("oca-member-session").digest("hex");
       const sign = (payload: object, options: { audience?: string; expiresIn?: number } = {}) =>
         app().get(JwtService).signAsync({ pv: me.pinVersion, ...payload }, { subject: me.id, secret, algorithm: "HS256", ...options });

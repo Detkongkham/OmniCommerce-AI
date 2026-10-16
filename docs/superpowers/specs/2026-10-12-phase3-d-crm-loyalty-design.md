@@ -139,7 +139,7 @@
 
 ### ຂໍ້ມູນ (migration `20261012020000_member_pin`)
 
-`Customer`: `pinHash String?` (argon2id), `pinFailedCount Int @default(0)`, `pinLockedUntil DateTime?`, `pinVersion Int @default(0)`.
+`Customer`: `pinHash String?` (argon2id), `pinFailedCount Int @default(0)`, `pinLockedUntil DateTime?`, `pinVersion Int @default(0)`; ແລະ `pinResetAt DateTime?` (migration `20261016000000_member_pin_reset`, ເບິ່ງການຕັດສິນລຸ່ມນີ້).
 
 ### ກົດ
 
@@ -147,7 +147,7 @@
 - **ຕັ້ງ PIN ໄດ້ສະເພາະຜ່ານລິ້ງລັບຂອງບິນເວັບທີ່ຈ່າຍແລ້ວ** (`PAID` ຂຶ້ນໄປ) ຂອງລູກຄ້າຄົນນັ້ນ ແລະ ສະເພາະເມື່ອຍັງບໍ່ມີ PIN. ການຮູ້ເບີຢ່າງດຽວຕັ້ງ PIN ບໍ່ໄດ້. ລູກຄ້າທີ່ຊື້ຜ່ານແຊັດຢ່າງດຽວ ຕ້ອງສັ່ງເວັບ 1 ບິນກ່ອນຈຶ່ງມີບັນຊີ (ແຕ້ມສະສົມຢູ່ແລ້ວ ເພາະຜູກດ້ວຍເບີ).
 - ເຂົ້າລະບົບຜິດ 5 ຄັ້ງຕິດກັນ → ລັອກ 15 ນາທີ (`429 MEMBER_LOCKED` + `retryAfterSeconds`). ສຳເລັດ = ລ້າງຕົວນັບ. ເບີບໍ່ມີ/ບໍ່ມີ PIN/PIN ຜິດ ຕອບຄືກັນ (`401 MEMBER_LOGIN_FAILED`). ມີ `StoreRateLimiter` ຕໍ່ IP ຕື່ມ.
 - Session: JWT (HS256, `MEMBER_JWT_SECRET`, 30 ວັນ) `{ sub: customerId, pv: pinVersion }`. API ກວດ `pv` ກັບຄ່າປັດຈຸບັນ. Route handler ຂອງ storefront ເກັບເປັນ cookie `oca_member` (httpOnly, SameSite=Lax, Secure ໃນ production) ແລະ ແນບເປັນ `Authorization: Bearer` ຕອນສົ່ງຕໍ່ຫາ API; browser ບໍ່ເຫັນ token.
-- ແອດມິນ reset PIN (`POST /crm/customers/:id/pin/reset`, `crm:write`): ລ້າງ `pinHash` + ຕົວນັບ/ລັອກ, `pinVersion + 1` (session ເກົ່າໃຊ້ບໍ່ໄດ້), ບັນທຶກ audit. ລູກຄ້າຕັ້ງໃໝ່ຈາກລິ້ງບິນເວັບໃດກໍໄດ້ຂອງຕົນ.
+- ແອດມິນ reset PIN (`POST /crm/customers/:id/pin/reset`, `crm:write`): ລ້າງ `pinHash` + ຕົວນັບ/ລັອກ, `pinVersion + 1` (session ເກົ່າໃຊ້ບໍ່ໄດ້), `pinResetAt = now()`, ບັນທຶກ audit. ລູກຄ້າຕັ້ງໃໝ່ໄດ້ສະເພາະຈາກບິນເວັບທີ່ **ຈ່າຍຫຼັງ reset** (ບິນເກົ່າໃຊ້ບໍ່ໄດ້).
 - ແລກແຕ້ມເທິງເວັບ: ຕ້ອງມີ session ແລະ ເບີໃນຟອມ checkout ຕ້ອງກົງກັບເບີຂອງສະມາຊິກ (ບໍ່ກົງ → `POINTS_INVALID (PHONE_MISMATCH)`; ບໍ່ມີ session → `401`).
 
 ### API `/store/*`
@@ -157,7 +157,7 @@
 - `POST /store/member/login { phone, pin }`, `POST /store/member/logout`.
 - `GET /store/member/me`: ຊື່, ເບີ, `pointsBalance`, `tier`, `spend12m`, `nextTier`, ທີ່ຢູ່ສົ່ງຫຼ້າສຸດ (ຊື່/ທີ່ຢູ່/courier/ສາຂາ ຈາກບິນເວັບຫຼ້າສຸດ) ສຳລັບເຕີມຟອມ.
 - `GET /store/member/orders` (ບິນທຸກຊ່ອງທາງຂອງລູກຄ້າ; ມີ `token` ສະເພາະບິນເວັບ), `GET /store/member/points`.
-- `POST /store/cart/check`: ຮັບ `pointsToRedeem?` (ມີ session) → `points { redeemed, discount, maxPoints } | null`, `pointsError`.
+- `POST /store/cart/check`: ຮັບ `pointsToRedeem?` (ມີ session) → `points { redeemed, discount, maxPoints } | null`, `pointsError`. ບໍ່ສົ່ງ `pointsToRedeem` + session ໃຊ້ບໍ່ໄດ້ (ຜິດ/ໝົດອາຍຸ/ຖືກ reset) = ກວດແບບ guest (`points: null`) ຄືກັບ `POST /store/orders`; ສົ່ງ `pointsToRedeem` ໂດຍບໍ່ມີ session ທີ່ໃຊ້ໄດ້ → `401 MEMBER_REQUIRED`.
 - `POST /store/orders`: ຮັບ `pointsToRedeem?`.
 - `GET /store/orders/:token`: ເພີ່ມ `points { redeemed, discount } | null`, `pointsEarned`, `pinSetup` (`AVAILABLE` = ຕັ້ງໄດ້ດຽວນີ້, `AFTER_PAYMENT` = ບິນລໍຈ່າຍ, `NONE`).
 
@@ -171,9 +171,10 @@
 ### ການຕັດສິນລະຫວ່າງລົງມື D3 (2026-10-16)
 
 - **ຕັ້ງ PIN ໄດ້ຈາກບິນເວັບທີ່ຈ່າຍແລ້ວເທົ່ານັ້ນ.** guest checkout ຮັບເບີໃດກໍໄດ້ (ບໍ່ມີ OTP) ຖ້າໃຫ້ຕັ້ງ PIN ຈາກບິນທີ່ຍັງບໍ່ຈ່າຍ ໃຜກໍສ້າງບິນດ້ວຍເບີຂອງຄົນອື່ນແລ້ວຍຶດບັນຊີ (ແຕ້ມ + ປະຫວັດ) ໄດ້ທັນທີ. ຄວາມສ່ຽງທີ່ເຫຼືອ (ຮັບໄດ້): ຄົນທີ່ຍອມຈ່າຍເງິນບິນໜຶ່ງພາຍໃຕ້ເບີຂອງຄົນອື່ນທີ່ຍັງບໍ່ມີ PIN ຍັງຍຶດບັນຊີນັ້ນໄດ້. ທາງແກ້ຈົນກວ່າຈະມີ SMS OTP: ເຈົ້າຂອງເບີແຈ້ງຮ້ານ → ແອດມິນ reset PIN (ມີ audit `customer.pin.reset`) → ເຈົ້າຂອງຕັ້ງໃໝ່ຈາກບິນທີ່ຈ່າຍແລ້ວຂອງຕົນ.
-- **ຜິດ 5 ຄັ້ງຕິດກັນ → ລັອກ 15 ນາທີ** ຕໍ່ລູກຄ້າ (ເສີມດ້ວຍ rate limit ຕໍ່ IP `STORE_LOGIN_RATE_LIMIT`, ຄ່າເລີ່ມຕົ້ນ 20 ຕໍ່ 10 ນາທີ). ຂໍ້ແລກປ່ຽນທີ່ຮັບໄດ້: ຄຳຕອບ `429 MEMBER_LOCKED` ເປີດເຜີຍວ່າເບີນັ້ນມີ PIN, ແລະ ໃຜຮູ້ເບີຂອງສະມາຊິກກໍລັອກເຂົາໄດ້ 15 ນາທີ (ບໍ່ກະທົບການສັ່ງຊື້ແບບ guest ແລະ session ທີ່ເຂົ້າຢູ່ແລ້ວ).
+- **ກູ້ບັນຊີຫຼັງ reset ຕ້ອງໃຊ້ບິນໃໝ່ (`pinResetAt`).** ຖ້າຕັ້ງ PIN ໄດ້ຈາກບິນທີ່ຈ່າຍແລ້ວໃດກໍໄດ້ ຜູ້ຍຶດບັນຊີທີ່ຖືລິ້ງບິນເກົ່າ (ລວມທັງບິນທີ່ເຂົາຈ່າຍເອງພາຍໃຕ້ເບີຂອງເຈົ້າຂອງ) ຈະຕັ້ງ PIN ຄືນໄດ້ທັນທີຫຼັງແອດມິນ reset. ສະນັ້ນ ທຸກເຫດການທີ່ພະນັກງານເຮັດໃຫ້ PIN ໃຊ້ບໍ່ໄດ້ — reset PIN, ປ່ຽນ/ລ້າງເບີ, ລວມລູກຄ້າທີ່ຖິ້ມ PIN ຂອງ target — ຕັ້ງ `Customer.pinResetAt = now()` ໃນການບັນທຶກດຽວກັນ (ລວມລູກຄ້າເກັບຄ່າຫຼ້າສຸດຂອງທັງສອງຄົນ ເພາະບິນຂອງ source ຍ້າຍມາ). ຫຼັງຈາກນັ້ນ `POST /store/orders/:token/pin` ແລະ `pinSetup` ຮັບສະເພາະບິນທີ່ **`paidAt` ຫຼັງ `pinResetAt`** (ບິນທີ່ສ້າງກ່ອນແຕ່ຈ່າຍຫຼັງ reset ກໍໃຊ້ໄດ້; ບິນທີ່ບໍ່ມີ `paidAt` ໃຊ້ບໍ່ໄດ້); ບິນເກົ່າ → `409 ORDER_INVALID_STATE` ແລະ `pinSetup: "NONE"`. ເງື່ອນໄຂຢູ່ໃນ UPDATE ດຽວກັບການຕັ້ງ PIN ຈຶ່ງ reset ທີ່ເກີດພ້ອມກັນກໍຊະນະ. ຜົນ: **ເຈົ້າຂອງຕ້ອງສັ່ງ ແລະ ຈ່າຍບິນເວັບໃໝ່** ຈຶ່ງຕັ້ງ PIN ໄດ້. `pinResetAt` ບໍ່ຖືກສົ່ງໃຫ້ storefront ຫຼື CRM (ມີໃນ audit `customer.pin.reset`).
+- **ຜິດ 5 ຄັ້ງຕິດກັນ → ລັອກ 15 ນາທີ** ຕໍ່ລູກຄ້າ (ເສີມດ້ວຍ rate limit ຕໍ່ IP `STORE_LOGIN_RATE_LIMIT`, ຄ່າເລີ່ມຕົ້ນ 20 ຕໍ່ 10 ນາທີ). ຂໍ້ແລກປ່ຽນທີ່ຮັບໄດ້: ຄຳຕອບ `429 MEMBER_LOCKED` ເປີດເຜີຍວ່າເບີນັ້ນມີ PIN, ແລະ ໃຜຮູ້ເບີຂອງສະມາຊິກກໍລັອກເຂົາໄດ້ 15 ນາທີ (ບໍ່ກະທົບການສັ່ງຊື້ແບບ guest ແລະ session ທີ່ເຂົ້າຢູ່ແລ້ວ). ການລັອກ **ບໍ່ເພີ່ມຂຶ້ນເລື້ອຍໆ**: ຕົວນັບກັບເປັນ 0 ຫຼັງລັອກແຕ່ລະເທື່ອ → ປະມານ 5 ຄັ້ງ / 15 ນາທີ ≈ 480 ຄັ້ງ/ວັນ ຕໍ່ເບີ (ຈາກຫຼາຍ IP) ທຽບກັບ PIN 10^6 ແບບ — ຮັບໄດ້ໃນຕອນນີ້, ທົບທວນເມື່ອມີ SMS OTP.
 - **ກະແຈ session**: `MEMBER_JWT_SECRET` ບໍ່ບັງຄັບ. ບໍ່ຕັ້ງ = derive ຈາກ `JWT_ACCESS_SECRET` (HMAC-SHA256 ກັບ `"oca-member-session"`) ຈຶ່ງບໍ່ມີ env ໃໝ່ທີ່ບັງຄັບຕອນ deploy; ຕັ້ງ = ຕ້ອງຕ່າງຈາກ `JWT_ACCESS_SECRET`. token ສະມາຊິກມີ audience `member` ແລະ ໃຊ້ກະແຈຕ່າງຈາກ token ພະນັກງານ ຈຶ່ງໃຊ້ແທນກັນບໍ່ໄດ້. ຜົນຂ້າງຄຽງ: rotate `JWT_ACCESS_SECRET` = ສະມາຊິກທຸກຄົນອອກຈາກລະບົບ.
-- **PIN ເປັນຂອງເບີ**: ພະນັກງານປ່ຽນເບີຂອງລູກຄ້າ → ລ້າງ PIN + `pinVersion + 1` (ຟອມແກ້ໄຂເຕືອນກ່ອນ). ລວມລູກຄ້າ → PIN ທີ່ເຫຼືອຕ້ອງຖືກຕັ້ງພາຍໃຕ້ເບີທີ່ເຫຼືອ: target ຮັກສາ PIN ຂອງຕົນເມື່ອມີເບີ; ຮັບ PIN ຂອງ source ສະເພາະເມື່ອ target ບໍ່ມີທັງ PIN ແລະ ເບີ; ນອກນັ້ນ PIN ຖືກລ້າງ/ຖິ້ມ.
+- **PIN ເປັນຂອງເບີ**: ພະນັກງານປ່ຽນເບີຂອງລູກຄ້າ → ລ້າງ PIN + `pinVersion + 1` + `pinResetAt` (ຟອມແກ້ໄຂເຕືອນກ່ອນ). ລວມລູກຄ້າ → PIN ທີ່ເຫຼືອຕ້ອງຖືກຕັ້ງພາຍໃຕ້ເບີທີ່ເຫຼືອ: target ຮັກສາ PIN ຂອງຕົນເມື່ອມີເບີ; ຮັບ PIN ຂອງ source ສະເພາະເມື່ອ target ບໍ່ມີທັງ PIN ແລະ ເບີ; ນອກນັ້ນ PIN ຖືກລ້າງ/ຖິ້ມ.
 - **ແຕ້ມຕອນ checkout ຖືກປັດລົງເປັນສູງສຸດຂອງບິນ** (`maxPoints` ຈາກ `cart/check`, ຂຶ້ນກັບເພດານ % ແລະ ຍອດຫຼັງໂຄດ/Flash Sale) ພ້ອມຂໍ້ຄວາມ "ປັບເປັນ N (ສູງສຸດຂອງບິນນີ້)"; ຍອດປ່ຽນຈົນເກີນເພດານ → ປັດລົງອັດຕະໂນມັດ. ຕ້ອງກົດ "ໃຊ້" ໃຫ້ server ຢືນຢັນກ່ອນຈຶ່ງສົ່ງຄຳສັ່ງຊື້ໄດ້. ເບີໃນຟອມຕ້ອງກົງກັບເບີຂອງສະມາຊິກ.
 - ອອກຈາກລະບົບເຮັດຢູ່ route ຂອງເວັບ (ລຶບ cookie, ບໍ່ເອີ້ນ API) ແລະ ປະຕິເສດຄຳຂໍຂ້າມ site (`Sec-Fetch-Site`, ຫຼື `Origin` ທຽບ `Host`). token ບໍ່ຖືກ revoke ຝັ່ງ server (ໝົດອາຍຸ 30 ວັນ ຫຼື ເມື່ອ `pinVersion` ປ່ຽນ).
 
