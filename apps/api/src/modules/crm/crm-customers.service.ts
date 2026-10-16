@@ -7,10 +7,11 @@ import {
   MEMBER_TIERS,
   type MemberTier,
   type MergeCustomerInput,
+  type NextTierInfo,
   RFM_SEGMENTS,
   type RfmSegment,
   type UpdateCustomerInput,
-  nextTier,
+  nextTierAfter,
 } from "@oca/shared";
 import { AuditService } from "../../audit/audit.service";
 import { apiError } from "../../common/api-error";
@@ -58,8 +59,12 @@ export interface CrmCustomerDetailDto extends CrmCustomerListItemDto {
   rfm: { recency: number; frequency: number; monetary: number } | null;
   /** ຍອດຊື້ 12 ເດືອນຫຼ້າສຸດ (ຕົວກຳນົດລະດັບ) */
   spend12m: string;
-  /** ລະດັບຖັດໄປ ແລະ ຍອດທີ່ຕ້ອງຊື້ຕື່ມ; null = ລະດັບສູງສຸດແລ້ວ */
-  nextTier: { tier: MemberTier; remaining: string } | null;
+  /** ລະດັບຖັດຈາກ `tier` (ທີ່ບັນທຶກ), ເກນ ແລະ ຍອດທີ່ຕ້ອງຊື້ຕື່ມ (ບໍ່ຕິດລົບ); null = ລະດັບສູງສຸດແລ້ວ */
+  nextTier: NextTierInfo | null;
+  /** ຕັ້ງ PIN ເວັບແລ້ວ (ບໍ່ສົ່ງ hash) */
+  hasPin: boolean;
+  /** ລັອກການເຂົ້າລະບົບເວັບຮອດ; null = ບໍ່ລັອກ ຫຼື ລັອກໝົດອາຍຸແລ້ວ */
+  pinLockedUntil: Date | null;
 }
 
 export interface CrmPointEntryDto {
@@ -207,6 +212,7 @@ export class CrmCustomersService {
       loadLoyaltyConfig(this.prisma),
     ]);
     const row = stats[0];
+    const now = new Date();
     return {
       id: customer.id,
       name: customer.name,
@@ -227,7 +233,9 @@ export class CrmCustomersService {
       tier: customer.tier,
       pointsBalance: customer.pointsBalance,
       spend12m,
-      nextTier: nextTier(loyalty.tierRules, spend12m),
+      nextTier: nextTierAfter(loyalty.tierRules, customer.tier, spend12m),
+      hasPin: customer.pinHash !== null,
+      pinLockedUntil: customer.pinLockedUntil && customer.pinLockedUntil > now ? customer.pinLockedUntil : null,
     };
   }
 
@@ -309,6 +317,28 @@ export class CrmCustomersService {
     return this.get(id);
   }
 
+  /** ລ້າງ PIN ເວັບ + ລັອກ ແລະ ເພີ່ມ pinVersion: session ສະມາຊິກທີ່ອອກໄປແລ້ວ (claim pv) ໃຊ້ບໍ່ໄດ້ທັນທີ */
+  async resetPin(id: string, actor: AuthUser, ip: string | undefined): Promise<CrmCustomerDetailDto> {
+    const existing = await this.prisma.customer.findUnique({ where: { id }, select: { pinHash: true } });
+    if (!existing) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
+    // updateMany: ລູກຄ້າຖືກລຶບ (ລວມ) ລະຫວ່າງອ່ານ ແລະ ບັນທຶກ = 404 ບໍ່ແມ່ນ 500
+    const updated = await this.prisma.customer.updateMany({
+      where: { id },
+      data: { pinHash: null, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } },
+    });
+    if (updated.count === 0) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
+    await this.audit.record({
+      userId: actor.id,
+      action: "customer.pin.reset",
+      entity: "Customer",
+      entityId: id,
+      before: { hasPin: existing.pinHash !== null },
+      after: { hasPin: false },
+      ip,
+    });
+    return this.get(id);
+  }
+
   private async requireCustomer(id: string): Promise<void> {
     const found = await this.prisma.customer.findUnique({ where: { id }, select: { id: true } });
     if (!found) throw apiError("CUSTOMER_NOT_FOUND", "Customer not found");
@@ -354,11 +384,15 @@ export class CrmCustomersService {
       const orders = await tx.order.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
       const conversations = await tx.conversation.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
       await tx.pointEntry.updateMany({ where: { customerId: source.id }, data: { customerId: target.id } });
-      // ລຶບ source ກ່ອນ ເພື່ອປ່ອຍ unique (phone, facebookUserId) ໃຫ້ target ຮັບໄດ້
+      // ລຶບ source ກ່ອນ ເພື່ອປ່ອຍ unique (phone, facebookUserId) ໃຫ້ target ຮັບໄດ້. session ສະມາຊິກຂອງ source ຕາຍໄປພ້ອມແຖວ
       await tx.customer.delete({ where: { id: source.id } });
+      // PIN ຜູກກັບເບີ (ເຂົ້າລະບົບດ້ວຍເບີ + PIN): target ທີ່ມີ PIN ຮັກສາຂອງຕົນ; ຮັບ PIN ຂອງ source ສະເພາະເມື່ອ target
+      // ບໍ່ມີ PIN ແລະ ຮັບເບີຂອງ source ໄປພ້ອມກັນ (target ບໍ່ມີເບີ). ນອກນັ້ນ PIN ຂອງ source ຖືກຖິ້ມ
+      const adoptPin = target.pinHash === null && source.pinHash !== null && target.phone === null && source.phone !== null;
       await tx.customer.update({
         where: { id: target.id },
         data: {
+          ...(adoptPin ? { pinHash: source.pinHash, pinFailedCount: 0, pinLockedUntil: null, pinVersion: { increment: 1 } } : {}),
           phone: target.phone ?? source.phone,
           email: target.email ?? source.email,
           facebookUserId: target.facebookUserId ?? source.facebookUserId,
@@ -368,15 +402,15 @@ export class CrmCustomersService {
       });
       // ບິນທີ່ຍ້າຍມາປ່ຽນຍອດຊື້ 12 ເດືອນຂອງ target
       await recomputeTier(tx, target.id, await loadLoyaltyConfig(tx));
-      return { source, movedOrders: orders.count, movedConversations: conversations.count };
+      return { source, adoptPin, movedOrders: orders.count, movedConversations: conversations.count };
     });
     await this.audit.record({
       userId: actor.id,
       action: "customer.merge",
       entity: "Customer",
       entityId: targetId,
-      before: { source: { id: result.source.id, ...auditOf(result.source), facebookUserId: result.source.facebookUserId } },
-      after: { movedOrders: result.movedOrders, movedConversations: result.movedConversations, movedPoints: result.source.pointsBalance },
+      before: { source: { id: result.source.id, ...auditOf(result.source), facebookUserId: result.source.facebookUserId, hasPin: result.source.pinHash !== null } },
+      after: { movedOrders: result.movedOrders, movedConversations: result.movedConversations, movedPoints: result.source.pointsBalance, adoptedPin: result.adoptPin },
       ip,
     });
     return this.get(targetId);

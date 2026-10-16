@@ -92,4 +92,11 @@ export class CrmCustomersController {
   ) {
     return this.customers.merge(id, body, actor, req.ip);
   }
+
+  @Post(":id/pin/reset")
+  @HttpCode(200)
+  @RequirePermissions("crm:write")
+  resetPin(@Param("id") id: string, @CurrentUser() actor: AuthUser, @Req() req: Request) {
+    return this.customers.resetPin(id, actor, req.ip);
+  }
 }

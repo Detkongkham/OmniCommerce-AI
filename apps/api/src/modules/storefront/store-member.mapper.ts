@@ -1,5 +1,14 @@
 import { Prisma } from "@oca/database";
-import { type MemberTier, type OrderStatus, type PointEntryType, type SalesChannel, type TierRule, tierMultiplier } from "@oca/shared";
+import {
+  type MemberTier,
+  type NextTierInfo,
+  type OrderStatus,
+  type PointEntryType,
+  type SalesChannel,
+  type TierRule,
+  nextTierAfter,
+  tierMultiplier,
+} from "@oca/shared";
 import { money } from "../../common/money";
 import { isReservationExpired } from "./storefront.mapper";
 
@@ -26,21 +35,9 @@ export interface StoreMemberDto {
   /** ຍອດຊື້ 12 ເດືອນຫຼ້າສຸດ (ຕົວກຳນົດລະດັບ) */
   spend12m: string;
   /** ລະດັບຖັດຈາກ `tier`, ເກນຂອງມັນ ແລະ ຍອດທີ່ຕ້ອງຊື້ຕື່ມ (ບໍ່ຕິດລົບ); null = ລະດັບສູງສຸດແລ້ວ */
-  nextTier: { tier: MemberTier; minSpend: string; remaining: string } | null;
+  nextTier: NextTierInfo | null;
   /** ຕົວຄູນແຕ້ມຂອງລະດັບປັດຈຸບັນ ເຊັ່ນ "1.25" */
   pointsMultiplier: string;
-}
-
-/**
- * ລະດັບຖັດໄປນັບຈາກລະດັບທີ່ບັນທຶກ (Customer.tier) ບໍ່ແມ່ນຈາກຍອດຊື້: ລະດັບຖືກຄິດໃໝ່ຕອນຈ່າຍ/ທຸກຄືນ
- * ຈຶ່ງອາດຍັງບໍ່ຕົງກັບຍອດ 12 ເດືອນ ແລະ ສອງ field ນີ້ຕ້ອງບໍ່ຂັດກັນ.
- */
-function nextTierAfter(rules: readonly TierRule[], tier: MemberTier, spend12m: string): StoreMemberDto["nextTier"] {
-  const index = rules.findIndex((rule) => rule.tier === tier);
-  const next = index === -1 ? undefined : rules[index + 1];
-  if (!next) return null;
-  const minSpend = new Prisma.Decimal(next.minSpend);
-  return { tier: next.tier, minSpend: money(minSpend), remaining: money(Prisma.Decimal.max(0, minSpend.minus(spend12m))) };
 }
 
 export function toStoreMember(row: StoreMemberRow, spend12m: string, rules: readonly TierRule[]): StoreMemberDto {

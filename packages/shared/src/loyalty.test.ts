@@ -3,7 +3,7 @@ import {
   DEFAULT_TIER_RULES,
   type TierRule,
   maxRedeemablePoints,
-  nextTier,
+  nextTierAfter,
   parseTierRules,
   pointsDiscount,
   pointsForAmount,
@@ -53,10 +53,16 @@ describe("ລະດັບ", () => {
     expect(tierForSpend(rules, "7000000")).toBe("GOLD");
     expect(tierForSpend(rules, "99000000")).toBe("PLATINUM");
   });
-  it("tierMultiplier ແລະ nextTier", () => {
+  it("tierMultiplier", () => {
     expect(tierMultiplier(rules, "GOLD")).toBe("1.5");
-    expect(nextTier(rules, "1500000.00")).toEqual({ tier: "SILVER", remaining: "500000.00" });
-    expect(nextTier(rules, "10000000")).toBeNull();
+  });
+  it("nextTierAfter: ລະດັບຖັດຈາກລະດັບທີ່ບັນທຶກ (ບໍ່ແມ່ນຈາກຍອດ), ຍອດທີ່ເຫຼືອບໍ່ຕິດລົບ", () => {
+    expect(nextTierAfter(rules, "BRONZE", "1500000.00")).toEqual({ tier: "SILVER", minSpend: "2000000.00", remaining: "500000.00" });
+    // ລະດັບທີ່ບັນທຶກຍັງບໍ່ຖືກຄິດໃໝ່: ຍອດເກີນເກນແລ້ວ ແຕ່ຍັງຊີ້ໄປລະດັບຖັດຈາກ BRONZE ດ້ວຍ remaining 0
+    expect(nextTierAfter(rules, "BRONZE", "7000000")).toEqual({ tier: "SILVER", minSpend: "2000000.00", remaining: "0.00" });
+    // ລະດັບສູງກວ່າຍອດ (ເຊັ່ນ ບິນຖືກຄືນ): ບໍ່ຊີ້ກັບລົງ
+    expect(nextTierAfter(rules, "GOLD", "100")).toEqual({ tier: "PLATINUM", minSpend: "10000000.00", remaining: "9999900.00" });
+    expect(nextTierAfter(rules, "PLATINUM", "0")).toBeNull();
   });
   it("tierRulesSchema: ຄົບ 4 ລະດັບຕາມລຳດັບ, BRONZE = 0, ເກນເພີ່ມຂຶ້ນ, ຕົວຄູນ 1–10", () => {
     expect(tierRulesSchema.safeParse(rules).success).toBe(true);

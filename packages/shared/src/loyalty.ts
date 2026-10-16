@@ -86,10 +86,18 @@ export function tierMultiplier(rules: readonly TierRule[], tier: MemberTier): st
   return rules.find((rule) => rule.tier === tier)?.multiplier ?? "1";
 }
 
-/** ລະດັບຖັດໄປ ແລະ ຍອດທີ່ຕ້ອງຊື້ຕື່ມ; null = ຢູ່ລະດັບສູງສຸດແລ້ວ */
-export function nextTier(rules: readonly TierRule[], spend: string): { tier: MemberTier; remaining: string } | null {
-  const next = rules.find((rule) => new D(rule.minSpend).greaterThan(spend));
-  return next ? { tier: next.tier, remaining: new D(next.minSpend).minus(spend).toFixed(2) } : null;
+export type NextTierInfo = { tier: MemberTier; minSpend: string; remaining: string };
+
+/**
+ * ລະດັບຖັດຈາກລະດັບທີ່ບັນທຶກ (Customer.tier) ບໍ່ແມ່ນຈາກຍອດຊື້: ລະດັບຖືກຄິດໃໝ່ຕອນຈ່າຍ/ທຸກຄືນ ຈຶ່ງອາດຍັງບໍ່ຕົງກັບ
+ * ຍອດ 12 ເດືອນ ແລະ ສອງຄ່ານີ້ຕ້ອງບໍ່ຂັດກັນ. remaining ບໍ່ຕິດລົບ; null = ລະດັບສູງສຸດແລ້ວ
+ */
+export function nextTierAfter(rules: readonly TierRule[], tier: MemberTier, spend: string): NextTierInfo | null {
+  const index = rules.findIndex((rule) => rule.tier === tier);
+  const next = index === -1 ? undefined : rules[index + 1];
+  if (!next) return null;
+  const minSpend = new D(next.minSpend);
+  return { tier: next.tier, minSpend: minSpend.toFixed(2), remaining: D.max(0, minSpend.minus(spend)).toFixed(2) };
 }
 
 /** ແຕ້ມທີ່ໄດ້ = floor(ຍອດ / ກີບຕໍ່ແຕ້ມ x ຕົວຄູນ) */

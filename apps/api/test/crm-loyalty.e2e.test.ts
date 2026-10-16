@@ -122,9 +122,18 @@ describe("crm loyalty (e2e)", () => {
         tier: "SILVER",
         pointsBalance: 42,
         spend12m: "2500000.00",
-        nextTier: { tier: "GOLD", remaining: "2500000.00" },
+        nextTier: { tier: "GOLD", minSpend: "5000000.00", remaining: "2500000.00" },
         totalSpent: "11500000.00",
       });
+    });
+
+    it("detail: ລະດັບຖັດໄປນັບຈາກລະດັບທີ່ບັນທຶກ ບໍ່ແມ່ນຈາກຍອດ (ລະດັບຍັງບໍ່ຖືກຄິດໃໝ່)", async () => {
+      const row = await db.customer.create({ data: { name: "ຍັງ BRONZE" } });
+      await seedCustomerOrder(db, row.id, { subtotal: "2500000.00", paidDaysAgo: 3 });
+      const res = await request(server()).get(`/crm/customers/${row.id}`).set(manager).expect(200);
+      expect(res.body).toMatchObject({ tier: "BRONZE", spend12m: "2500000.00", nextTier: { tier: "SILVER", minSpend: "2000000.00", remaining: "0.00" } });
+      await db.customer.update({ where: { id: row.id }, data: { tier: "PLATINUM" } });
+      expect((await request(server()).get(`/crm/customers/${row.id}`).set(manager).expect(200)).body.nextTier).toBeNull();
     });
 
     it("merge: ຍ້າຍແຕ້ມ + ສະໝຸດ ແລະ ຄິດລະດັບໃໝ່", async () => {
